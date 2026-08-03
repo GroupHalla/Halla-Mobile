@@ -553,6 +553,29 @@ private:
 // ============================================================================
 extern "C" {
 
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_vm = vm;
+    JNIEnv* env;
+    if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        return JNI_ERR;
+    }
+    jclass localClass = env->FindClass("com/halla/mobile/HallaCore");
+    if (!localClass) {
+        return JNI_ERR;
+    }
+    g_coreClass = reinterpret_cast<jclass>(env->NewGlobalRef(localClass));
+    
+    g_onConnectedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnected", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onDisconnectedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnDisconnected", "()V");
+    g_onChannelListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChannelList", "(Ljava/lang/String;)V");
+    g_onUserListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnUserList", "(Ljava/lang/String;)V");
+    g_onChatMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChatMessage", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onAudioFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnAudioFrame", "(I[B)V");
+    g_onConnectionFailedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnectionFailed", "(Ljava/lang/String;)V");
+
+    return JNI_VERSION_1_6;
+}
+
 JNIEXPORT void JNICALL
 Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath) {
     const char* nativeHost = env->GetStringUTFChars(host, nullptr);
