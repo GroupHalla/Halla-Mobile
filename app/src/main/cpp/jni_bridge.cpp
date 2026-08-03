@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <android/log.h>
 #include <cstring>
+#include <exception>
 
 #define LOG_TAG "HallaCoreJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -27,7 +28,30 @@ static jmethodID g_onChatMessageMethod = nullptr;
 static jmethodID g_onAudioFrameMethod = nullptr;
 static jmethodID g_onConnectionFailedMethod = nullptr;
 
-// Helpers to extract JSON string fields (zero dependencies, ultra fast)
+// Exception-safe helper conversions
+int safeStoi(const std::string& str) {
+    int val = 0;
+    bool neg = false;
+    for (char c : str) {
+        if (c == '-') neg = true;
+        else if (c >= '0' && c <= '9') {
+            val = val * 10 + (c - '0');
+        }
+    }
+    return neg ? -val : val;
+}
+
+uint32_t safeStoul(const std::string& str) {
+    uint32_t val = 0;
+    for (char c : str) {
+        if (c >= '0' && c <= '9') {
+            val = val * 10 + (c - '0');
+        }
+    }
+    return val;
+}
+
+// Helpers to extract JSON string fields (zero dependencies, ultra fast & safe)
 std::string jsonExtractString(const std::string& json, const std::string& key) {
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return "";
@@ -36,8 +60,15 @@ std::string jsonExtractString(const std::string& json, const std::string& key) {
     pos = json.find("\"", pos);
     if (pos == std::string::npos) return "";
     size_t start = pos + 1;
-    size_t end = json.find("\"", start);
-    if (end == std::string::npos) return "";
+    size_t end = start;
+    while (end < json.size()) {
+        end = json.find("\"", end);
+        if (end == std::string::npos) return "";
+        if (json[end - 1] != '\\') {
+            break;
+        }
+        end++;
+    }
     return json.substr(start, end - start);
 }
 
@@ -51,7 +82,7 @@ int jsonExtractInt(const std::string& json, const std::string& key) {
     size_t end = start;
     while (end < json.size() && json[end] >= '0' && json[end] <= '9') end++;
     if (start == end) return 0;
-    return std::stoi(json.substr(start, end - start));
+    return safeStoi(json.substr(start, end - start));
 }
 
 std::string jsonExtractArray(const std::string& json, const std::string& key) {
@@ -346,58 +377,70 @@ private:
     }
 
     void handleTcpPacket(const std::string& line) {
-        std::string t = jsonExtractString(line, "t");
+        try {
+            LOGI("Received TCP packet length: %zu", line.length());
+            std::string t = jsonExtractString(line, "t");
 
-        if (t == "error") {
-            invokeOnConnectionFailed(jsonExtractString(line, "msg"));
-            disconnect();
-            return;
-        }
+            if (t == "error") {
+                invokeOnConnectionFailed(jsonExtractString(line, "msg"));
+                disconnect();
+                return;
+            }
 
-        if (t == "welcome") {
-            std::string serverName = jsonExtractString(line, "name");
-            if (serverName.empty()) {
+            if (t == "welcome") {
+                std::string serverName;
+                std::string motd;
+                
                 size_t srvPos = line.find("\"server\"");
                 if (srvPos != std::string::npos) {
-                    serverName = jsonExtractString(line.substr(srvPos), "name");
+                    std::string srvObj = line.substr(srvPos);
+                    serverName = jsonExtractString(srvObj, "name");
+                    motd = jsonExtractString(srvObj, "motd");
                 }
+                
+                if (serverName.empty()) {
+                    serverName = m_host;
+                }
+                
+                std::string channelsJson = jsonExtractArray(line, "channels");
+                std::string usersJson = jsonExtractArray(line, "users");
+
+                size_t voicePos = line.find("\"voice\"");
+                if (voicePos != std::string::npos) {
+                    std::string voiceObj = line.substr(voicePos);
+                    m_udpPort = jsonExtractInt(voiceObj, "udp");
+                    m_voiceToken = safeStoul(jsonExtractString(voiceObj, "token"));
+                }
+
+                invokeOnConnected(serverName, motd);
+                invokeOnChannelList(channelsJson);
+                invokeOnUserList(usersJson);
+
+                setupUdpVoice();
+                return;
             }
-            std::string motd = jsonExtractString(line, "motd");
-            
-            std::string channelsJson = jsonExtractArray(line, "channels");
-            std::string usersJson = jsonExtractArray(line, "users");
 
-            size_t voicePos = line.find("\"voice\"");
-            if (voicePos != std::string::npos) {
-                std::string voiceObj = line.substr(voicePos);
-                m_udpPort = jsonExtractInt(voiceObj, "udp");
-                m_voiceToken = std::stoul(jsonExtractString(voiceObj, "token"));
+            if (t == "voice_token") {
+                m_udpPort = jsonExtractInt(line, "udp");
+                m_voiceToken = safeStoul(jsonExtractString(line, "token"));
+                setupUdpVoice();
+                return;
             }
 
-            invokeOnConnected(serverName.empty() ? m_host : serverName, motd);
-            invokeOnChannelList(channelsJson);
-            invokeOnUserList(usersJson);
+            if (t == "chat") {
+                std::string from = jsonExtractString(line, "fromName");
+                std::string text = jsonExtractString(line, "text");
+                invokeOnChatMessage(from, text);
+                return;
+            }
 
-            setupUdpVoice();
-            return;
-        }
-
-        if (t == "voice_token") {
-            m_udpPort = jsonExtractInt(line, "udp");
-            m_voiceToken = std::stoul(jsonExtractString(line, "token"));
-            setupUdpVoice();
-            return;
-        }
-
-        if (t == "chat") {
-            std::string from = jsonExtractString(line, "fromName");
-            std::string text = jsonExtractString(line, "text");
-            invokeOnChatMessage(from, text);
-            return;
-        }
-
-        if (t == "user_joined" || t == "user_left" || t == "user_moved" || t == "chan_update" || t == "chan_removed" || t == "user_state") {
-            invokeOnUserList(line); // Repassa a atualizacao em tempo real para a UI do Kotlin reconstruir a lista
+            if (t == "user_joined" || t == "user_left" || t == "user_moved" || t == "chan_update" || t == "chan_removed" || t == "user_state") {
+                invokeOnUserList(line);
+            }
+        } catch (const std::exception& e) {
+            LOGE("Exception caught inside handleTcpPacket: %s", e.what());
+        } catch (...) {
+            LOGE("Unknown exception caught inside handleTcpPacket");
         }
     }
 
