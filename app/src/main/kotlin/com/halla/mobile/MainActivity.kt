@@ -205,6 +205,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     // ============================================================================
+    // Gestão de Identidade Exclusiva por Instalação (UID único e autônomo)
+    // ============================================================================
+
+    private fun getOrCreateClientUid(): String {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        var uid = prefs.getString("client_uid", "") ?: ""
+        if (uid.isEmpty()) {
+            // Gera um UID aleatório exclusivo idêntico à criptografia Base64 de 28 caracteres do TeamSpeak
+            val random = java.util.UUID.randomUUID().toString().replace("-", "")
+            val rawBytes = random.take(20).toByteArray()
+            uid = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP).trim()
+            if (uid.length > 27) uid = uid.substring(0, 27) + "="
+            prefs.edit().putString("client_uid", uid).apply()
+        }
+        return uid
+    }
+
+    // ============================================================================
     // Gestão de Servidores Salvos (Persistência em SharedPreferences)
     // ============================================================================
 
@@ -240,6 +258,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val card = createServerCard(srv, i)
                 containerServers.addView(card)
             }
+            
+            // Dispara varredura em segundo plano para medir latência de ping real de cada servidor
+            pingServersInBackground()
         }
     }
 
@@ -328,7 +349,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtStatus = TextView(context).apply {
-            text = "Disponível (1.0.2)  0/32 slots"
+            val savedSlots = srv.optString("slots", "0/32")
+            text = "Disponível (1.0.4)  $savedSlots slots"
             setTextColor(Color.parseColor("#8B959E"))
             textSize = 13f
             val rParams = RelativeLayout.LayoutParams(
@@ -340,8 +362,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtPing = TextView(context).apply {
-            text = "28ms"
-            setTextColor(Color.parseColor("#4CAF50"))
+            text = "Buscando..."
+            tag = "ping_text_$index" // Associa tag para atualização em tempo real por thread de fundo
+            setTextColor(Color.parseColor("#8B959E"))
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             val rParams = RelativeLayout.LayoutParams(
@@ -515,6 +538,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("host", host)
                         put("port", port)
                         put("pass", pass)
+                        put("slots", "0/32") // Default slots
                     }
                     savedServers.put(newSrv)
                 }
@@ -544,7 +568,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
 
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
+        // Pega ou gera UID exclusivo da instalação
+        val uid = getOrCreateClientUid()
+
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
 
         // Inicia timeout para depuração
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
@@ -574,7 +601,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
 
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
+        val uid = getOrCreateClientUid()
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
     }
 
     private fun btnConnectStatusConnecting() {
@@ -587,6 +615,63 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnAddServer.isEnabled = true
         btnQuickConnect.isEnabled = true
         btnQuickConnect.text = "➦"
+    }
+
+    // Varredura de ping em tempo real dos servidores salvos em background (Socket handshake ultra rápido)
+    private fun pingServersInBackground() {
+        for (i in 0 until savedServers.length()) {
+            val srv = savedServers.getJSONObject(i)
+            val host = srv.getString("host")
+            val port = srv.getInt("port")
+            
+            kotlin.concurrent.thread {
+                val startTime = System.currentTimeMillis()
+                try {
+                    val socket = java.net.Socket()
+                    socket.connect(java.net.InetSocketAddress(host, port), 1500)
+                    val elapsed = System.currentTimeMillis() - startTime
+                    socket.close()
+                    
+                    runOnUiThread {
+                        updateServerPingOnUI(i, "${elapsed}ms", true)
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        updateServerPingOnUI(i, "Offline", false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateServerPingOnUI(index: Int, pingText: String, online: Boolean) {
+        val txtPing = containerServers.findViewWithTag<TextView>("ping_text_$index")
+        if (txtPing != null) {
+            txtPing.text = pingText
+            txtPing.setTextColor(Color.parseColor(if (online) "#4CAF50" else "#D9534F"))
+        }
+    }
+
+    private fun updateActiveServerSlots(clientsCount: Int, maxClients: Int) {
+        val host = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getString("last_srv_host", "") ?: ""
+        val port = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getInt("last_srv_port", 0)
+        
+        if (host.isEmpty() || port == 0) return
+
+        var modified = false
+        for (i in 0 until savedServers.length()) {
+            val srv = savedServers.getJSONObject(i)
+            if (srv.getString("host") == host && srv.getInt("port") == port) {
+                srv.put("slots", "$clientsCount/$maxClients")
+                modified = true
+                break
+            }
+        }
+        if (modified) {
+            // Salva e reconstrói de forma assíncrona
+            val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("saved_servers", savedServers.toString()).apply()
+        }
     }
 
     private fun readLocalDiagnosticsLog(): String {
@@ -609,7 +694,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showSettingsDialog() {
         AlertDialog.Builder(this)
-            .setTitle("⚙️ Ajustes Globais")
+            .setTitle("⚙️ Configurações")
             .setMessage("• Sensibilidade de VAD (MIC): Ativação de fala definida em 150 RMS.\n• Dispositivos de Áudio: Sistema padrão ativo.\n• Codec: Compressão e descompressão Opus em tempo real ativa.")
             .setPositiveButton("OK") { d, _ -> d.dismiss() }
             .show()
@@ -625,7 +710,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     // Sobre o Halla
                     AlertDialog.Builder(context)
                         .setTitle("ℹ️ Sobre o Halla")
-                        .setMessage("Halla Mobile v1.0.3\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
+                        .setMessage("Halla Mobile v1.0.4\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
                         .setPositiveButton("OK", null)
                         .show()
                 } else if (which == 1) {
@@ -633,7 +718,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     Toast.makeText(context, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
                     AlertDialog.Builder(context)
                         .setTitle("🔄 Atualizações")
-                        .setMessage("Parabéns! Seu Halla Mobile v1.0.3 está totalmente atualizado!")
+                        .setMessage("Parabéns! Seu Halla Mobile v1.0.4 está totalmente atualizado!")
                         .setPositiveButton("Excelente", null)
                         .show()
                 }
@@ -671,6 +756,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutServer.visibility = View.GONE
             layoutConnect.visibility = View.VISIBLE
             btnConnectStatusNormal()
+            
+            // Recarrega lista para exibir slots/ping atualizados pós desconexão
+            loadSavedServers()
         }
     }
 
@@ -680,6 +768,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val obj = JSONObject(welcomeJson)
                 channelsData = obj.getJSONArray("channels")
                 usersData = obj.getJSONArray("users")
+                
+                val serverObj = obj.optJSONObject("server")
+                val maxClients = serverObj?.optInt("maxClients", 32) ?: 32
+                val clientsCount = usersData.length()
+
+                // Atualiza o slots de forma dinâmica no banco local de SharedPreferences!
+                updateActiveServerSlots(clientsCount, maxClients)
+
                 rebuildChannelTree()
             } catch (e: Exception) {
                 e.printStackTrace()
