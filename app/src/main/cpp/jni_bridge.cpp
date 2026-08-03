@@ -3,6 +3,7 @@
 #include <thread>
 #include <mutex>
 #include <vector>
+#include <map>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -11,6 +12,9 @@
 #include <android/log.h>
 #include <cstring>
 #include <exception>
+
+// Inclui a biblioteca oficial Opus para compressão/descompressão VoIP de alta fidelidade
+#include <opus.h>
 
 #define LOG_TAG "HallaCoreJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -272,6 +276,18 @@ public:
         m_pass = pass;
         m_connected = true;
 
+        // Inicializa o codificador Opus Oficial de voz VoIP
+        int err = 0;
+        m_encoder = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
+        if (m_encoder) {
+            opus_encoder_ctl(m_encoder, OPUS_SET_BITRATE(32000));
+            opus_encoder_ctl(m_encoder, OPUS_SET_VBR(1));
+            opus_encoder_ctl(m_encoder, OPUS_SET_DTX(1));
+            writeLog("Opus Encoder nativo inicializado com sucesso.");
+        } else {
+            writeLog("Erro ao inicializar Opus Encoder nativo!");
+        }
+
         m_tcpThread = std::thread(&HallaClientCore::tcpLoop, this, host, port);
     }
 
@@ -289,6 +305,17 @@ public:
         if (m_udpThread.joinable()) m_udpThread.join();
         m_udpPort = 0;
         m_voiceToken = 0;
+
+        // Libera recursos do codec Opus
+        if (m_encoder) {
+            opus_encoder_destroy(m_encoder);
+            m_encoder = nullptr;
+        }
+        for (auto& pair : m_decoders) {
+            opus_decoder_destroy(pair.second);
+        }
+        m_decoders.clear();
+        writeLog("Recursos do Codec Opus liberados.");
     }
 
     void joinChannel(int channelId) {
@@ -324,14 +351,53 @@ public:
         }
     }
 
+    // Codifica PCM bruto de 16-bit Mono @ 48kHz em frames Opus VoIP e transmite
+    void encodeAndSendVoice(const int16_t* pcm, int samples) {
+        if (!m_encoder || m_udpSocket == -1 || m_udpPort == 0 || m_voiceToken == 0) return;
+
+        static uint16_t voiceSeq = 0;
+        unsigned char opusBuf[512];
+        int n = opus_encode(m_encoder, pcm, samples, opusBuf, sizeof(opusBuf));
+        if (n > 0) {
+            sendVoiceFrame(reinterpret_cast<const char*>(opusBuf), n, ++voiceSeq);
+        }
+    }
+
 private:
-    HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false), m_udpPort(0), m_voiceToken(0) {}
+    HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false), m_udpPort(0), m_voiceToken(0), m_encoder(nullptr) {}
     ~HallaClientCore() { disconnect(); }
 
     void sendTcp(const std::string& data) {
         std::lock_guard<std::mutex> lock(m_tcpMutex);
         if (m_tcpSocket != -1) {
             send(m_tcpSocket, data.c_str(), data.size(), 0);
+        }
+    }
+
+    OpusDecoder* getOrCreateDecoder(uint32_t userId) {
+        auto it = m_decoders.find(userId);
+        if (it != m_decoders.end()) return it->second;
+
+        int err = 0;
+        OpusDecoder* dec = opus_decoder_create(48000, 1, &err);
+        if (dec) {
+            m_decoders[userId] = dec;
+            writeLog("Opus Decoder alocado com sucesso para o usuario #" + std::to_string(userId));
+        }
+        return dec;
+    }
+
+    void decodeAndNotifyVoice(uint32_t fromId, uint16_t seq, const char* opusData, int size) {
+        OpusDecoder* dec = getOrCreateDecoder(fromId);
+        if (!dec) return;
+
+        int16_t pcm[960]; // Amortiza em blocos padrão de 20ms @ 48kHz
+        if (size > 0) {
+            int n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
+            if (n > 0) {
+                // Envia o áudio descriptografado PCM cru para o Android tocar
+                invokeOnAudioFrame(fromId, reinterpret_cast<const char*>(pcm), n * 2);
+            }
         }
     }
 
@@ -439,6 +505,7 @@ private:
                 }
                 writeLog("welcome: serverName = " + serverName + ", motd = " + motd);
                 
+                // Extrai os blocos de canais e usuarios nativamente via arrays
                 std::string channelsJson = jsonExtractArray(line, "channels");
                 std::string usersJson = jsonExtractArray(line, "users");
                 writeLog("welcome: channels length = " + std::to_string(channelsJson.length()) + ", users length = " + std::to_string(usersJson.length()));
@@ -529,7 +596,8 @@ private:
             memcpy(&fromId, buf + 4, 4);
             memcpy(&seq, buf + 8, 2);
 
-            invokeOnAudioFrame(fromId, buf + 10, n - 10);
+            // Descompacta áudio Opus recebido e avisa o Kotlin
+            decodeAndNotifyVoice(fromId, seq, buf + 10, n - 10);
         }
         writeLog("udpLoop finalizado");
     }
@@ -546,6 +614,10 @@ private:
 
     int m_udpPort;
     uint32_t m_voiceToken;
+
+    // Recursos nativos do Codec Opus
+    OpusEncoder* m_encoder;
+    std::map<uint32_t, OpusDecoder*> m_decoders;
 };
 
 // ============================================================================
@@ -613,11 +685,11 @@ Java_com_halla_mobile_HallaCore_sendChatMessage(JNIEnv* env, jclass clazz, jstri
 
 JNIEXPORT void JNICALL
 Java_com_halla_mobile_HallaCore_sendVoiceFrame(JNIEnv* env, jclass clazz, jbyteArray pcmData) {
-    static uint16_t voiceSeq = 0;
     jsize len = env->GetArrayLength(pcmData);
     jbyte* body = env->GetByteArrayElements(pcmData, nullptr);
 
-    HallaClientCore::getInstance().sendVoiceFrame(reinterpret_cast<const char*>(body), len, ++voiceSeq);
+    // Envia PCM de 16-bit cru capturado do mic para ser codificado nativamente com Opus
+    HallaClientCore::getInstance().encodeAndSendVoice(reinterpret_cast<const int16_t*>(body), len / 2);
 
     env->ReleaseByteArrayElements(pcmData, body, JNI_ABORT);
 }
