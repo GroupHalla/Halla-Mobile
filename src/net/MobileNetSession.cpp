@@ -1,20 +1,32 @@
 #include "MobileNetSession.h"
+#include "MobileVoiceEngine.h"
 #include <QJsonDocument>
 #include <QVariantMap>
+#include <QHostAddress>
 
 MobileNetSession::MobileNetSession(QObject* parent) : QObject(parent) {
     m_tcp = new QTcpSocket(this);
     m_pingTimer = new QTimer(this);
     m_pingTimer->setInterval(15000);
 
+    m_udp = new QUdpSocket(this);
+    m_udp->bind();
+
+    m_voiceEngine = new MobileVoiceEngine(this, this);
+
     connect(m_tcp, &QTcpSocket::connected, this, &MobileNetSession::onConnected);
     connect(m_tcp, &QTcpSocket::disconnected, this, &MobileNetSession::onDisconnected);
     connect(m_tcp, &QTcpSocket::readyRead, this, &MobileNetSession::onReadyRead);
+    connect(m_udp, &QUdpSocket::readyRead, this, &MobileNetSession::onUdpReadyRead);
     connect(m_pingTimer, &QTimer::timeout, this, &MobileNetSession::onPingTimer);
 }
 
 MobileNetSession::~MobileNetSession() {
     disconnectFromServer();
+}
+
+QObject* MobileNetSession::voiceEngine() const {
+    return m_voiceEngine;
 }
 
 QVariantList MobileNetSession::channels() const {
@@ -48,6 +60,7 @@ QVariantList MobileNetSession::users() const {
 }
 
 void MobileNetSession::connectToServer(const QString& host, int port, const QString& nick, const QString& password) {
+    m_host = host;
     m_nick = nick;
     m_password = password;
     m_tcp->connectToHost(host, quint16(port));
@@ -73,6 +86,12 @@ void MobileNetSession::sendChat(const QString& text) {
     send(m);
 }
 
+void MobileNetSession::sendVoiceFrame(const QByteArray& opus, quint16 seq) {
+    if (!m_voiceToken || m_udpPort == 0) return;
+    m_udp->writeDatagram(HProto::encodeVoiceClient(m_voiceToken, seq, opus),
+                         QHostAddress(m_host), m_udpPort);
+}
+
 void MobileNetSession::onConnected() {
     m_connected = true;
     emit isConnectedChanged();
@@ -94,6 +113,8 @@ void MobileNetSession::onDisconnected() {
     m_pingTimer->stop();
     m_data = ServerData();
     m_chatHistory.clear();
+    m_udpPort = 0;
+    m_voiceToken = 0;
     emit isConnectedChanged();
     emit serverNameChanged();
     emit stateChanged();
@@ -113,6 +134,19 @@ void MobileNetSession::onReadyRead() {
         if (doc.isObject()) {
             handleMessage(doc.object());
         }
+    }
+}
+
+void MobileNetSession::onUdpReadyRead() {
+    while (m_udp->hasPendingDatagrams()) {
+        QNetworkDatagram dg = m_udp->receiveDatagram();
+        QByteArray data = dg.data();
+        if (data.size() < 10 || memcmp(data.constData(), "HALL", 4) != 0) continue;
+        quint32 fromId;
+        quint16 seq;
+        memcpy(&fromId, data.constData() + 4, 4);
+        memcpy(&seq, data.constData() + 8, 2);
+        m_voiceEngine->handleIncomingVoice(int(fromId), seq, data.mid(10));
     }
 }
 
@@ -145,6 +179,17 @@ void MobileNetSession::handleMessage(const QJsonObject& obj) {
         m_data.channels.clear();
         for (const QJsonValue& v : obj["channels"].toArray()) applyChanJson(v.toObject());
 
+        // Configuração de Portas UDP de Voz
+        QJsonObject voice = obj["voice"].toObject();
+        m_udpPort = quint16(voice["udp"].toInt());
+        m_voiceToken = voice["token"].toString().toUInt();
+
+        // Registra endpoint UDP
+        if (m_voiceToken && m_udpPort) {
+            m_udp->writeDatagram(HProto::encodeVoiceClient(m_voiceToken, 1, QByteArray()),
+                                 QHostAddress(m_host), m_udpPort);
+        }
+
         emit serverNameChanged();
         emit stateChanged();
 
@@ -153,6 +198,16 @@ void MobileNetSession::handleMessage(const QJsonObject& obj) {
         sysMsg["text"] = m_data.motd;
         m_chatHistory << sysMsg;
         emit chatReceived();
+        return;
+    }
+
+    if (t == "voice_token") {
+        m_udpPort = quint16(obj["udp"].toInt());
+        m_voiceToken = obj["token"].toString().toUInt();
+        if (m_voiceToken && m_udpPort) {
+            m_udp->writeDatagram(HProto::encodeVoiceClient(m_voiceToken, 1, QByteArray()),
+                                 QHostAddress(m_host), m_udpPort);
+        }
         return;
     }
 

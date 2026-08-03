@@ -187,6 +187,96 @@ ApplicationWindow {
                 anchors.fill: parent
                 spacing: 0
 
+                // Barra de Status e Controle de Voz / DSP / Gravação Local
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.margins: 12
+                    spacing: 12
+
+                    // Indicador Visual VAD (Nível de Voz / Se está falando)
+                    Rectangle {
+                        width: 24
+                        height: 24
+                        radius: 12
+                        color: netSession.voiceEngine.isTalking ? "#4CAF50" : "#3E434A"
+                        border.color: "#555"
+                        border.width: 1
+
+                        // Indicador de nível dinâmico de volume (RMS)
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 14
+                            height: (netSession.voiceEngine.voiceLevel / 100.0) * 14 + 2
+                            radius: 7
+                            color: "#81C784"
+                            visible: !netSession.voiceEngine.isTalking
+                        }
+                    }
+
+                    Label {
+                        text: netSession.voiceEngine.isTalking ? "Transmitindo" : "Silencioso"
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: netSession.voiceEngine.isTalking ? "#4CAF50" : "#8B959E"
+                        Layout.fillWidth: true
+                    }
+
+                    // Botão Silenciar Microfone
+                    Button {
+                        id: muteMicBtn
+                        property bool muted: false
+                        contentItem: Text {
+                            text: muteMicBtn.muted ? "🔇" : "🎙️"
+                            font.pixelSize: 16
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: muteMicBtn.muted ? "#D9534F" : "#3E434A"
+                            radius: 6
+                        }
+                        Layout.preferredWidth: 38
+                        Layout.preferredHeight: 38
+                        onClicked: {
+                            muted = !muted
+                            netSession.voiceEngine.setTransmitEnabled(!muted)
+                        }
+                    }
+
+                    // Botão Gravar Voz Localmente
+                    Button {
+                        id: recBtn
+                        contentItem: Text {
+                            text: netSession.voiceEngine.isRecording ? "⏹️ Gravando" : "🔴 Gravar"
+                            color: "white"
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            color: netSession.voiceEngine.isRecording ? "#D9534F" : "#2E7FC4"
+                            radius: 6
+                        }
+                        Layout.preferredHeight: 38
+                        onClicked: {
+                            if (netSession.voiceEngine.isRecording) {
+                                netSession.voiceEngine.stopRecording()
+                            } else {
+                                // Salva gravação WAV na raiz do app móvel
+                                netSession.voiceEngine.startRecording("HallaVoiceRec.wav")
+                            }
+                        }
+                    }
+                }
+
+                // Divisor
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#3E434A"
+                }
+
                 // Árvore de Canais e Usuários
                 ListView {
                     id: channelsListView

@@ -33,6 +33,7 @@ jobs:
           sdkmanager --install "ndk;25.2.9519653"
 
       - name: Install Host Qt (Desktop Linux)
+        id: install-qt-host
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.8.2'
@@ -40,7 +41,12 @@ jobs:
           arch: 'linux_gcc_64'
           dir: '${{ github.workspace }}/../Qt'
 
+      - name: Save Host Qt Path
+        run: |
+          echo "HOST_QT_PATH=${QT_ROOT_DIR}" >> $GITHUB_ENV
+
       - name: Install Target Qt (Android)
+        id: install-qt-target
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.8.2'
@@ -54,8 +60,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-31 \
-            -DCMAKE_PREFIX_PATH=/home/runner/work/Halla-Mobile/Qt/6.8.2/android_arm64_v8a \
-            -DQT_HOST_PATH=/home/runner/work/Halla-Mobile/Qt/6.8.2/gcc_64 \
+            -DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }} \
+            -DQT_HOST_PATH=${{ env.HOST_QT_PATH }} \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Application
@@ -64,7 +70,8 @@ jobs:
 
       - name: Create APK with androiddeployqt
         run: |
-          androiddeployqt --input build/android-HallaMobileApp-deployment-settings.json --output build/android-build --apk HallaMobile.apk --gradle
+          ${{ env.QT_ROOT_DIR }}/bin/androiddeployqt --input build/android-HallaMobileApp-deployment-settings.json --output build/android-build --gradle
+          find build/android-build/ -name "*.apk" -exec cp {} HallaMobile.apk \;
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
