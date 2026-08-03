@@ -60,22 +60,19 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Halla Mobile v1.0.0 — Versão Inicial Kotlin/NDK
+          tag_name: ${{ github.ref_name }}
+          name: Halla Mobile ${{ github.ref_name }} — Voz Opus e Canais Sincronizados
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## 🚀 Lançamento Oficial do Halla Mobile v1.0.0 (Kotlin + C/C++ NDK)
+            ## 🚀 Lançamento Oficial do Halla Mobile ${{ github.ref_name }}
 
-            Esta é a versão móvel reescrita nativamente em Kotlin para uma UI fluida e robusta, com núcleo de rede em C/C++ (JNI) de alta performance!
+            Esta versão traz uma reestruturação profunda nas camadas de rede e áudio, garantindo compatibilidade e qualidade profissional!
 
-            ### 📱 Recursos Integrados
-            * **Arquitetura Híbrida de Elite:** Interface 100% nativa Kotlin acoplada a um núcleo de sockets TCP/UDP e de voz em C/C++!
-            * **Conexão Dinâmica:** Insira o IP e porta do seu servidor, configure o seu apelido e conecte-se instantaneamente!
-            * **Lista de Canais e Árvore de Usuários em Tempo Real:** Navegação e sincronização nativa na UI Kotlin.
-            * **Áudio Nativo de Baixíssima Latência:** Captura de microfone com `AudioRecord` e reprodução de som com `AudioTrack` para máxima fluidez de voz no Android.
-            * **DSP & VAD Nativo em Kotlin:** Monitoramento em tempo real de nível RMS e detecção de atividade de voz (VAD) inteligente!
-            * **Gravação Local WAV:** Grave canais de áudio de voz em tempo real diretamente na pasta de cache do app!
+            ### 📱 Recursos Integrados nesta Versão
+            * **Codec Opus Nativo:** Suporte completo à compressão e descompressão do codec Opus oficial diretamente no NDK, oferecendo áudio límpido e com zero distorção!
+            * **Sincronia Nativa de Árvore de Canais:** Resolvedor unificado que mapeia instantaneamente as salas e os usuários de forma perfeita ao conectar!
+            * **Atualizações de Canais Live:** Suporte à escuta e redesenho de tela instantâneo para edições, criações e deleções de salas em tempo real.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

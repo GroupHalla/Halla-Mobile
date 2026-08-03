@@ -26,6 +26,7 @@ static jclass g_coreClass = nullptr;
 
 static jmethodID g_onConnectedMethod = nullptr;
 static jmethodID g_onDisconnectedMethod = nullptr;
+static jmethodID g_onWelcomeMethod = nullptr;
 static jmethodID g_onChannelListMethod = nullptr;
 static jmethodID g_onUserListMethod = nullptr;
 static jmethodID g_onChatMessageMethod = nullptr;
@@ -103,25 +104,6 @@ int jsonExtractInt(const std::string& json, const std::string& key) {
     return safeStoi(json.substr(start, end - start));
 }
 
-std::string jsonExtractArray(const std::string& json, const std::string& key) {
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return "[]";
-    pos = json.find("[", pos);
-    if (pos == std::string::npos) return "[]";
-    size_t start = pos;
-    int bracketCount = 0;
-    for (size_t i = start; i < json.size(); ++i) {
-        if (json[i] == '[') bracketCount++;
-        else if (json[i] == ']') {
-            bracketCount--;
-            if (bracketCount == 0) {
-                return json.substr(start, i - start + 1);
-            }
-        }
-    }
-    return "[]";
-}
-
 // Thread-safe helpers to invoke JNI callbacks from background C++ threads
 void invokeOnConnected(const std::string& serverName, const std::string& motd) {
     writeLog("invokeOnConnected chamada!");
@@ -164,6 +146,28 @@ void invokeOnDisconnected() {
     }
     if (env) {
         env->CallStaticVoidMethod(g_coreClass, g_onDisconnectedMethod);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+void invokeOnWelcome(const std::string& welcomeJson) {
+    writeLog("invokeOnWelcome chamada!");
+    if (!g_vm || !g_coreClass || !g_onWelcomeMethod) {
+        writeLog("invokeOnWelcome abortada: g_vm, g_coreClass ou g_onWelcomeMethod nulo!");
+        return;
+    }
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jJson = env->NewStringUTF(welcomeJson.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onWelcomeMethod, jJson);
+        env->DeleteLocalRef(jJson);
+        writeLog("invokeOnWelcome: triggerOnWelcome invocado com sucesso!");
     }
     if (attached) g_vm->DetachCurrentThread();
 }
@@ -504,11 +508,6 @@ private:
                     serverName = m_host;
                 }
                 writeLog("welcome: serverName = " + serverName + ", motd = " + motd);
-                
-                // Extrai os blocos de canais e usuarios nativamente via arrays
-                std::string channelsJson = jsonExtractArray(line, "channels");
-                std::string usersJson = jsonExtractArray(line, "users");
-                writeLog("welcome: channels length = " + std::to_string(channelsJson.length()) + ", users length = " + std::to_string(usersJson.length()));
 
                 size_t voicePos = line.find("\"voice\"");
                 writeLog("welcome: voicePos = " + std::to_string(voicePos));
@@ -519,9 +518,11 @@ private:
                 }
                 writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
 
+                // Avisa o Kotlin sobre a conexao
                 invokeOnConnected(serverName, motd);
-                invokeOnChannelList(channelsJson);
-                invokeOnUserList(usersJson);
+
+                // Passa o JSON inteiro do welcome para o Kotlin de forma nativa e 100% segura
+                invokeOnWelcome(line);
 
                 setupUdpVoice();
                 return;
@@ -639,6 +640,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     
     g_onConnectedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnected", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onDisconnectedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnDisconnected", "()V");
+    g_onWelcomeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWelcome", "(Ljava/lang/String;)V");
     g_onChannelListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChannelList", "(Ljava/lang/String;)V");
     g_onUserListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnUserList", "(Ljava/lang/String;)V");
     g_onChatMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChatMessage", "(Ljava/lang/String;Ljava/lang/String;)V");

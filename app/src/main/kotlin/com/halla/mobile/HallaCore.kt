@@ -25,6 +25,7 @@ object HallaCore {
     interface Callbacks {
         fun onConnected(serverName: String, motd: String)
         fun onDisconnected()
+        fun onWelcomeReceived(welcomeJson: String)
         fun onChannelListReceived(channelsJson: String)
         fun onUserListReceived(usersJson: String)
         fun onChatMessageReceived(fromName: String, text: String)
@@ -47,6 +48,11 @@ object HallaCore {
     @JvmStatic
     fun triggerOnDisconnected() {
         callbacks?.onDisconnected()
+    }
+
+    @JvmStatic
+    fun triggerOnWelcome(welcomeJson: String) {
+        callbacks?.onWelcomeReceived(welcomeJson)
     }
 
     @JvmStatic
