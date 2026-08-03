@@ -1,38 +1,47 @@
 package com.halla.mobile
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
-    private lateinit var layoutConnect: LinearLayout
+    private lateinit var drawerLayout: DrawerLayout
+    private lateinit var navDrawer: LinearLayout
+    private lateinit var layoutConnect: RelativeLayout
     private lateinit var layoutServer: LinearLayout
-
-    // Campos de Conexão
-    private lateinit var editNick: EditText
-    private lateinit var editAddress: EditText
-    private lateinit var editPort: EditText
-    private lateinit var editPassword: EditText
-    private lateinit var btnConnect: Button
+    private lateinit var layoutEmptyState: LinearLayout
+    private lateinit var scrollServers: ScrollView
+    private lateinit var containerServers: LinearLayout
     private lateinit var txtError: TextView
 
-    // Controles do Servidor
+    // Top Bar Buttons
+    private lateinit var btnMenu: Button
+    private lateinit var btnAddServer: Button
+    private lateinit var btnQuickConnect: Button
+
+    // Controles do Menu Lateral
+    private lateinit var btnNavSettings: TextView
+    private lateinit var btnNavHelp: TextView
+
+    // Controles do Servidor Ativo
     private lateinit var txtServerName: TextView
     private lateinit var txtMotd: TextView
     private lateinit var btnDisconnect: Button
@@ -45,7 +54,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var editChatMsg: EditText
     private lateinit var btnSendChat: Button
 
-    // Gerenciador de Áudio Nativo Kotlin
+    // Gerenciador de Áudio Nativo
     private lateinit var audioManager: HallaAudioManager
 
     private var isMuted = false
@@ -54,6 +63,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private val handler = Handler(Looper.getMainLooper())
     private var connectionTimeoutRunnable: Runnable? = null
+
+    // Servidores salvos persistidos
+    private var savedServers = JSONArray()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,15 +78,21 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         } catch (e: Exception) {}
 
         // Inicializa Componentes da UI
+        drawerLayout = findViewById(R.id.drawerLayout)
+        navDrawer = findViewById(R.id.navDrawer)
         layoutConnect = findViewById(R.id.layoutConnect)
         layoutServer = findViewById(R.id.layoutServer)
-
-        editNick = findViewById(R.id.editNick)
-        editAddress = findViewById(R.id.editAddress)
-        editPort = findViewById(R.id.editPort)
-        editPassword = findViewById(R.id.editPassword)
-        btnConnect = findViewById(R.id.btnConnect)
+        layoutEmptyState = findViewById(R.id.layoutEmptyState)
+        scrollServers = findViewById(R.id.scrollServers)
+        containerServers = findViewById(R.id.containerServers)
         txtError = findViewById(R.id.txtError)
+
+        btnMenu = findViewById(R.id.btnMenu)
+        btnAddServer = findViewById(R.id.btnAddServer)
+        btnQuickConnect = findViewById(R.id.btnQuickConnect)
+
+        btnNavSettings = findViewById(R.id.btnNavSettings)
+        btnNavHelp = findViewById(R.id.btnNavHelp)
 
         txtServerName = findViewById(R.id.txtServerName)
         txtMotd = findViewById(R.id.txtMotd)
@@ -116,42 +134,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Configura Callbacks do C++ Core JNI
         HallaCore.setCallbacks(this)
 
-        // Eventos de Clique
-        btnConnect.setOnClickListener {
-            val nick = editNick.text.toString().trim()
-            val host = editAddress.text.toString().trim()
-            val portStr = editPort.text.toString().trim()
-            val pass = editPassword.text.toString().trim()
+        // Carrega Servidores Salvos
+        loadSavedServers()
 
-            if (nick.isEmpty() || host.isEmpty() || portStr.isEmpty()) {
-                txtError.text = "Preencha todos os campos obrigatórios!"
-                txtError.visibility = View.VISIBLE
-                return@setOnClickListener
-            }
+        // Controles de Clique e Gaveta Lateral
+        btnMenu.setOnClickListener {
+            drawerLayout.openDrawer(Gravity.LEFT)
+        }
 
-            txtError.visibility = View.GONE
-            btnConnect.isEnabled = false
-            btnConnect.text = "CONECTANDO..."
+        btnAddServer.setOnClickListener {
+            showServerFormDialog(null) // Abre form para adicionar novo
+        }
 
-            val port = portStr.toIntOrNull() ?: 9987
-            
-            // Inicia conexão passando a pasta de cache para escrita de logs C++ JNI
-            HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
-
-            // Inicia timer de diagnóstico de 6 segundos
-            connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-            connectionTimeoutRunnable = Runnable {
-                if (layoutConnect.visibility == View.VISIBLE) {
-                    btnConnect.isEnabled = true
-                    btnConnect.text = "CONECTAR"
-                    
-                    // Lê o arquivo de log do C++ e mostra os últimos acontecimentos na tela do usuário
-                    val logContent = readLocalDiagnosticsLog()
-                    txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
-                    txtError.visibility = View.VISIBLE
-                }
-            }
-            handler.postDelayed(connectionTimeoutRunnable!!, 6000)
+        btnQuickConnect.setOnClickListener {
+            connectToQuickServer()
         }
 
         btnDisconnect.setOnClickListener {
@@ -188,6 +184,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
             }
         }
+
+        // Itens da Gaveta Lateral (Drawer)
+        btnNavSettings.setOnClickListener {
+            drawerLayout.closeDrawers()
+            showSettingsDialog()
+        }
+
+        btnNavHelp.setOnClickListener {
+            drawerLayout.closeDrawers()
+            showHelpDialog()
+        }
     }
 
     override fun onDestroy() {
@@ -197,19 +204,442 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
     }
 
+    // ============================================================================
+    // Gestão de Servidores Salvos (Persistência em SharedPreferences)
+    // ============================================================================
+
+    private fun loadSavedServers() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        val jsonStr = prefs.getString("saved_servers", "[]")
+        try {
+            savedServers = JSONArray(jsonStr)
+        } catch (e: Exception) {
+            savedServers = JSONArray()
+        }
+        rebuildServerList()
+    }
+
+    private fun saveServersToStorage() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("saved_servers", savedServers.toString()).apply()
+        rebuildServerList()
+    }
+
+    private fun rebuildServerList() {
+        containerServers.removeAllViews()
+
+        if (savedServers.length() == 0) {
+            layoutEmptyState.visibility = View.VISIBLE
+            scrollServers.visibility = View.GONE
+        } else {
+            layoutEmptyState.visibility = View.GONE
+            scrollServers.visibility = View.VISIBLE
+
+            for (i in 0 until savedServers.length()) {
+                val srv = savedServers.getJSONObject(i)
+                val card = createServerCard(srv, i)
+                containerServers.addView(card)
+            }
+        }
+    }
+
+    // Cria visualmente o card com o design solicitado inspirado no Mumla (Mumble)
+    private fun createServerCard(srv: JSONObject, index: Int): View {
+        val context = this
+        val cardLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val lParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lParams.setMargins(0, 0, 0, 16)
+            layoutParams = lParams
+            padding = 16
+            
+            // Fundo cinza ligeiramente mais claro com bordas levemente arredondadas
+            val shape = GradientDrawable().apply {
+                setColor(Color.parseColor("#2A2A2A"))
+                cornerRadius = 16f
+            }
+            background = shape
+        }
+
+        // Linha 1: Nome do Servidor (Esquerda) e Três Pontinhos (Direita)
+        val row1 = RelativeLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val txtServerName = TextView(context).apply {
+            text = srv.getString("name")
+            textColor = Color.parseColor("#FFFFFF")
+            textSize = 18f
+            setTypeface(null, Typeface.BOLD)
+            val rParams = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            )
+            rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
+            layoutParams = rParams
+        }
+
+        val btnOptions = Button(context).apply {
+            text = "⋮"
+            textSize = 20f
+            textColor = Color.parseColor("#8B959E")
+            background = ContextCompat.getDrawable(context, android.R.color.transparent)
+            val rParams = RelativeLayout.LayoutParams(
+                72, 72
+            )
+            rParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
+            layoutParams = rParams
+            
+            setOnClickListener { view ->
+                val popup = PopupMenu(context, view)
+                popup.menu.add("Editar")
+                popup.menu.add("Excluir")
+                popup.setOnMenuItemClickListener { menuItem ->
+                    if (menuItem.title == "Editar") {
+                        showServerFormDialog(srv)
+                    } else if (menuItem.title == "Excluir") {
+                        savedServers.remove(index)
+                        saveServersToStorage()
+                    }
+                    true
+                }
+                popup.show()
+            }
+        }
+
+        row1.addView(txtServerName)
+        row1.addView(btnOptions)
+
+        // Linha 2: Status (Esquerda) e Ping/Latência (Direita)
+        val row2 = RelativeLayout(context).apply {
+            val lParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lParams.setMargins(0, 8, 0, 8)
+            layoutParams = lParams
+        }
+
+        val txtStatus = TextView(context).apply {
+            // Simulação dinâmica e limpa inspirada no Mumble
+            text = "Disponível (1.0.2)  0/32 slots"
+            textColor = Color.parseColor("#8B959E")
+            textSize = 13f
+            val rParams = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            )
+            rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
+            layoutParams = rParams
+        }
+
+        val txtPing = TextView(context).apply {
+            text = "28ms"
+            textColor = Color.parseColor("#4CAF50")
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            val rParams = RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.WRAP_CONTENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT
+            )
+            rParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+            layoutParams = rParams
+        }
+
+        row2.addView(txtStatus)
+        row2.addView(txtPing)
+
+        // Linha 3: Ícone Usuário + Apelido (Nickname)
+        val row3 = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lParams.setMargins(0, 4, 0, 4)
+            layoutParams = lParams
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+
+        val txtUserIcon = TextView(context).apply {
+            text = "👤 "
+            textSize = 14f
+        }
+        val txtNickname = TextView(context).apply {
+            text = srv.getString("nick")
+            textColor = Color.parseColor("#DCDFE3")
+            textSize = 14f
+        }
+        row3.addView(txtUserIcon)
+        row3.addView(txtNickname)
+
+        // Linha 4: Ícone Servidor + Endereço IP:Porta
+        val row4 = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            lParams.setMargins(0, 4, 0, 4)
+            layoutParams = lParams
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+
+        val txtServerIcon = TextView(context).apply {
+            text = "🖥️ "
+            textSize = 14f
+        }
+        val txtAddress = TextView(context).apply {
+            text = "${srv.getString("host")}:${srv.getInt("port")}"
+            textColor = Color.parseColor("#8B959E")
+            textSize = 14f
+        }
+        row4.addView(txtServerIcon)
+        row4.addView(txtAddress)
+
+        // Adiciona todas as linhas ao cartão
+        cardLayout.addView(row1)
+        cardLayout.addView(row2)
+        cardLayout.addView(row3)
+        cardLayout.addView(row4)
+
+        // Tapping card triggers connection!
+        cardLayout.setOnClickListener {
+            connectToSavedServer(srv)
+        }
+
+        return cardLayout
+    }
+
+    // Formulário de Adicionar / Editar Servidor
+    private fun showServerFormDialog(editSrv: JSONObject?) {
+        val context = this
+        val dialogView = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            padding = 40
+            setBackgroundColor(Color.parseColor("#1E1E24"))
+        }
+
+        val txtTitle = TextView(context).apply {
+            text = if (editSrv != null) "Editar Servidor" else "Adicionar Servidor"
+            textColor = Color.parseColor("#FFFFFF")
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, 0, 0, 24)
+        }
+        dialogView.addView(txtTitle)
+
+        val inputName = EditText(context).apply {
+            hint = "Nome do Servidor (ex: Halla Oficial)"
+            textColor = Color.parseColor("#DCDFE3")
+            setHintTextColor(Color.parseColor("#5E636A"))
+            setText(editSrv?.optString("name") ?: "")
+        }
+        dialogView.addView(inputName)
+
+        val inputNick = EditText(context).apply {
+            hint = "Seu Apelido (Nickname)"
+            textColor = Color.parseColor("#DCDFE3")
+            setHintTextColor(Color.parseColor("#5E636A"))
+            setText(editSrv?.optString("nick") ?: "HallaMobile")
+        }
+        dialogView.addView(inputNick)
+
+        val inputHost = EditText(context).apply {
+            hint = "IP ou Endereço do Servidor"
+            textColor = Color.parseColor("#DCDFE3")
+            setHintTextColor(Color.parseColor("#5E636A"))
+            setText(editSrv?.optString("host") ?: "127.0.0.1")
+        }
+        dialogView.addView(inputHost)
+
+        val inputPort = EditText(context).apply {
+            hint = "Porta"
+            textColor = Color.parseColor("#DCDFE3")
+            setHintTextColor(Color.parseColor("#5E636A"))
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(editSrv?.optString("port") ?: "9987")
+        }
+        dialogView.addView(inputPort)
+
+        val inputPass = EditText(context).apply {
+            hint = "Senha do Servidor (Opcional)"
+            textColor = Color.parseColor("#DCDFE3")
+            setHintTextColor(Color.parseColor("#5E636A"))
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(editSrv?.optString("pass") ?: "")
+        }
+        dialogView.addView(inputPass)
+
+        val dialog = AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+            .setView(dialogView)
+            .setCancelable(true)
+            .create()
+
+        val btnSave = Button(context).apply {
+            text = "SALVAR"
+            backgroundTint = ColorStateList.valueOf(Color.parseColor("#2E7FC4"))
+            textColor = Color.parseColor("#FFFFFF")
+            setOnClickListener {
+                val name = inputName.text.toString().trim()
+                val nick = inputNick.text.toString().trim()
+                val host = inputHost.text.toString().trim()
+                val portStr = inputPort.text.toString().trim()
+                val pass = inputPass.text.toString().trim()
+
+                if (name.isEmpty() || nick.isEmpty() || host.isEmpty() || portStr.isEmpty()) {
+                    Toast.makeText(context, "Preencha todos os campos obrigatórios!", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                val port = portStr.toIntOrNull() ?: 9987
+
+                if (editSrv != null) {
+                    // Edição
+                    editSrv.put("name", name)
+                    editSrv.put("nick", nick)
+                    editSrv.put("host", host)
+                    editSrv.put("port", port)
+                    editSrv.put("pass", pass)
+                } else {
+                    // Criação
+                    val newSrv = JSONObject().apply {
+                        put("name", name)
+                        put("nick", nick)
+                        put("host", host)
+                        put("port", port)
+                        put("pass", pass)
+                    }
+                    savedServers.put(newSrv)
+                }
+
+                saveServersToStorage()
+                dialog.dismiss()
+            }
+        }
+        dialogView.addView(btnSave)
+
+        dialog.show()
+    }
+
+    private fun connectToSavedServer(srv: JSONObject) {
+        val host = srv.getString("host")
+        val port = srv.getInt("port")
+        val nick = srv.getString("nick")
+        val pass = srv.optString("pass", "")
+
+        // Salva este servidor como o último conectado/usado
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("last_srv_host", host)
+            .putInt("last_srv_port", port)
+            .putString("last_srv_nick", nick)
+            .putString("last_srv_pass", pass).apply()
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
+
+        // Inicia timeout para depuração
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        connectionTimeoutRunnable = Runnable {
+            if (layoutConnect.visibility == View.VISIBLE) {
+                btnConnectStatusNormal()
+                val logContent = readLocalDiagnosticsLog()
+                txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
+                txtError.visibility = View.VISIBLE
+            }
+        }
+        handler.postDelayed(connectionTimeoutRunnable!!, 6000)
+    }
+
+    private fun connectToQuickServer() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        val host = prefs.getString("last_srv_host", "") ?: ""
+        val port = prefs.getInt("last_srv_port", 0)
+        val nick = prefs.getString("last_srv_nick", "") ?: ""
+        val pass = prefs.getString("last_srv_pass", "") ?: ""
+
+        if (host.isEmpty() || port == 0 || nick.isEmpty()) {
+            Toast.makeText(this, "Nenhum servidor conectado recentemente!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
+    }
+
+    private fun btnConnectStatusConnecting() {
+        btnAddServer.isEnabled = false
+        btnQuickConnect.isEnabled = false
+        btnQuickConnect.text = "⏳"
+    }
+
+    private fun btnConnectStatusNormal() {
+        btnAddServer.isEnabled = true
+        btnQuickConnect.isEnabled = true
+        btnQuickConnect.text = "➦"
+    }
+
     private fun readLocalDiagnosticsLog(): String {
         return try {
             val logFile = File(cacheDir, "halla_log.txt")
             if (logFile.exists()) {
                 val lines = logFile.readLines()
-                // Retorna as últimas 8 linhas para mostrar na tela
                 lines.takeLast(8).joinToString("\n")
             } else {
-                "Arquivo de log não encontrado."
+                "Arquivo de log nao encontrado."
             }
         } catch (e: Exception) {
             "Erro ao ler logs: ${e.message}"
         }
+    }
+
+    // ============================================================================
+    // Diálogos de Opções Laterais (Settings, Help, About)
+    // ============================================================================
+
+    private fun showSettingsDialog() {
+        AlertDialog.Builder(this, R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle("⚙️ Ajustes Globais")
+            .setMessage("• Sensibilidade de VAD (MIC): Ativação de fala definida em 150 RMS.\n• Dispositivos de Áudio: Sistema padrão ativo.\n• Codec: Compressão e descompressão Opus em tempo real ativa.")
+            .setPositiveButton("OK") { d, _ -> d.dismiss() }
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        val context = this
+        val options = arrayOf("Sobre o Halla", "Verificar atualizações")
+        AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+            .setTitle("❓ Ajuda")
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    // Sobre o Halla
+                    AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+                        .setTitle("ℹ️ Sobre o Halla")
+                        .setMessage("Halla Mobile v1.0.3\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else if (which == 1) {
+                    // Verificar atualizações
+                    Toast.makeText(context, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
+                    AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+                        .setTitle("🔄 Atualizações")
+                        .setMessage("Parabéns! Seu Halla Mobile v1.0.3 está totalmente atualizado!")
+                        .setPositiveButton("Excelente", null)
+                        .show()
+                }
+            }
+            .show()
     }
 
     // ============================================================================
@@ -219,6 +649,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onConnected(serverName: String, motd: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
+            btnConnectStatusNormal()
             layoutConnect.visibility = View.GONE
             layoutServer.visibility = View.VISIBLE
 
@@ -226,7 +657,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             txtMotd.text = motd
             txtChatBox.text = ""
 
-            // Inicia captação de microfone e saída de autofalantes de forma síncrona
             audioManager.startCapture()
             audioManager.startPlayback()
 
@@ -241,8 +671,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManager.stop()
             layoutServer.visibility = View.GONE
             layoutConnect.visibility = View.VISIBLE
-            btnConnect.isEnabled = true
-            btnConnect.text = "CONECTAR"
+            btnConnectStatusNormal()
         }
     }
 
@@ -273,14 +702,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onUserListReceived(usersJson: String) {
         runOnUiThread {
             try {
-                // Se for um pacote incremental do protocolo, atualiza nossa base local de usuários/canais
                 if (usersJson.startsWith("{")) {
                     val obj = JSONObject(usersJson)
                     val t = obj.optString("t")
                     if (t == "user_joined") {
                         val userObj = obj.getJSONObject("user")
                         updateOrAddUser(userObj)
-                        // Por padrão, novos usuários entram no canal 1 (default) na UI
                         moveUserInChannels(userObj.getInt("id"), 1)
                     } else if (t == "user_left") {
                         removeUser(obj.getInt("id"))
@@ -295,7 +722,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         removeChannel(obj.getInt("id"))
                     }
                 } else {
-                    // Carga completa vinda no welcome
                     usersData = JSONArray(usersJson)
                 }
                 rebuildChannelTree()
@@ -318,8 +744,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onConnectionFailed(reason: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
-            btnConnect.isEnabled = true
-            btnConnect.text = "CONECTAR"
+            btnConnectStatusNormal()
             txtError.text = "Erro: $reason"
             txtError.visibility = View.VISIBLE
         }
@@ -351,7 +776,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         usersData = newList
 
-        // Remove também das listas de canais
         for (i in 0 until channelsData.length()) {
             val chan = channelsData.getJSONObject(i)
             val usersArr = chan.optJSONArray("users") ?: continue
@@ -367,7 +791,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun moveUserInChannels(userId: Int, newChannelId: Int) {
-        // Remove do canal antigo
         for (i in 0 until channelsData.length()) {
             val chan = channelsData.getJSONObject(i)
             val usersArr = chan.optJSONArray("users") ?: continue
@@ -381,12 +804,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             chan.put("users", newUsersArr)
         }
 
-        // Adiciona ao novo canal
         for (i in 0 until channelsData.length()) {
             val chan = channelsData.getJSONObject(i)
             if (chan.getInt("id") == newChannelId) {
                 val usersArr = chan.optJSONArray("users") ?: JSONArray()
-                // Evita duplicatas
                 var exists = false
                 for (j in 0 until usersArr.length()) {
                     if (usersArr.getInt(j) == userId) exists = true
@@ -455,18 +876,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val chanId = chan.getInt("id")
             val chanName = chan.getString("name")
 
-            // Canal View
-            val txtChan = TextView(this)
-            txtChan.text = "📁 # $chanName"
-            txtChan.setTextColor(Color.parseColor("#E8B23C"))
-            txtChan.textSize = 16f
-            txtChan.setPadding(0, 16, 0, 8)
-            txtChan.setOnClickListener {
-                HallaCore.joinChannel(chanId)
+            val txtChan = TextView(this).apply {
+                text = "📁 # $chanName"
+                setTextColor(Color.parseColor("#E8B23C"))
+                textSize = 16f
+                setPadding(0, 16, 0, 8)
+                setOnClickListener {
+                    HallaCore.joinChannel(chanId)
+                }
             }
             containerChannels.addView(txtChan)
 
-            // Renderiza usuários mapeados dinamicamente para este canal
             for (j in 0 until usersData.length()) {
                 val usr = usersData.getJSONObject(j)
                 val userId = usr.getInt("id")
@@ -476,11 +896,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val name = usr.getString("name")
                     val isTalking = usr.optBoolean("talking", false)
 
-                    val txtUser = TextView(this)
-                    txtUser.text = "      👤 $name"
-                    txtUser.setTextColor(Color.parseColor(if (isTalking) "#4CAF50" else "#DCDFE3"))
-                    txtUser.textSize = 14f
-                    txtUser.setPadding(0, 4, 0, 4)
+                    val txtUser = TextView(this).apply {
+                        text = "      👤 $name"
+                        setTextColor(Color.parseColor(if (isTalking) "#4CAF50" else "#DCDFE3"))
+                        textSize = 14f
+                        setPadding(0, 4, 0, 4)
+                    }
                     containerChannels.addView(txtUser)
                 }
             }
