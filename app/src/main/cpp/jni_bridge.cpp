@@ -28,6 +28,20 @@ static jmethodID g_onChatMessageMethod = nullptr;
 static jmethodID g_onAudioFrameMethod = nullptr;
 static jmethodID g_onConnectionFailedMethod = nullptr;
 
+static std::string g_cachePath = "";
+
+// Logging local para depuração em tempo real no dispositivo
+void writeLog(const std::string& msg) {
+    LOGI("%s", msg.c_str());
+    if (g_cachePath.empty()) return;
+    std::string path = g_cachePath + "/halla_log.txt";
+    FILE* f = fopen(path.c_str(), "a");
+    if (f) {
+        fprintf(f, "[C++] %s\n", msg.c_str());
+        fclose(f);
+    }
+}
+
 // Exception-safe helper conversions
 int safeStoi(const std::string& str) {
     int val = 0;
@@ -106,25 +120,36 @@ std::string jsonExtractArray(const std::string& json, const std::string& key) {
 
 // Thread-safe helpers to invoke JNI callbacks from background C++ threads
 void invokeOnConnected(const std::string& serverName, const std::string& motd) {
-    if (!g_vm || !g_coreClass || !g_onConnectedMethod) return;
+    writeLog("invokeOnConnected chamada!");
+    if (!g_vm || !g_coreClass || !g_onConnectedMethod) {
+        writeLog("invokeOnConnected abortada: g_vm, g_coreClass ou g_onConnectedMethod nulo!");
+        return;
+    }
     JNIEnv* env = nullptr;
     bool attached = false;
     jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (res == JNI_EDETACHED) {
+        writeLog("invokeOnConnected: Thread desconectada do JVM, anexando...");
         g_vm->AttachCurrentThread(&env, nullptr);
         attached = true;
     }
     if (env) {
+        writeLog("invokeOnConnected: Invocando triggerOnConnected no Kotlin...");
         jstring jName = env->NewStringUTF(serverName.c_str());
         jstring jMotd = env->NewStringUTF(motd.c_str());
         env->CallStaticVoidMethod(g_coreClass, g_onConnectedMethod, jName, jMotd);
         env->DeleteLocalRef(jName);
         env->DeleteLocalRef(jMotd);
+        writeLog("invokeOnConnected: triggerOnConnected invocado com sucesso!");
     }
-    if (attached) g_vm->DetachCurrentThread();
+    if (attached) {
+        writeLog("invokeOnConnected: Desanexando thread...");
+        g_vm->DetachCurrentThread();
+    }
 }
 
 void invokeOnDisconnected() {
+    writeLog("invokeOnDisconnected chamada!");
     if (!g_vm || !g_coreClass || !g_onDisconnectedMethod) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -140,6 +165,7 @@ void invokeOnDisconnected() {
 }
 
 void invokeOnChannelList(const std::string& channelsJson) {
+    writeLog("invokeOnChannelList chamada!");
     if (!g_vm || !g_coreClass || !g_onChannelListMethod) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -157,6 +183,7 @@ void invokeOnChannelList(const std::string& channelsJson) {
 }
 
 void invokeOnUserList(const std::string& usersJson) {
+    writeLog("invokeOnUserList chamada!");
     if (!g_vm || !g_coreClass || !g_onUserListMethod) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -174,6 +201,7 @@ void invokeOnUserList(const std::string& usersJson) {
 }
 
 void invokeOnChatMessage(const std::string& fromName, const std::string& text) {
+    writeLog("invokeOnChatMessage chamada!");
     if (!g_vm || !g_coreClass || !g_onChatMessageMethod) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -211,6 +239,7 @@ void invokeOnAudioFrame(int fromUserId, const char* data, int size) {
 }
 
 void invokeOnConnectionFailed(const std::string& reason) {
+    writeLog("invokeOnConnectionFailed chamada: " + reason);
     if (!g_vm || !g_coreClass || !g_onConnectionFailedMethod) return;
     JNIEnv* env = nullptr;
     bool attached = false;
@@ -307,16 +336,18 @@ private:
     }
 
     void tcpLoop(const std::string& hostStr, int port) {
-        LOGI("TCP Loop: Conectando a %s:%d", hostStr.c_str(), port);
+        writeLog("tcpLoop iniciado para " + hostStr + ":" + std::to_string(port));
         
         m_tcpSocket = socket(AF_INET, SOCK_STREAM, 0);
         if (m_tcpSocket == -1) {
+            writeLog("Erro: Nao foi possivel criar socket TCP");
             invokeOnConnectionFailed("Could not create socket");
             return;
         }
 
         struct hostent* host = gethostbyname(hostStr.c_str());
         if (!host) {
+            writeLog("Erro: Nao foi possivel resolver host TCP");
             invokeOnConnectionFailed("Could not resolve host");
             close(m_tcpSocket);
             m_tcpSocket = -1;
@@ -330,13 +361,14 @@ private:
         memcpy(&servAddr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
 
         if (connect(m_tcpSocket, (struct sockaddr*)&servAddr, sizeof(servAddr)) < 0) {
+            writeLog("Erro: Conexao TCP recusada ou timeout");
             invokeOnConnectionFailed("Connection timed out or refused");
             close(m_tcpSocket);
             m_tcpSocket = -1;
             return;
         }
 
-        LOGI("TCP Conectado! Enviando pacote Hello...");
+        writeLog("TCP Conectado! Enviando pacote Hello...");
 
         std::string hello = "{\"t\":\"hello\",\"proto\":3,\"uid\":\"HALLAmobile0000000000000000000=\",\"nick\":\"" 
                             + m_nick + "\",\"pass\":\"" + m_pass + "\",\"ver\":\"1.0.0-mobile\",\"platform\":\"Android\"}\n";
@@ -349,7 +381,7 @@ private:
         while (m_connected) {
             int n = recv(m_tcpSocket, tempBuf, sizeof(tempBuf) - 1, 0);
             if (n <= 0) {
-                LOGI("TCP conexao fechada pelo servidor.");
+                writeLog("TCP conexao fechada pelo servidor remoto.");
                 break;
             }
             tempBuf[n] = '\0';
@@ -363,7 +395,7 @@ private:
             }
         }
 
-        LOGI("TCP Loop finalizado. Desconectando...");
+        writeLog("TCP Loop finalizado.");
         invokeOnDisconnected();
         disconnect();
     }
@@ -378,11 +410,14 @@ private:
 
     void handleTcpPacket(const std::string& line) {
         try {
-            LOGI("Received TCP packet length: %zu", line.length());
+            writeLog("Recebido pacote TCP de tamanho: " + std::to_string(line.length()));
             std::string t = jsonExtractString(line, "t");
+            writeLog("Tipo de pacote extraído (t): " + t);
 
             if (t == "error") {
-                invokeOnConnectionFailed(jsonExtractString(line, "msg"));
+                std::string msg = jsonExtractString(line, "msg");
+                writeLog("Erro do servidor recebido: " + msg);
+                invokeOnConnectionFailed(msg);
                 disconnect();
                 return;
             }
@@ -392,6 +427,7 @@ private:
                 std::string motd;
                 
                 size_t srvPos = line.find("\"server\"");
+                writeLog("welcome: srvPos = " + std::to_string(srvPos));
                 if (srvPos != std::string::npos) {
                     std::string srvObj = line.substr(srvPos);
                     serverName = jsonExtractString(srvObj, "name");
@@ -401,16 +437,20 @@ private:
                 if (serverName.empty()) {
                     serverName = m_host;
                 }
+                writeLog("welcome: serverName = " + serverName + ", motd = " + motd);
                 
                 std::string channelsJson = jsonExtractArray(line, "channels");
                 std::string usersJson = jsonExtractArray(line, "users");
+                writeLog("welcome: channels length = " + std::to_string(channelsJson.length()) + ", users length = " + std::to_string(usersJson.length()));
 
                 size_t voicePos = line.find("\"voice\"");
+                writeLog("welcome: voicePos = " + std::to_string(voicePos));
                 if (voicePos != std::string::npos) {
                     std::string voiceObj = line.substr(voicePos);
                     m_udpPort = jsonExtractInt(voiceObj, "udp");
                     m_voiceToken = safeStoul(jsonExtractString(voiceObj, "token"));
                 }
+                writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
 
                 invokeOnConnected(serverName, motd);
                 invokeOnChannelList(channelsJson);
@@ -423,6 +463,7 @@ private:
             if (t == "voice_token") {
                 m_udpPort = jsonExtractInt(line, "udp");
                 m_voiceToken = safeStoul(jsonExtractString(line, "token"));
+                writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
                 setupUdpVoice();
                 return;
             }
@@ -438,13 +479,14 @@ private:
                 invokeOnUserList(line);
             }
         } catch (const std::exception& e) {
-            LOGE("Exception caught inside handleTcpPacket: %s", e.what());
+            writeLog("Excecao na handleTcpPacket: " + std::string(e.what()));
         } catch (...) {
-            LOGE("Unknown exception caught inside handleTcpPacket");
+            writeLog("Excecao desconhecida na handleTcpPacket");
         }
     }
 
     void setupUdpVoice() {
+        writeLog("setupUdpVoice iniciado");
         if (m_udpSocket != -1) {
             close(m_udpSocket);
             m_udpSocket = -1;
@@ -452,7 +494,7 @@ private:
 
         m_udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
         if (m_udpSocket == -1) {
-            LOGE("Erro ao criar socket UDP");
+            writeLog("Erro: setupUdpVoice nao conseguiu criar socket UDP");
             return;
         }
 
@@ -467,11 +509,11 @@ private:
         m_udpThread = std::thread(&HallaClientCore::udpLoop, this);
 
         sendVoiceFrame(nullptr, 0, 1);
-        LOGI("Socket UDP configurado com sucesso na porta %d com token %u", m_udpPort, m_voiceToken);
+        writeLog("Socket UDP configurado com sucesso na porta " + std::to_string(m_udpPort) + " com token " + std::to_string(m_voiceToken));
     }
 
     void udpLoop() {
-        LOGI("UDP loop de escuta de voz iniciado...");
+        writeLog("udpLoop iniciado");
         char buf[2048];
         struct sockaddr_in sender;
         socklen_t len = sizeof(sender);
@@ -489,7 +531,7 @@ private:
 
             invokeOnAudioFrame(fromId, buf + 10, n - 10);
         }
-        LOGI("UDP loop de voz finalizado.");
+        writeLog("udpLoop finalizado");
     }
 
     std::string m_host;
@@ -512,16 +554,21 @@ private:
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass) {
+Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath) {
     const char* nativeHost = env->GetStringUTFChars(host, nullptr);
     const char* nativeNick = env->GetStringUTFChars(nick, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
+    const char* nativeCache = env->GetStringUTFChars(cachePath, nullptr);
+
+    g_cachePath = nativeCache;
+    writeLog("connectToServer: g_cachePath configurado para " + g_cachePath);
 
     HallaClientCore::getInstance().connectToServer(nativeHost, port, nativeNick, nativePass);
 
     env->ReleaseStringUTFChars(host, nativeHost);
     env->ReleaseStringUTFChars(nick, nativeNick);
     env->ReleaseStringUTFChars(pass, nativePass);
+    env->ReleaseStringUTFChars(cachePath, nativeCache);
 }
 
 JNIEXPORT void JNICALL

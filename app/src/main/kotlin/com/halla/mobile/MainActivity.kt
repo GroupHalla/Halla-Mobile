@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -50,9 +52,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var channelsData = JSONArray()
     private var usersData = JSONArray()
 
+    private val handler = Handler(Looper.getMainLooper())
+    private var connectionTimeoutRunnable: Runnable? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Limpa o log de depuração antigo na inicialização
+        try {
+            val logFile = File(cacheDir, "halla_log.txt")
+            if (logFile.exists()) logFile.delete()
+        } catch (e: Exception) {}
 
         // Inicializa Componentes da UI
         layoutConnect = findViewById(R.id.layoutConnect)
@@ -123,7 +134,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnConnect.text = "CONECTANDO..."
 
             val port = portStr.toIntOrNull() ?: 9987
-            HallaCore.connectToServer(host, port, nick, pass)
+            
+            // Inicia conexão passando a pasta de cache para escrita de logs C++ JNI
+            HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath)
+
+            // Inicia timer de diagnóstico de 6 segundos
+            connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+            connectionTimeoutRunnable = Runnable {
+                if (layoutConnect.visibility == View.VISIBLE) {
+                    btnConnect.isEnabled = true
+                    btnConnect.text = "CONECTAR"
+                    
+                    // Lê o arquivo de log do C++ e mostra os últimos acontecimentos na tela do usuário
+                    val logContent = readLocalDiagnosticsLog()
+                    txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
+                    txtError.visibility = View.VISIBLE
+                }
+            }
+            handler.postDelayed(connectionTimeoutRunnable!!, 6000)
         }
 
         btnDisconnect.setOnClickListener {
@@ -166,6 +194,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         super.onDestroy()
         HallaCore.setCallbacks(null)
         audioManager.stop()
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+    }
+
+    private fun readLocalDiagnosticsLog(): String {
+        return try {
+            val logFile = File(cacheDir, "halla_log.txt")
+            if (logFile.exists()) {
+                val lines = logFile.readLines()
+                // Retorna as últimas 8 linhas para mostrar na tela
+                lines.takeLast(8).joinToString("\n")
+            } else {
+                "Arquivo de log não encontrado."
+            }
+        } catch (e: Exception) {
+            "Erro ao ler logs: ${e.message}"
+        }
     }
 
     // ============================================================================
@@ -173,6 +217,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // ============================================================================
 
     override fun onConnected(serverName: String, motd: String) {
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
             layoutConnect.visibility = View.GONE
             layoutServer.visibility = View.VISIBLE
@@ -191,6 +236,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onDisconnected() {
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
             audioManager.stop()
             layoutServer.visibility = View.GONE
@@ -224,7 +270,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     } else if (t == "user_left") {
                         removeUser(obj.getInt("id"))
                     } else if (t == "user_moved") {
-                        moveUser(obj.getInt("id"), obj.getInt("channel"))
+                        moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
                     } else if (t == "user_state") {
                         updateUserState(obj)
                     }
@@ -246,11 +292,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray) {
-        // Roteia diretamente para o AudioManager de baixa latência
         audioManager.handleIncomingVoice(pcmData)
     }
 
     override fun onConnectionFailed(reason: String) {
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
             btnConnect.isEnabled = true
             btnConnect.text = "CONECTAR"
@@ -284,13 +330,44 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         usersData = newList
+
+        // Remove também das listas de canais
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            val usersArr = chan.optJSONArray("users") ?: continue
+            val newUsersArr = JSONArray()
+            for (j in 0 until usersArr.length()) {
+                val id = usersArr.getInt(j)
+                if (id != userId) {
+                    newUsersArr.put(id)
+                }
+            }
+            chan.put("users", newUsersArr)
+        }
     }
 
-    private fun moveUser(userId: Int, newChannelId: Int) {
-        for (i in 0 until usersData.length()) {
-            val u = usersData.getJSONObject(i)
-            if (u.getInt("id") == userId) {
-                u.put("channelId", newChannelId)
+    private fun moveUserInChannels(userId: Int, newChannelId: Int) {
+        // Remove do canal antigo
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            val usersArr = chan.optJSONArray("users") ?: continue
+            val newUsersArr = JSONArray()
+            for (j in 0 until usersArr.length()) {
+                val id = usersArr.getInt(j)
+                if (id != userId) {
+                    newUsersArr.put(id)
+                }
+            }
+            chan.put("users", newUsersArr)
+        }
+
+        // Adiciona ao novo canal
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            if (chan.getInt("id") == newChannelId) {
+                val usersArr = chan.optJSONArray("users") ?: JSONArray()
+                usersArr.put(userId)
+                chan.put("users", usersArr)
                 break
             }
         }
@@ -305,6 +382,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
+    }
+
+    private fun getChannelOfUser(userId: Int): Int {
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            val usersArr = chan.optJSONArray("users") ?: continue
+            for (j in 0 until usersArr.length()) {
+                if (usersArr.getInt(j) == userId) {
+                    return chan.getInt("id")
+                }
+            }
+        }
+        return 0
     }
 
     private fun rebuildChannelTree() {
@@ -326,12 +416,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
             containerChannels.addView(txtChan)
 
-            // Renderiza usuários dentro deste canal
+            // Renderiza usuários mapeados dinamicamente para este canal
             for (j in 0 until usersData.length()) {
                 val usr = usersData.getJSONObject(j)
-                val userChanId = usr.optInt("channelId", 0)
+                val userId = usr.getInt("id")
+                val userChanId = getChannelOfUser(userId)
                 
-                // Algumas mensagens do protocolo salvam de forma diferente
                 if (userChanId == chanId) {
                     val name = usr.getString("name")
                     val isTalking = usr.optBoolean("talking", false)
