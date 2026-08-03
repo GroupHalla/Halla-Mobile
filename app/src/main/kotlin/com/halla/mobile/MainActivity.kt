@@ -254,7 +254,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             )
             lParams.setMargins(0, 0, 0, 16)
             layoutParams = lParams
-            padding = 16
+            setPadding(32, 32, 32, 32)
             
             // Fundo cinza ligeiramente mais claro com bordas levemente arredondadas
             val shape = GradientDrawable().apply {
@@ -272,9 +272,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             )
         }
 
-        val txtServerName = TextView(context).apply {
+        val txtSrvTitle = TextView(context).apply {
             text = srv.getString("name")
-            textColor = Color.parseColor("#FFFFFF")
+            setTextColor(Color.parseColor("#FFFFFF"))
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
             val rParams = RelativeLayout.LayoutParams(
@@ -288,7 +288,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnOptions = Button(context).apply {
             text = "⋮"
             textSize = 20f
-            textColor = Color.parseColor("#8B959E")
+            setTextColor(Color.parseColor("#8B959E"))
             background = ContextCompat.getDrawable(context, android.R.color.transparent)
             val rParams = RelativeLayout.LayoutParams(
                 72, 72
@@ -314,7 +314,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
 
-        row1.addView(txtServerName)
+        row1.addView(txtSrvTitle)
         row1.addView(btnOptions)
 
         // Linha 2: Status (Esquerda) e Ping/Latência (Direita)
@@ -328,9 +328,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtStatus = TextView(context).apply {
-            // Simulação dinâmica e limpa inspirada no Mumble
             text = "Disponível (1.0.2)  0/32 slots"
-            textColor = Color.parseColor("#8B959E")
+            setTextColor(Color.parseColor("#8B959E"))
             textSize = 13f
             val rParams = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
@@ -342,7 +341,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val txtPing = TextView(context).apply {
             text = "28ms"
-            textColor = Color.parseColor("#4CAF50")
+            setTextColor(Color.parseColor("#4CAF50"))
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             val rParams = RelativeLayout.LayoutParams(
@@ -374,7 +373,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val txtNickname = TextView(context).apply {
             text = srv.getString("nick")
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             textSize = 14f
         }
         row3.addView(txtUserIcon)
@@ -398,7 +397,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val txtAddress = TextView(context).apply {
             text = "${srv.getString("host")}:${srv.getInt("port")}"
-            textColor = Color.parseColor("#8B959E")
+            setTextColor(Color.parseColor("#8B959E"))
             textSize = 14f
         }
         row4.addView(txtServerIcon)
@@ -423,13 +422,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val context = this
         val dialogView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            padding = 40
+            setPadding(40, 40, 40, 40)
             setBackgroundColor(Color.parseColor("#1E1E24"))
         }
 
         val txtTitle = TextView(context).apply {
             text = if (editSrv != null) "Editar Servidor" else "Adicionar Servidor"
-            textColor = Color.parseColor("#FFFFFF")
+            setTextColor(Color.parseColor("#FFFFFF"))
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, 0, 0, 24)
@@ -438,7 +437,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputName = EditText(context).apply {
             hint = "Nome do Servidor (ex: Halla Oficial)"
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             setHintTextColor(Color.parseColor("#5E636A"))
             setText(editSrv?.optString("name") ?: "")
         }
@@ -446,7 +445,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputNick = EditText(context).apply {
             hint = "Seu Apelido (Nickname)"
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             setHintTextColor(Color.parseColor("#5E636A"))
             setText(editSrv?.optString("nick") ?: "HallaMobile")
         }
@@ -454,7 +453,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputHost = EditText(context).apply {
             hint = "IP ou Endereço do Servidor"
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             setHintTextColor(Color.parseColor("#5E636A"))
             setText(editSrv?.optString("host") ?: "127.0.0.1")
         }
@@ -462,7 +461,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputPort = EditText(context).apply {
             hint = "Porta"
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             setHintTextColor(Color.parseColor("#5E636A"))
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(editSrv?.optString("port") ?: "9987")
@@ -471,22 +470,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputPass = EditText(context).apply {
             hint = "Senha do Servidor (Opcional)"
-            textColor = Color.parseColor("#DCDFE3")
+            setTextColor(Color.parseColor("#DCDFE3"))
             setHintTextColor(Color.parseColor("#5E636A"))
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(editSrv?.optString("pass") ?: "")
         }
         dialogView.addView(inputPass)
 
-        val dialog = AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+        val dialog = AlertDialog.Builder(context)
             .setView(dialogView)
             .setCancelable(true)
             .create()
 
         val btnSave = Button(context).apply {
             text = "SALVAR"
-            backgroundTint = ColorStateList.valueOf(Color.parseColor("#2E7FC4"))
-            textColor = Color.parseColor("#FFFFFF")
+            setBackgroundColor(Color.parseColor("#2E7FC4"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
                 val name = inputName.text.toString().trim()
                 val nick = inputNick.text.toString().trim()
@@ -609,7 +608,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // ============================================================================
 
     private fun showSettingsDialog() {
-        AlertDialog.Builder(this, R.style.Theme_AppCompat_Dialog_Alert)
+        AlertDialog.Builder(this)
             .setTitle("⚙️ Ajustes Globais")
             .setMessage("• Sensibilidade de VAD (MIC): Ativação de fala definida em 150 RMS.\n• Dispositivos de Áudio: Sistema padrão ativo.\n• Codec: Compressão e descompressão Opus em tempo real ativa.")
             .setPositiveButton("OK") { d, _ -> d.dismiss() }
@@ -619,12 +618,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showHelpDialog() {
         val context = this
         val options = arrayOf("Sobre o Halla", "Verificar atualizações")
-        AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+        AlertDialog.Builder(context)
             .setTitle("❓ Ajuda")
             .setItems(options) { _, which ->
                 if (which == 0) {
                     // Sobre o Halla
-                    AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+                    AlertDialog.Builder(context)
                         .setTitle("ℹ️ Sobre o Halla")
                         .setMessage("Halla Mobile v1.0.3\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
                         .setPositiveButton("OK", null)
@@ -632,7 +631,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 } else if (which == 1) {
                     // Verificar atualizações
                     Toast.makeText(context, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
-                    AlertDialog.Builder(context, R.style.Theme_AppCompat_Dialog_Alert)
+                    AlertDialog.Builder(context)
                         .setTitle("🔄 Atualizações")
                         .setMessage("Parabéns! Seu Halla Mobile v1.0.3 está totalmente atualizado!")
                         .setPositiveButton("Excelente", null)
