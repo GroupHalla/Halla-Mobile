@@ -8,14 +8,14 @@
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#121212">
+        android:background="#0B0F17">
 
         <!-- Barra Superior (Top Bar) -->
         <RelativeLayout
             android:id="@+id/topAppBar"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:background="#1E1E24"
+            android:background="#0F172A"
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
@@ -23,7 +23,7 @@
                 android:id="@+id/btnMenu"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_alignParentStart="true"
+                android:layout_parentStart="true"
                 android:layout_centerVertical="true"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:text="≡"
@@ -133,29 +133,45 @@
         </RelativeLayout>
 
         <!-- ============================================================================ -->
-        <!-- TELA DO SERVIDOR CONECTADO (REDESENHADA - ESTILO TS3/MUMLA)                  -->
+        <!-- TELA DO SERVIDOR CONECTADO (ESTILO PREMIUM CARDS E DOCK FLUTUANTE)           -->
         <!-- ============================================================================ -->
         <RelativeLayout
             android:id="@+id/layoutServer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_below="@+id/topAppBar"
-            android:background="#121212"
+            android:background="#0B0F17"
             android:visibility="gone">
 
-            <!-- Header discreto com Desconectar no canto direito -->
+            <!-- Card de Destaque do Servidor (Top Banner Gradiente) -->
             <RelativeLayout
-                android:id="@+id/serverHeader"
+                android:id="@+id/layoutServerBanner"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="#1E1E24"
-                android:padding="12dp">
+                android:layout_height="100dp"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="12dp"
+                android:padding="16dp">
 
-                <LinearLayout
+                <!-- Logo Grande -->
+                <TextView
+                    android:id="@+id/txtBannerLogo"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_alignParentStart="true"
-                    android:layout_toStartOf="@+id/btnDisconnect"
+                    android:layout_centerVertical="true"
+                    android:text="🎙️"
+                    android:textSize="42sp" />
+
+                <!-- Textos -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_centerVertical="true"
+                    android:layout_marginStart="16dp"
+                    android:layout_toEndOf="@+id/txtBannerLogo"
+                    android:layout_toStartOf="@+id/btnBannerSettings"
                     android:orientation="vertical">
 
                     <TextView
@@ -163,7 +179,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Servidor Halla"
-                        android:textColor="#DCDFE3"
+                        android:textColor="#FFFFFF"
                         android:textSize="18sp"
                         android:textStyle="bold" />
 
@@ -171,33 +187,115 @@
                         android:id="@+id/txtActiveMotd"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bem-vindo ao servidor!"
-                        android:textColor="#8B959E"
+                        android:layout_marginTop="2dp"
+                        android:text="Bem-vindo ao servidor halla!"
+                        android:textColor="#94A3B8"
                         android:textSize="12sp" />
+
+                    <!-- Badges de Status -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <!-- Badge Online -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="#121212"
+                            android:paddingStart="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingEnd="6dp"
+                            android:paddingBottom="2dp"
+                            android:text="🟢 Online"
+                            android:textColor="#22C55E"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+
+                        <!-- Badge Membros -->
+                        <TextView
+                            android:id="@+id/txtActiveUsersCountBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:background="#121212"
+                            android:paddingStart="6dp"
+                            android:paddingTop="2dp"
+                            android:paddingEnd="6dp"
+                            android:paddingBottom="2dp"
+                            android:text="👤 2 membros"
+                            android:textColor="#94A3B8"
+                            android:textSize="10sp"
+                            android:textStyle="bold" />
+
+                    </LinearLayout>
+
                 </LinearLayout>
 
+                <!-- Ícone de Engrenagem / Opções -->
                 <Button
-                    android:id="@+id/btnDisconnect"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:id="@+id/btnBannerSettings"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
                     android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
+                    android:layout_alignParentTop="true"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:text="🔌"
-                    android:textColor="#D9534F"
+                    android:text="⚙️"
+                    android:textColor="#94A3B8"
                     android:textSize="20sp" />
 
             </RelativeLayout>
 
-            <!-- Área Principal (80% de Altura) - Árvore de Canais e Usuários -->
+            <!-- Cabeçalho da Categoria: CANAIS DE VOZ -->
+            <LinearLayout
+                android:id="@+id/layoutCategoryHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_below="@+id/layoutServerBanner"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🌀 "
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CANAIS DE VOZ"
+                    android:textColor="#3B82F6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtCategoryChannelsCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="[2]"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <!-- Lista de Cartões de Canais e Usuários -->
             <ScrollView
                 android:id="@+id/scrollChannels"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_above="@+id/layoutBottomBar"
-                android:layout_below="@+id/serverHeader"
-                android:layout_margin="12dp"
-                android:scrollbars="vertical">
+                android:layout_below="@+id/layoutCategoryHeader"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="16dp"
+                android:scrollbars="none">
 
                 <LinearLayout
                     android:id="@+id/containerChannels"
@@ -207,73 +305,169 @@
 
             </ScrollView>
 
-            <!-- Barra de Ação Inferior Fixa (Footer) -->
+            <!-- Barra de Ação Inferior (DOCK FLUTUANTE DE CONTROLES - ELEGANTE) -->
             <LinearLayout
                 android:id="@+id/layoutBottomBar"
                 android:layout_width="match_parent"
-                android:layout_height="64dp"
+                android:layout_height="72dp"
                 android:layout_alignParentBottom="true"
-                android:background="#1E1E24"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="16dp"
+                android:background="#1E293B"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp">
+                android:paddingStart="4dp"
+                android:paddingEnd="4dp">
 
-                <!-- Botão 1: Microfone (Mute) -->
-                <Button
-                    android:id="@+id/btnMuteMic"
+                <!-- Módulo 1: Microfone -->
+                <LinearLayout
+                    android:id="@+id/btnMuteMicModule"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:text="🎙️"
-                    android:textColor="#FFFFFF"
-                    android:textSize="18sp" />
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center"
+                    android:orientation="vertical">
 
-                <!-- Botão 2: Fone/Deafen (Mute som do app) -->
-                <Button
-                    android:id="@+id/btnDeafen"
+                    <TextView
+                        android:id="@+id/txtMicIcon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🎙️"
+                        android:textColor="#FFFFFF"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/txtMicText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Mute"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- Módulo 2: Fone de Ouvido -->
+                <LinearLayout
+                    android:id="@+id/btnDeafenModule"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:text="🎧"
-                    android:textColor="#FFFFFF"
-                    android:textSize="18sp" />
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center"
+                    android:orientation="vertical">
 
-                <!-- Botão 3: PTT / Botão Central Azul de Acionamento -->
-                <Button
-                    android:id="@+id/btnPtt"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1.5"
-                    android:backgroundTint="#2563EB"
-                    android:text="FALANDO"
-                    android:textColor="#FFFFFF"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/txtDeafenIcon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🎧"
+                        android:textColor="#FFFFFF"
+                        android:textSize="18sp" />
 
-                <!-- Botão 4: Balão de Chat (Slide-up Bottom Sheet) -->
-                <Button
-                    android:id="@+id/btnOpenChat"
+                    <TextView
+                        android:id="@+id/txtDeafenText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Fones"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- Módulo 3: Destaque Central PTT Azul Brilhante -->
+                <LinearLayout
+                    android:id="@+id/btnPttModule"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1.4"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="#3B82F6"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="〰️"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/txtPttText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="FALANDO"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- Módulo 4: Balão de Fala -->
+                <LinearLayout
+                    android:id="@+id/btnOpenChatModule"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:text="💬"
-                    android:textColor="#FFFFFF"
-                    android:textSize="18sp" />
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center"
+                    android:orientation="vertical">
 
-                <!-- Botão 5: Record/Config -->
-                <Button
-                    android:id="@+id/btnRecord"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="💬"
+                        android:textColor="#FFFFFF"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Mensagens"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
+
+                <!-- Módulo 5: Gravar -->
+                <LinearLayout
+                    android:id="@+id/btnRecordModule"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:text="🔴"
-                    android:textColor="#D9534F"
-                    android:textSize="18sp" />
+                    android:background="?android:attr/selectableItemBackground"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/txtRecordIcon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔴"
+                        android:textColor="#D9534F"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:id="@+id/txtRecordText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Gravar"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
 
             </LinearLayout>
 
@@ -285,9 +479,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="350dp"
                 android:layout_alignParentBottom="true"
-                android:background="#1E1E24"
+                android:background="#1E293B"
                 android:clickable="true"
-                android:elevation="16dp"
+                android:elevation="24dp"
                 android:focusable="true"
                 android:padding="12dp"
                 android:visibility="gone">
@@ -302,8 +496,8 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_alignParentStart="true"
-                        android:text="Chat do Canal"
+                        android:layout_parentStart="true"
+                        android:text="Mensagens de Texto"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -315,7 +509,7 @@
                         android:layout_alignParentEnd="true"
                         android:background="?android:attr/selectableItemBackgroundBorderless"
                         android:text="✕"
-                        android:textColor="#8B959E"
+                        android:textColor="#94A3B8"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -361,7 +555,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:background="#121212"
+                        android:background="#0B0F17"
                         android:hint="Escreva uma mensagem..."
                         android:inputType="text"
                         android:padding="10dp"
@@ -373,7 +567,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
-                        android:backgroundTint="#2563EB"
+                        android:backgroundTint="#3B82F6"
                         android:text="Enviar"
                         android:textColor="#FFFFFF" />
 
@@ -448,7 +642,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:text="v1.0.5"
+            android:text="v1.0.6"
             android:textColor="#5E636A"
             android:textSize="12sp" />
 

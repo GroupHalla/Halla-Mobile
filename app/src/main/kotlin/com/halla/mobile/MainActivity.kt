@@ -48,16 +48,32 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var btnNavSettings: TextView
     private lateinit var btnNavHelp: TextView
 
-    // Controles do Servidor Ativo Redesenhado
+    // Controles do Servidor Ativo Redesenhado Premium (Tema Azul)
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
     private lateinit var btnDisconnect: Button
-    private lateinit var btnMuteMic: Button
-    private lateinit var btnDeafen: Button
-    private lateinit var btnPtt: Button
-    private lateinit var btnOpenChat: Button
-    private lateinit var btnRecord: Button
     private lateinit var containerChannels: LinearLayout
+    private lateinit var txtActiveUsersCountBadge: TextView
+    private lateinit var txtCategoryChannelsCount: TextView
+    private lateinit var btnBannerSettings: Button
+
+    // Botões do Dock Flutuante Inferior (Módulos de LinearLayout)
+    private lateinit var btnMuteMicModule: LinearLayout
+    private lateinit var txtMicIcon: TextView
+    private lateinit var txtMicText: TextView
+
+    private lateinit var btnDeafenModule: LinearLayout
+    private lateinit var txtDeafenIcon: TextView
+    private lateinit var txtDeafenText: TextView
+
+    private lateinit var btnPttModule: LinearLayout
+    private lateinit var txtPttText: TextView
+
+    private lateinit var btnOpenChatModule: LinearLayout
+
+    private lateinit var btnRecordModule: LinearLayout
+    private lateinit var txtRecordIcon: TextView
+    private lateinit var txtRecordText: TextView
 
     // Painel Deslizante de Chat (Overlay Bottom Sheet)
     private lateinit var layoutChatOverlay: RelativeLayout
@@ -81,7 +97,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var savedServers = JSONArray()
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.5"
+    private val currentVersionName = "v1.0.6"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,16 +126,32 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnNavSettings = findViewById(R.id.btnNavSettings)
         btnNavHelp = findViewById(R.id.btnNavHelp)
 
-        // Controles do Servidor Ativo Redesenhado
+        // Controles do Servidor Ativo Redesenhado Premium
         txtActiveServerName = findViewById(R.id.txtActiveServerName)
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
         btnDisconnect = findViewById(R.id.btnDisconnect)
-        btnMuteMic = findViewById(R.id.btnMuteMic)
-        btnDeafen = findViewById(R.id.btnDeafen)
-        btnPtt = findViewById(R.id.btnPtt)
-        btnOpenChat = findViewById(R.id.btnOpenChat)
-        btnRecord = findViewById(R.id.btnRecord)
         containerChannels = findViewById(R.id.containerChannels)
+        txtActiveUsersCountBadge = findViewById(R.id.txtActiveUsersCountBadge)
+        txtCategoryChannelsCount = findViewById(R.id.txtCategoryChannelsCount)
+        btnBannerSettings = findViewById(R.id.btnBannerSettings)
+
+        // Módulos do Dock Flutuante Inferior
+        btnMuteMicModule = findViewById(R.id.btnMuteMicModule)
+        txtMicIcon = findViewById(R.id.txtMicIcon)
+        txtMicText = findViewById(R.id.txtMicText)
+
+        btnDeafenModule = findViewById(R.id.btnDeafenModule)
+        txtDeafenIcon = findViewById(R.id.txtDeafenIcon)
+        txtDeafenText = findViewById(R.id.txtDeafenText)
+
+        btnPttModule = findViewById(R.id.btnPttModule)
+        txtPttText = findViewById(R.id.txtPttText)
+
+        btnOpenChatModule = findViewById(R.id.btnOpenChatModule)
+
+        btnRecordModule = findViewById(R.id.btnRecordModule)
+        txtRecordIcon = findViewById(R.id.txtRecordIcon)
+        txtRecordText = findViewById(R.id.txtRecordText)
 
         // Painel Deslizante de Chat (Bottom Sheet)
         layoutChatOverlay = findViewById(R.id.layoutChatOverlay)
@@ -128,11 +160,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         editChatMsg = findViewById(R.id.editChatMsg)
         btnSendChat = findViewById(R.id.btnSendChat)
 
-        // Estiliza o botão PTT central maior
-        val pttDrawable = GradientDrawable()
-        pttDrawable.cornerRadius = 24f
-        pttDrawable.setColor(Color.parseColor("#2563EB"))
-        btnPtt.background = pttDrawable
+        // Estiliza o Card de Destaque do Servidor com Gradiente Azul Metálico
+        val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
+        val bannerGradient = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.parseColor("#1E3A8A"), Color.parseColor("#0F172A"))
+        ).apply {
+            cornerRadius = 32f
+        }
+        layoutServerBanner.background = bannerGradient
+
+        // Estiliza o Dock Flutuante de Controles Inferiores (Bordas Arredondadas)
+        val layoutBottomBar = findViewById<LinearLayout>(R.id.layoutBottomBar)
+        val dockShape = GradientDrawable().apply {
+            setColor(Color.parseColor("#1E293B"))
+            cornerRadius = 36f
+        }
+        layoutBottomBar.background = dockShape
+
+        // Estiliza o botão de PTT central com cantos arredondados Azul Brilhante
+        val pttShape = GradientDrawable().apply {
+            setColor(Color.parseColor("#3B82F6"))
+            cornerRadius = 28f
+        }
+        btnPttModule.background = pttShape
 
         // Solicita Permissão de Gravação de Áudio
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -144,11 +195,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         audioManager.onTalkingStateChanged = { talking ->
             runOnUiThread {
                 if (talking) {
-                    btnPtt.text = "TRANSMITINDO"
-                    btnPtt.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when talking!
+                    txtPttText.text = "TRANSMITINDO"
+                    btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
                 } else {
-                    btnPtt.text = "FALANDO"
-                    btnPtt.setBackgroundColor(Color.parseColor("#2563EB")) // Default blue!
+                    txtPttText.text = "FALANDO"
+                    btnPttModule.setBackgroundColor(Color.parseColor("#3B82F6")) // Electric blue default
                 }
             }
         }
@@ -159,10 +210,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Carrega Servidores Salvos
         loadSavedServers()
 
-        // Verifica atualizações de forma automática na inicialização direto do GitHub!
+        // Verifica atualizações de forma automática na inicialização direto do GitHub
         checkForUpdatesSilently()
 
-        // Controles de Clique e Gaveta Lateral
+        // Eventos de Clique
         btnMenu.setOnClickListener {
             drawerLayout.openDrawer(Gravity.LEFT)
         }
@@ -187,27 +238,32 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
 
-        btnMuteMic.setOnClickListener {
+        btnBannerSettings.setOnClickListener {
+            showSettingsDialog()
+        }
+
+        // Módulos do Dock Flutuante Inferior
+        btnMuteMicModule.setOnClickListener {
             isMuted = !isMuted
             audioManager.setTransmitEnabled(!isMuted)
-            btnMuteMic.text = if (isMuted) "🔇" else "🎙️"
-            btnMuteMic.setBackgroundColor(Color.parseColor(if (isMuted) "#D9534F" else "#1E1E24"))
+            txtMicIcon.text = if (isMuted) "🔇" else "🎙️"
+            txtMicText.text = if (isMuted) "Ativar" else "Desativar"
+            btnMuteMicModule.setBackgroundColor(Color.parseColor(if (isMuted) "#D9534F" else "#1E293B"))
         }
 
-        btnDeafen.setOnClickListener {
+        btnDeafenModule.setOnClickListener {
             isDeaf = !isDeaf
             audioManager.setSpeakersEnabled(!isDeaf)
-            btnDeafen.text = if (isDeaf) "🔇" else "🎧"
-            btnDeafen.setBackgroundColor(Color.parseColor(if (isDeaf) "#D9534F" else "#1E1E24"))
+            txtDeafenIcon.text = if (isDeaf) "🔇" else "🎧"
+            txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
+            btnDeafenModule.setBackgroundColor(Color.parseColor(if (isDeaf) "#D9534F" else "#1E293B"))
         }
 
-        // Botão PTT Central: Atua como atalho para falar contínuo ou segurar
-        btnPtt.setOnClickListener {
+        btnPttModule.setOnClickListener {
             Toast.makeText(this, "Modo de Transmissão de Voz Ativo (VAD)", Toast.LENGTH_SHORT).show()
         }
 
-        // Sistema de Chat Deslizante (Slide-up Overlay)
-        btnOpenChat.setOnClickListener {
+        btnOpenChatModule.setOnClickListener {
             layoutChatOverlay.visibility = View.VISIBLE
         }
 
@@ -215,17 +271,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutChatOverlay.visibility = View.GONE
         }
 
-        btnRecord.setOnClickListener {
+        btnRecordModule.setOnClickListener {
             if (audioManager.isLocalRecording()) {
                 val path = audioManager.stopLocalRecording()
-                btnRecord.text = "🔴"
-                btnRecord.setBackgroundColor(Color.parseColor("#1E1E24"))
+                txtRecordIcon.text = "🔴"
+                txtRecordText.text = "Gravar"
+                btnRecordModule.setBackgroundColor(Color.parseColor("#1E293B"))
                 appendChatText("Sistema", "Gravação salva localmente em: $path")
             } else {
                 val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
                 if (started) {
-                    btnRecord.text = "⏹️"
-                    btnRecord.setBackgroundColor(Color.parseColor("#D9534F"))
+                    txtRecordIcon.text = "⏹️"
+                    txtRecordText.text = "Gravando"
+                    btnRecordModule.setBackgroundColor(Color.parseColor("#D9534F"))
                     appendChatText("Sistema", "Gravação de áudio iniciada...")
                 }
             }
@@ -241,13 +299,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             drawerLayout.closeDrawers()
             showHelpDialog()
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        HallaCore.setCallbacks(null)
-        audioManager.stop()
-        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
     }
 
     // ============================================================================
@@ -355,8 +406,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val card = createServerCard(srv, i)
                 containerServers.addView(card)
             }
-            
-            // Dispara varredura em segundo plano para medir latência de ping real de cada servidor
             pingServersInBackground()
         }
     }
@@ -374,7 +423,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(32, 32, 32, 32)
             
             val shape = GradientDrawable().apply {
-                setColor(Color.parseColor("#2A2A2A"))
+                setColor(Color.parseColor("#1E293B")) // Design cinza azulado escuro Premium
                 cornerRadius = 16f
             }
             background = shape
@@ -404,7 +453,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnOptions = Button(context).apply {
             text = "⋮"
             textSize = 20f
-            setTextColor(Color.parseColor("#8B959E"))
+            setTextColor(Color.parseColor("#94A3B8"))
             background = ContextCompat.getDrawable(context, android.R.color.transparent)
             val rParams = RelativeLayout.LayoutParams(
                 72, 72
@@ -444,9 +493,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtStatus = TextView(context).apply {
-            val savedSlots = srv.optString("slots", "0/500") // Default slots corrigido para 500!
-            text = "Disponível (v1.0.5)  $savedSlots slots"
-            setTextColor(Color.parseColor("#8B959E"))
+            val savedSlots = srv.optString("slots", "0/500") // Slots default corrigidos para 500!
+            text = "Disponível ($currentVersionName)  $savedSlots slots"
+            setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             val rParams = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
@@ -459,7 +508,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val txtPing = TextView(context).apply {
             text = "Buscando..."
             tag = "ping_text_$index"
-            setTextColor(Color.parseColor("#8B959E"))
+            setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             val rParams = RelativeLayout.LayoutParams(
@@ -491,7 +540,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val txtNickname = TextView(context).apply {
             text = srv.getString("nick")
-            setTextColor(Color.parseColor("#DCDFE3"))
+            setTextColor(Color.parseColor("#FFFFFF"))
             textSize = 14f
         }
         row3.addView(txtUserIcon)
@@ -515,7 +564,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val txtAddress = TextView(context).apply {
             text = "${srv.getString("host")}:${srv.getInt("port")}"
-            setTextColor(Color.parseColor("#8B959E"))
+            setTextColor(Color.parseColor("#94A3B8"))
             textSize = 14f
         }
         row4.addView(txtServerIcon)
@@ -541,7 +590,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val dialogView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
-            setBackgroundColor(Color.parseColor("#1E1E24"))
+            setBackgroundColor(Color.parseColor("#1E293B"))
         }
 
         val txtTitle = TextView(context).apply {
@@ -555,32 +604,32 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputName = EditText(context).apply {
             hint = "Nome do Servidor (ex: Halla Oficial)"
-            setTextColor(Color.parseColor("#DCDFE3"))
-            setHintTextColor(Color.parseColor("#5E636A"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("name") ?: "")
         }
         dialogView.addView(inputName)
 
         val inputNick = EditText(context).apply {
             hint = "Seu Apelido (Nickname)"
-            setTextColor(Color.parseColor("#DCDFE3"))
-            setHintTextColor(Color.parseColor("#5E636A"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("nick") ?: "HallaMobile")
         }
         dialogView.addView(inputNick)
 
         val inputHost = EditText(context).apply {
             hint = "IP ou Endereço do Servidor"
-            setTextColor(Color.parseColor("#DCDFE3"))
-            setHintTextColor(Color.parseColor("#5E636A"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("host") ?: "127.0.0.1")
         }
         dialogView.addView(inputHost)
 
         val inputPort = EditText(context).apply {
             hint = "Porta"
-            setTextColor(Color.parseColor("#DCDFE3"))
-            setHintTextColor(Color.parseColor("#5E636A"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(editSrv?.optString("port") ?: "9987")
         }
@@ -588,8 +637,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val inputPass = EditText(context).apply {
             hint = "Senha do Servidor (Opcional)"
-            setTextColor(Color.parseColor("#DCDFE3"))
-            setHintTextColor(Color.parseColor("#5E636A"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(editSrv?.optString("pass") ?: "")
         }
@@ -602,7 +651,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnSave = Button(context).apply {
             text = "SALVAR"
-            setBackgroundColor(Color.parseColor("#2E7FC4"))
+            setBackgroundColor(Color.parseColor("#3B82F6"))
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
                 val name = inputName.text.toString().trim()
@@ -631,7 +680,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("host", host)
                         put("port", port)
                         put("pass", pass)
-                        put("slots", "0/500") // Corrigido slots default para 500!
+                        put("slots", "0/500") // Slots default corrigidos para 500!
                     }
                     savedServers.put(newSrv)
                 }
@@ -651,7 +700,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val nick = srv.getString("nick")
         val pass = srv.optString("pass", "")
 
-        // Salva este servidor como o último conectado/usado
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         prefs.edit().putString("last_srv_host", host)
             .putInt("last_srv_port", port)
@@ -798,12 +846,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (which == 0) {
                     AlertDialog.Builder(context)
                         .setTitle("ℹ️ Sobre o Halla")
-                        .setMessage("Halla Mobile v1.0.5\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
+                        .setMessage("Halla Mobile $currentVersionName\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
                         .setPositiveButton("OK", null)
                         .show()
                 } else if (which == 1) {
                     Toast.makeText(context, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
-                    // Dispara a checagem manual de atualização
                     thread {
                         try {
                             val url = URL("https://api.github.com/repos/farleybarbosa320-oss/Halla-Mobile/releases/latest")
@@ -888,9 +935,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 usersData = obj.getJSONArray("users")
                 
                 val serverObj = obj.optJSONObject("server")
-                // Fallback para 500 se não estiver explícito
                 val maxClients = serverObj?.optInt("maxClients") ?: serverObj?.optInt("max") ?: 500
                 val clientsCount = usersData.length()
+
+                // Atualiza as Badges Dinâmicas do Top Banner!
+                txtActiveUsersCountBadge.text = "👤 $clientsCount/$maxClients membros"
+                txtCategoryChannelsCount.text = "[${channelsData.length()}]"
 
                 updateActiveServerSlots(clientsCount, maxClients)
                 rebuildChannelTree()
@@ -936,6 +986,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 } else {
                     usersData = JSONArray(usersJson)
                 }
+                
+                // Atualiza contadores dinâmicos no banner
+                txtActiveUsersCountBadge.text = "👤 ${usersData.length()} membros"
+                txtCategoryChannelsCount.text = "[${channelsData.length()}]"
+
                 rebuildChannelTree()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1080,7 +1135,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return 0
     }
 
-    // Árvore de canais e membros redesenhada (Estilo Mumble/TS3 minimalista)
+    // Árvore de canais baseada em cartões (Premium Card-Based UI com Tema Azul)
     private fun rebuildChannelTree() {
         containerChannels.removeAllViews()
 
@@ -1089,38 +1144,70 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val chanId = chan.getInt("id")
             val chanName = chan.getString("name")
 
-            // Layout do Canal (Linha horizontal)
-            val channelRow = LinearLayout(this).apply {
+            val channelUsers = chan.optJSONArray("users")
+            val count = channelUsers?.length() ?: 0
+
+            // Card do Canal com Borda Azul na Esquerda
+            val cardContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, 16)
+                }
+                
+                // Card background (#1E293B)
+                val cardShape = GradientDrawable().apply {
+                    setColor(Color.parseColor("#1E293B"))
+                    cornerRadius = 16f
+                }
+                background = cardShape
+            }
+
+            // Borda Lateral Esquerda em Azul Elétrico
+            val leftBlueBorder = View(this).apply {
+                setBackgroundColor(Color.parseColor("#3B82F6"))
+                val borderParams = LinearLayout.LayoutParams(
+                    12, // ~4dp width
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                )
+                layoutParams = borderParams
+            }
+            cardContainer.addView(leftBlueBorder)
+
+            // Layout do conteúdo interno do Card
+            val contentLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(24, 20, 24, 20)
+            }
+
+            // Linha Principal do Canal (Icone + Nome + Badge)
+            val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                setPadding(0, 16, 0, 16)
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setOnClickListener {
-                    HallaCore.joinChannel(chanId)
-                }
             }
 
-            // Seta sutil de expansão/recolhimento (▼)
-            val txtArrow = TextView(this).apply {
-                text = "▼  "
-                setTextColor(Color.parseColor("#8B959E"))
-                textSize = 14f
-            }
-
-            // Ícone Minimalista de Canal de Áudio (🔊)
+            // Ícone Minimalista de Alto-falante em Azul Elétrico (🔊)
             val txtIcon = TextView(this).apply {
                 text = "🔊  "
+                setTextColor(Color.parseColor("#3B82F6"))
                 textSize = 14f
             }
 
-            // Nome do Canal (Elegante)
+            // Nome do Canal
             val txtName = TextView(this).apply {
                 text = chanName
-                setTextColor(Color.parseColor("#E8B23C"))
-                textSize = 16f
+                setTextColor(Color.parseColor("#FFFFFF"))
+                textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(
                     0,
@@ -1129,85 +1216,138 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 )
             }
 
-            // Badge discreta de quantidade de usuários (ex: [2])
-            val channelUsers = chan.optJSONArray("users")
-            val count = channelUsers?.length() ?: 0
+            // Badge de Membros (ex: 👥 2)
             val txtBadge = TextView(this).apply {
-                text = "[$count]"
-                setTextColor(Color.parseColor("#8B959E"))
-                textSize = 13f
-                setPadding(16, 0, 0, 0)
+                text = "👥 $count"
+                setTextColor(Color.parseColor("#94A3B8"))
+                textSize = 12sp.toFloat()
+                setTypeface(null, Typeface.BOLD)
+                setPadding(12, 4, 12, 4)
+                
+                val badgeShape = GradientDrawable().apply {
+                    setColor(Color.parseColor("#0B0F17"))
+                    cornerRadius = 12f
+                }
+                background = badgeShape
                 visibility = if (count > 0) View.VISIBLE else View.GONE
             }
 
-            channelRow.addView(txtArrow)
-            channelRow.addView(txtIcon)
-            channelRow.addView(txtName)
-            channelRow.addView(txtBadge)
+            headerRow.addView(txtIcon)
+            headerRow.addView(txtName)
+            headerRow.addView(txtBadge)
 
-            containerChannels.addView(channelRow)
+            contentLayout.addView(headerRow)
 
-            // Renderiza usuários mapeados dinamicamente para este canal
-            for (j in 0 until usersData.length()) {
-                val usr = usersData.getJSONObject(j)
-                val userId = usr.getInt("id")
-                val userChanId = getChannelOfUser(userId)
-                
-                if (userChanId == chanId) {
-                    val name = usr.getString("name")
-                    val isTalking = usr.optBoolean("talking", false)
+            // Lista de Membros Conectados (Dentro do próprio Card de Canal Expandido)
+            if (count > 0) {
+                // Divisor sutil interno
+                val divider = View(this).apply {
+                    setBackgroundColor(Color.parseColor("#0B0F17"))
+                    val dParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        2
+                    )
+                    dParams.setMargins(0, 16, 0, 16)
+                    layoutParams = dParams
+                }
+                contentLayout.addView(divider)
 
-                    // Linha do Usuário
-                    val userRow = LinearLayout(this).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        )
-                        setPadding(48, 8, 0, 8) // Recuo elegante à esquerda
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                    }
+                // Renderiza usuários do canal
+                for (j in 0 until usersData.length()) {
+                    val usr = usersData.getJSONObject(j)
+                    val userId = usr.getInt("id")
+                    val userChanId = getChannelOfUser(userId)
+                    
+                    if (userChanId == chanId) {
+                        val name = usr.getString("name")
+                        val isTalking = usr.optBoolean("talking", false)
 
-                    // Indicador Visual de Fala (Círculo Brilhante / Glow Ring Neon)
-                    val viewGlow = View(this).apply {
-                        val d = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(Color.parseColor(if (isTalking) "#22C55E" else "#3E434A")) // Neon green when talking!
+                        // Linha do Usuário
+                        val userRow = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                setMargins(0, 4, 0, 4)
+                            }
+                            gravity = android.view.Gravity.CENTER_VERTICAL
                         }
-                        background = d
-                        val lParams = LinearLayout.LayoutParams(16, 16)
-                        lParams.setMargins(0, 0, 16, 0)
-                        layoutParams = lParams
+
+                        // Avatar Circular com Bolinha de Status Sobreposta (Glow Ring)
+                        val avatarContainer = FrameLayout(this).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                setMargins(0, 0, 20, 0)
+                            }
+                        }
+
+                        // O Círculo do Avatar com a inicial do usuário
+                        val txtAvatar = TextView(this).apply {
+                            text = name.take(1).uppercase()
+                            setTextColor(Color.parseColor("#FFFFFF"))
+                            textSize = 12f
+                            setTypeface(null, Typeface.BOLD)
+                            gravity = android.view.Gravity.CENTER
+                            val d = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(Color.parseColor("#0B0F17"))
+                                setStroke(2, Color.parseColor("#3B82F6")) // Borda azul do avatar
+                            }
+                            background = d
+                            layoutParams = FrameLayout.LayoutParams(48, 48) // 24dp diameter
+                        }
+
+                        // Pequena Bolinha Verde de Status sobreposta no canto inferior direito
+                        val viewStatusDot = View(this).apply {
+                            val d = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(Color.parseColor(if (isTalking) "#22C55E" else "#3E434A")) // Neon green when speaking
+                            }
+                            background = d
+                            val dotParams = FrameLayout.LayoutParams(14, 14).apply {
+                                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.RIGHT
+                            }
+                            layoutParams = dotParams
+                        }
+
+                        avatarContainer.addView(txtAvatar)
+                        avatarContainer.addView(viewStatusDot)
+
+                        // Nome do usuário
+                        val txtUser = TextView(this).apply {
+                            text = name
+                            setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
+                            textSize = 14f
+                            layoutParams = LinearLayout.LayoutParams(
+                                0,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                1f
+                            )
+                        }
+
+                        // Status do microfone/fones cortado
+                        val txtStatusIcon = TextView(this).apply {
+                            val micMuted = usr.optBoolean("mic", false)
+                            val spkMuted = usr.optBoolean("spk", false)
+                            text = if (spkMuted) "🎧🔇 " else if (micMuted) "🎙️🔇 " else ""
+                            setTextColor(Color.parseColor("#D9534F"))
+                            textSize = 12f
+                        }
+
+                        userRow.addView(avatarContainer)
+                        userRow.addView(txtUser)
+                        userRow.addView(txtStatusIcon)
+
+                        contentLayout.addView(userRow)
                     }
-
-                    // Nome do usuário
-                    val txtUser = TextView(this).apply {
-                        text = name
-                        setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#DCDFE3"))
-                        textSize = 15f
-                        layoutParams = LinearLayout.LayoutParams(
-                            0,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            1f
-                        )
-                    }
-
-                    // Ícones elegantes de status de áudio (ex: microfone cortado 🔇 se mutado)
-                    val txtStatusIcon = TextView(this).apply {
-                        val micMuted = usr.optBoolean("mic", false)
-                        val spkMuted = usr.optBoolean("spk", false)
-                        text = if (spkMuted) "🎧🔇 " else if (micMuted) "🎙️🔇 " else ""
-                        setTextColor(Color.parseColor("#D9534F"))
-                        textSize = 12f
-                    }
-
-                    userRow.addView(viewGlow)
-                    userRow.addView(txtUser)
-                    userRow.addView(txtStatusIcon)
-
-                    containerChannels.addView(userRow)
                 }
             }
+
+            cardContainer.addView(contentLayout)
+            containerChannels.addView(cardContainer)
         }
     }
 
