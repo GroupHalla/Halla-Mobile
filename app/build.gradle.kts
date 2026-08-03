@@ -5,13 +5,13 @@ plugins {
 
 android {
     namespace = "com.halla.mobile"
-    compileSdk = 33
+    compileSdk = 34
     ndkVersion = "25.2.9519653"
 
     defaultConfig {
         applicationId = "com.halla.mobile"
         minSdk = 26
-        targetSdk = 33
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
 
