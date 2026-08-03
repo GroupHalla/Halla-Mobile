@@ -246,6 +246,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
+    override fun onWelcomeReceived(welcomeJson: String) {
+        runOnUiThread {
+            try {
+                val obj = JSONObject(welcomeJson)
+                channelsData = obj.getJSONArray("channels")
+                usersData = obj.getJSONArray("users")
+                rebuildChannelTree()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     override fun onChannelListReceived(channelsJson: String) {
         runOnUiThread {
             try {
