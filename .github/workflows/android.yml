@@ -33,11 +33,17 @@ jobs:
           sdkmanager --install "ndk;25.2.9519653"
 
       - name: Install Qt
+        id: install-qt
         uses: jurplel/install-qt-action@v3
         with:
           version: '6.8.2'
           target: 'android'
           arch: 'android_arm64_v8a'
+
+      - name: Install Host Qt6 Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-declarative-dev qt6-base-dev-tools
 
       - name: Configure CMake
         run: |
@@ -45,6 +51,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-31 \
+            -DCMAKE_PREFIX_PATH=${{ steps.install-qt.outputs.qt_dir }} \
+            -DQT_HOST_PATH=/usr \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build Application
@@ -74,13 +82,13 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Halla Mobile v1.0.0 — Versão Inicial do Aplicativo Móvel
+          tag_name: v1.0.1
+          name: Halla Mobile v1.0.1 — Versão Inicial do Aplicativo Móvel
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## 🚀 Lançamento Oficial do Halla Mobile v1.0.0
+            ## 🚀 Lançamento Oficial do Halla Mobile v1.0.1
 
             Esta é a versão móvel inicial do aplicativo de comunicação por voz de alta fidelidade Halla!
 
