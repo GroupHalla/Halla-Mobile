@@ -260,19 +260,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onUserListReceived(usersJson: String) {
         runOnUiThread {
             try {
-                // Se for um pacote incremental do protocolo, atualiza nossa base local de usuários
+                // Se for um pacote incremental do protocolo, atualiza nossa base local de usuários/canais
                 if (usersJson.startsWith("{")) {
                     val obj = JSONObject(usersJson)
                     val t = obj.optString("t")
                     if (t == "user_joined") {
                         val userObj = obj.getJSONObject("user")
                         updateOrAddUser(userObj)
+                        // Por padrão, novos usuários entram no canal 1 (default) na UI
+                        moveUserInChannels(userObj.getInt("id"), 1)
                     } else if (t == "user_left") {
                         removeUser(obj.getInt("id"))
                     } else if (t == "user_moved") {
                         moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
                     } else if (t == "user_state") {
                         updateUserState(obj)
+                    } else if (t == "chan_update") {
+                        val chanObj = obj.getJSONObject("chan")
+                        updateOrAddChannel(chanObj)
+                    } else if (t == "chan_removed") {
+                        removeChannel(obj.getInt("id"))
                     }
                 } else {
                     // Carga completa vinda no welcome
@@ -366,11 +373,41 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val chan = channelsData.getJSONObject(i)
             if (chan.getInt("id") == newChannelId) {
                 val usersArr = chan.optJSONArray("users") ?: JSONArray()
-                usersArr.put(userId)
+                // Evita duplicatas
+                var exists = false
+                for (j in 0 until usersArr.length()) {
+                    if (usersArr.getInt(j) == userId) exists = true
+                }
+                if (!exists) {
+                    usersArr.put(userId)
+                }
                 chan.put("users", usersArr)
                 break
             }
         }
+    }
+
+    private fun updateOrAddChannel(chanObj: JSONObject) {
+        val cid = chanObj.getInt("id")
+        for (i in 0 until channelsData.length()) {
+            val c = channelsData.getJSONObject(i)
+            if (c.getInt("id") == cid) {
+                channelsData.put(i, chanObj)
+                return
+            }
+        }
+        channelsData.put(chanObj)
+    }
+
+    private fun removeChannel(channelId: Int) {
+        val newList = JSONArray()
+        for (i in 0 until channelsData.length()) {
+            val c = channelsData.getJSONObject(i)
+            if (c.getInt("id") != channelId) {
+                newList.put(c)
+            }
+        }
+        channelsData = newList
     }
 
     private fun updateUserState(stateObj: JSONObject) {
