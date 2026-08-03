@@ -7,7 +7,7 @@ object HallaCore {
 
     // Funções nativas C++ para serem chamadas pelo Kotlin
     @JvmStatic
-    external fun connectToServer(host: String, port: Int, nick: String, pass: String, cachePath: String)
+    external fun connectToServer(host: String, port: Int, nick: String, pass: String, cachePath: String, uid: String)
 
     @JvmStatic
     external fun disconnectFromServer()
