@@ -174,12 +174,12 @@ class HallaAudioManager(private val cacheDir: File) {
             randomAccessFile.writeInt(Integer.reverseBytes((36 + localRecordBytes).toInt()))
             randomAccessFile.writeBytes("WAVEfmt ")
             randomAccessFile.writeInt(Integer.reverseBytes(16))
-            randomAccessFile.writeShort(java.lang.Short.reverseBytes(1)) // PCM
-            randomAccessFile.writeShort(java.lang.Short.reverseBytes(1)) // Mono
+            randomAccessFile.writeShort(java.lang.Short.reverseBytes(1).toInt()) // PCM
+            randomAccessFile.writeShort(java.lang.Short.reverseBytes(1).toInt()) // Mono
             randomAccessFile.writeInt(Integer.reverseBytes(48000))
             randomAccessFile.writeInt(Integer.reverseBytes(48000 * 2))
-            randomAccessFile.writeShort(java.lang.Short.reverseBytes(2))
-            randomAccessFile.writeShort(java.lang.Short.reverseBytes(16))
+            randomAccessFile.writeShort(java.lang.Short.reverseBytes(2).toInt())
+            randomAccessFile.writeShort(java.lang.Short.reverseBytes(16).toInt())
             randomAccessFile.writeBytes("data")
             randomAccessFile.writeInt(Integer.reverseBytes(localRecordBytes.toInt()))
             randomAccessFile.close()
