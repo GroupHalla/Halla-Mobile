@@ -52,8 +52,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
     private lateinit var btnDisconnect: Button
-    private lateinit var viewVadLight: View
-    private lateinit var txtVoiceStatus: TextView
     private lateinit var btnMuteMic: Button
     private lateinit var btnDeafen: Button
     private lateinit var btnPtt: Button
@@ -116,8 +114,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtActiveServerName = findViewById(R.id.txtActiveServerName)
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
         btnDisconnect = findViewById(R.id.btnDisconnect)
-        viewVadLight = findViewById(R.id.viewVadLight)
-        txtVoiceStatus = findViewById(R.id.txtVoiceStatus)
         btnMuteMic = findViewById(R.id.btnMuteMic)
         btnDeafen = findViewById(R.id.btnDeafen)
         btnPtt = findViewById(R.id.btnPtt)
@@ -131,12 +127,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtChatBox = findViewById(R.id.txtChatBox)
         editChatMsg = findViewById(R.id.editChatMsg)
         btnSendChat = findViewById(R.id.btnSendChat)
-
-        // Arredonda o indicador de fala (VAD) da barra inferior
-        val vadDrawable = GradientDrawable()
-        vadDrawable.shape = GradientDrawable.OVAL
-        vadDrawable.setColor(Color.parseColor("#3E434A"))
-        viewVadLight.background = vadDrawable
 
         // Estiliza o botão PTT central maior
         val pttDrawable = GradientDrawable()
@@ -153,13 +143,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         audioManager = HallaAudioManager(cacheDir)
         audioManager.onTalkingStateChanged = { talking ->
             runOnUiThread {
-                val color = if (talking) "#22C55E" else "#3E434A" // Neon green for talking!
-                val statusText = if (talking) "Transmitindo" else "Silencioso"
-                val textColor = if (talking) "#22C55E" else "#8B959E"
-                
-                vadDrawable.setColor(Color.parseColor(color))
-                txtVoiceStatus.text = statusText
-                txtVoiceStatus.setTextColor(Color.parseColor(textColor))
+                if (talking) {
+                    btnPtt.text = "TRANSMITINDO"
+                    btnPtt.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when talking!
+                } else {
+                    btnPtt.text = "FALANDO"
+                    btnPtt.setBackgroundColor(Color.parseColor("#2563EB")) // Default blue!
+                }
             }
         }
 
