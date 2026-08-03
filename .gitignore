@@ -1,0 +1,14 @@
+# Qt Creator, CMake, compiler and IDE files
+build/
+CMakeLists.txt.user
+.qt/
+.cmake/
+.qmlcache/
+.moc/
+.obj/
+.rcc/
+*.user
+__pycache__/
+.DS_Store
+.idea/
+.vscode/
