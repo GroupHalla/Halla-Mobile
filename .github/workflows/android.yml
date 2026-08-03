@@ -32,46 +32,14 @@ jobs:
         run: |
           sdkmanager --install "ndk;25.2.9519653"
 
-      - name: Install Host Qt (Desktop Linux)
-        id: install-qt-host
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.8.2'
-          target: 'desktop'
-          arch: 'linux_gcc_64'
-          dir: '${{ github.workspace }}/../Qt'
+      - name: Make Gradle Executable
+        run: chmod +x gradlew
 
-      - name: Save Host Qt Path
-        run: |
-          echo "HOST_QT_PATH=${QT_ROOT_DIR}" >> $GITHUB_ENV
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug
 
-      - name: Install Target Qt (Android)
-        id: install-qt-target
-        uses: jurplel/install-qt-action@v3
-        with:
-          version: '6.8.2'
-          target: 'android'
-          arch: 'android_arm64_v8a'
-          dir: '${{ github.workspace }}/../Qt'
-
-      - name: Configure CMake
-        run: |
-          cmake -B build -S . \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/25.2.9519653/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-31 \
-            -DCMAKE_PREFIX_PATH=${{ env.QT_ROOT_DIR }} \
-            -DQT_HOST_PATH=${{ env.HOST_QT_PATH }} \
-            -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build Application
-        run: |
-          cmake --build build --target HallaMobileApp
-
-      - name: Create APK with androiddeployqt
-        run: |
-          ${{ env.QT_ROOT_DIR }}/bin/androiddeployqt --input build/android-HallaMobileApp-deployment-settings.json --output build/android-build --gradle
-          find build/android-build/ -name "*.apk" -exec cp {} HallaMobile.apk \;
+      - name: Copy APK to root
+        run: cp app/build/outputs/apk/debug/app-debug.apk HallaMobile.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -93,19 +61,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
-          name: Halla Mobile v1.0.0 — Versão Inicial do Aplicativo Móvel
+          name: Halla Mobile v1.0.0 — Versão Inicial Kotlin/NDK
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## 🚀 Lançamento Oficial do Halla Mobile v1.0.0
+            ## 🚀 Lançamento Oficial do Halla Mobile v1.0.0 (Kotlin + C/C++ NDK)
 
-            Esta é a versão móvel inicial do aplicativo de comunicação por voz de alta fidelidade Halla!
+            Esta é a versão móvel reescrita nativamente em Kotlin para uma UI fluida e robusta, com núcleo de rede em C/C++ (JNI) de alta performance!
 
             ### 📱 Recursos Integrados
+            * **Arquitetura Híbrida de Elite:** Interface 100% nativa Kotlin acoplada a um núcleo de sockets TCP/UDP e de voz em C/C++!
             * **Conexão Dinâmica:** Insira o IP e porta do seu servidor, configure o seu apelido e conecte-se instantaneamente!
-            * **Lista de Canais em Tempo Real:** Navegue pelas salas do servidor em uma interface touch otimizada para celulares.
-            * **Navegação com Toque:** Mude de canal clicando diretamente na sala desejada.
-            * **Chat Integrado:** Envie e receba mensagens de texto no chat da sala de forma sincronizada com o servidor!
+            * **Lista de Canais e Árvore de Usuários em Tempo Real:** Navegação e sincronização nativa na UI Kotlin.
+            * **Áudio Nativo de Baixíssima Latência:** Captura de microfone com `AudioRecord` e reprodução de som com `AudioTrack` para máxima fluidez de voz no Android.
+            * **DSP & VAD Nativo em Kotlin:** Monitoramento em tempo real de nível RMS e detecção de atividade de voz (VAD) inteligente!
+            * **Gravação Local WAV:** Grave canais de áudio de voz em tempo real diretamente na pasta de cache do app!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
