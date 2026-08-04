@@ -188,6 +188,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         layoutBottomBar.background = dockShape
 
+        // Aplica o efeito de bolha arredondada nos módulos individuais da barra inferior (Exato ao mockup!)
+        val bubbleShape = {
+            GradientDrawable().apply {
+                setColor(Color.parseColor("#1C1B2B")) // Cinza-azulado leve do mockup
+                cornerRadius = 32f
+            }
+        }
+        btnMuteMicModule.background = bubbleShape()
+        btnDeafenModule.background = bubbleShape()
+        btnOpenChatModule.background = bubbleShape()
+        btnRecordModule.background = bubbleShape()
+
         // Estiliza o botão de PTT central com cantos arredondados Roxo TS3/Mumble
         val pttShape = GradientDrawable().apply {
             setColor(Color.parseColor("#8B5CF6"))
@@ -256,21 +268,21 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             Toast.makeText(this, "Link de convite do servidor copiado com sucesso!", Toast.LENGTH_SHORT).show()
         }
 
-        // Módulos do Dock Flutuante Inferior (Filtros de Cores Vetoriais)
+        // Módulos do Dock Flutuante Inferior (Filtros de Cores Vetoriais de acordo com o mockup)
         btnMuteMicModule.setOnClickListener {
             isMuted = !isMuted
             audioManager.setTransmitEnabled(!isMuted)
-            imgMicIcon.setColorFilter(Color.parseColor(if (isMuted) "#EF4444" else "#FFFFFF"))
+            imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
             txtMicText.text = if (isMuted) "Ativar" else "Desativar"
-            btnMuteMicModule.setBackgroundColor(Color.parseColor(if (isMuted) "#EF4444" else "#141322"))
+            btnMuteMicModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
         }
 
         btnDeafenModule.setOnClickListener {
             isDeaf = !isDeaf
             audioManager.setSpeakersEnabled(!isDeaf)
-            imgDeafenIcon.setColorFilter(Color.parseColor(if (isDeaf) "#EF4444" else "#FFFFFF"))
+            imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
             txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
-            btnDeafenModule.setBackgroundColor(Color.parseColor(if (isDeaf) "#EF4444" else "#141322"))
+            btnDeafenModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
         }
 
         btnPttModule.setOnClickListener {
@@ -288,16 +300,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnRecordModule.setOnClickListener {
             if (audioManager.isLocalRecording()) {
                 val path = audioManager.stopLocalRecording()
-                imgRecordIcon.setColorFilter(Color.parseColor("#EF4444"))
                 txtRecordText.text = "Gravar"
-                btnRecordModule.setBackgroundColor(Color.parseColor("#141322"))
+                btnRecordModule.background = bubbleShape()
                 appendChatText("Sistema", "Gravação salva localmente em: $path")
             } else {
                 val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
                 if (started) {
-                    imgRecordIcon.setColorFilter(Color.parseColor("#FFFFFF"))
                     txtRecordText.text = "Gravando"
-                    btnRecordModule.setBackgroundColor(Color.parseColor("#EF4444"))
+                    btnRecordModule.background = bubbleShape()
                     appendChatText("Sistema", "Gravação de áudio iniciada...")
                 }
             }
