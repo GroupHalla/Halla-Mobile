@@ -17,6 +17,7 @@
 #include <android/log.h>
 #include <cstring>
 #include <exception>
+#include <algorithm>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -597,11 +598,12 @@ public:
     }
 
     void sendEditChannel(int channelId, const std::string& name, const std::string& desc,
-                         const std::string& pass) {
+                         const std::string& pass, int bitrate) {
         std::string msg = "{\"t\":\"chan_edit\",\"id\":" + std::to_string(channelId) +
                           ",\"name\":\"" + jsonEscape(name) +
                           "\",\"desc\":\"" + jsonEscape(desc) +
-                          "\",\"pass\":\"" + jsonEscape(pass) + "\"}\n";
+                          "\",\"pass\":\"" + jsonEscape(pass) +
+                          "\",\"bitrate\":" + std::to_string(bitrate) + "}\n";
         sendTcp(msg);
     }
 
@@ -636,8 +638,14 @@ public:
         int encoded = 0;
         {
             std::lock_guard<std::mutex> codecLock(m_codecMutex);
-            if (m_encoder)
+            if (m_encoder) {
+                // DTX pode retornar um frame vazio para silêncio. Durante o
+                // registro precisamos obrigatoriamente de um payload Opus
+                // não vazio para abrir o caminho UDP em NATs/relays antigos.
+                opus_encoder_ctl(m_encoder, OPUS_SET_DTX(0));
                 encoded = opus_encode(m_encoder, silence, 960, opusBuf, sizeof(opusBuf));
+                opus_encoder_ctl(m_encoder, OPUS_SET_DTX(1));
+            }
         }
         if (encoded > 0)
             sendVoiceFrame(reinterpret_cast<const char*>(opusBuf), encoded, seq);
@@ -1219,11 +1227,12 @@ Java_com_halla_mobile_HallaCore_sendUsePrivilegeKey(JNIEnv* env, jclass clazz, j
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint channelId, jstring name, jstring desc, jstring pass) {
+Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint channelId, jstring name, jstring desc, jstring pass, jint bitrate) {
     const char* nativeName = env->GetStringUTFChars(name, nullptr);
     const char* nativeDesc = env->GetStringUTFChars(desc, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
-    HallaClientCore::getInstance().sendEditChannel(channelId, nativeName, nativeDesc, nativePass);
+    HallaClientCore::getInstance().sendEditChannel(channelId, nativeName, nativeDesc, nativePass,
+                                                   std::clamp(int(bitrate), 16, 384));
     env->ReleaseStringUTFChars(name, nativeName);
     env->ReleaseStringUTFChars(desc, nativeDesc);
     env->ReleaseStringUTFChars(pass, nativePass);

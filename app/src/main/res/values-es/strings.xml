@@ -311,4 +311,5 @@ Notas de la versión:
     <string name="notification_title">Halla Mobile</string>
     <string name="notification_server_title">Halla — %1$s</string>
     <string name="description_format_hint">Admite líneas en blanco, [br], [img]URL[/img], [url=URL]texto[/url] y enlaces Markdown.</string>
+    <string name="bitrate_hint">Bitrate del canal (16–384 kbps, predeterminado 96)</string>
 </resources>

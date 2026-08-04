@@ -67,7 +67,7 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.17
+            ## Halla Mobile v1.0.18
 
             ### Idiomas e interface
             * Detecção automática do idioma do Android, com opção de escolher Português, Inglês ou Espanhol nas configurações.
@@ -76,6 +76,8 @@ jobs:
             * ID único continua sendo usado internamente para sincronização, mas não é exibido na interface.
             * Permissões de comandante respeitadas no menu de usuários.
             * Descrições de canais preservam espaçamento e aceitam imagens e links clicáveis.
+            * Edição de canal envia e preserva bitrate entre 16 e 384 kbps, com padrão de 96 kbps.
+            * Registro UDP força um frame Opus válido para que o áudio não dependa da fala inicial do PC.
             * Clientes autorizados podem definir ou remover comandantes pelo menu do usuário.
 
             ### Identidade visual

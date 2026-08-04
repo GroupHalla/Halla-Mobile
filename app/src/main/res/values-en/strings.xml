@@ -311,4 +311,5 @@ Download and install now?</string>
     <string name="notification_title">Halla Mobile</string>
     <string name="notification_server_title">Halla — %1$s</string>
     <string name="description_format_hint">Supports blank lines, [br], [img]URL[/img], [url=URL]text[/url] and Markdown links.</string>
+    <string name="bitrate_hint">Channel bitrate (16–384 kbps, default 96)</string>
 </resources>

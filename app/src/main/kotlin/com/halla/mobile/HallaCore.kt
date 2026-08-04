@@ -57,7 +57,7 @@ object HallaCore {
     external fun sendUsePrivilegeKey(key: String)
 
     @JvmStatic
-    external fun sendEditChannel(channelId: Int, name: String, desc: String, pass: String)
+    external fun sendEditChannel(channelId: Int, name: String, desc: String, pass: String, bitrate: Int)
 
     // Interface para escutar eventos vindos do C++ Core
     interface Callbacks {

@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.17"
+    private val currentVersionName = "v1.0.18"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -3001,6 +3001,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showEditChannelDialog(chanId: Int, currentName: String) {
         val context = this
+        var initialBitrate = 96
+        for (i in 0 until channelsData.length()) {
+            val channel = channelsData.optJSONObject(i) ?: continue
+            if (channel.optInt("id", -1) == chanId) {
+                initialBitrate = channel.optInt("bitrate", 96).coerceIn(16, 384)
+                break
+            }
+        }
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
@@ -3024,6 +3032,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             textSize = 12f
             setPadding(0, 4, 0, 10)
         }
+        val inputBitrate = EditText(context).apply {
+            hint = getString(R.string.bitrate_hint)
+            setText(initialBitrate.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
         val inputPass = EditText(context).apply {
             hint = getString(R.string.password_optional)
             setTextColor(Color.parseColor("#FFFFFF"))
@@ -3032,6 +3047,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(inputName)
         layout.addView(inputDesc)
         layout.addView(descriptionHint)
+        layout.addView(inputBitrate)
         layout.addView(inputPass)
 
         AlertDialog.Builder(context)
@@ -3039,10 +3055,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setView(layout)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = inputName.text.toString().trim()
-                val desc = inputDesc.text.toString().trim()
+                val desc = inputDesc.text.toString()
                 val pass = inputPass.text.toString().trim()
+                val bitrate = inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96
                 if (name.isNotEmpty()) {
-                    HallaCore.sendEditChannel(chanId, name, desc, pass)
+                    HallaCore.sendEditChannel(chanId, name, desc, pass, bitrate)
                     Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
                 }
             }
@@ -3076,6 +3093,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("type", 0)
                         put("codec", 4)
                         put("quality", 6)
+                        put("bitrate", 96)
                         put("max", -1)
                     }.toString()
                     HallaCore.sendRawJson(msg)
