@@ -29,12 +29,16 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.PowerManager
 import android.provider.Settings
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.media.AudioManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.RingtoneManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.text.TextUtils
 import android.view.MotionEvent
 import org.json.JSONArray
 import org.json.JSONObject
@@ -184,7 +188,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.16"
+    private val currentVersionName = "v1.0.17"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -2861,6 +2865,42 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return false
     }
 
+    private fun channelDescriptionHtml(topic: String, description: String): String {
+        var html = TextUtils.htmlEncode(description)
+        html = html.replace(Regex("""\[img\]\s*(https?://[^\s\]]+)\s*\[/img\]""")) {
+            "<img src=\"${it.groupValues[1]}\" style=\"max-width:100%;\" />"
+        }
+        html = html.replace(Regex("""!\[([^\]]*)\]\((https?://[^\s)]+)\)""")) {
+            "<img src=\"${it.groupValues[2]}\" alt=\"${it.groupValues[1]}\" style=\"max-width:100%;\" />"
+        }
+        html = html.replace(Regex("""\[url=(https?://[^\]]+)\](.*?)\[/url\]""", setOf(RegexOption.DOT_MATCHES_ALL))) {
+            "<a href=\"${it.groupValues[1]}\">${it.groupValues[2]}</a>"
+        }
+        html = html.replace(Regex("""\[url\](https?://[^\[]+)\[/url\]""")) {
+            "<a href=\"${it.groupValues[1]}\">${it.groupValues[1]}</a>"
+        }
+        html = html.replace(Regex("""\[([^\]]+)\]\((https?://[^\s)]+)\)""")) {
+            "<a href=\"${it.groupValues[2]}\">${it.groupValues[1]}</a>"
+        }
+        html = html.replace(Regex("""(?<![\"=])(https?://[^\s<\")]+)""")) {
+            "<a href=\"${it.value}\">${it.value}</a>"
+        }
+        html = html.replace("[br]", "<br>")
+        html = html.replace("\r\n", "\n")
+        html = html.replace("\n\n", "<br><br>")
+        html = html.replace("\n", "<br>")
+        val topicHtml = if (topic.isBlank()) "" else "<p><b>${TextUtils.htmlEncode(topic)}</b></p>"
+        val dark = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+            .getBoolean("dark_theme", true)
+        val background = if (dark) "#0D0E15" else "#FFFFFF"
+        val foreground = if (dark) "#F5F4FF" else "#242434"
+        val link = if (dark) "#A78BFA" else "#6D28D9"
+        return "<html><head><meta name=\"viewport\" content=\"width=device-width\" /></head>" +
+            "<body style=\"background:$background;color:$foreground;font-size:16px;line-height:1.45;padding:8px;\">" +
+            "<style>a{color:$link;} img{display:block;margin:8px 0;border-radius:8px;}</style>" +
+            topicHtml + html + "</body></html>"
+    }
+
     private fun showChannelDescriptionDialog(chanId: Int, chanName: String) {
         var description = ""
         var topic = ""
@@ -2872,13 +2912,23 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
-        val text = buildString {
-            if (topic.isNotBlank()) append(getString(R.string.topic_prefix, topic))
-            append(if (description.isBlank()) getString(R.string.no_description) else description)
+        val web = WebView(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            settings.javaScriptEnabled = false
+            settings.loadsImagesAutomatically = true
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url ?: return true
+                    startActivity(Intent(Intent.ACTION_VIEW, url))
+                    return true
+                }
+            }
+            loadDataWithBaseURL(null, channelDescriptionHtml(topic, description),
+                "text/html", "UTF-8", null)
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.channel_description_title, chanName))
-            .setMessage(text)
+            .setView(web)
             .setPositiveButton(getString(R.string.close), null)
             .show()
     }
@@ -2965,6 +3015,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             hint = getString(R.string.description)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
+            setMinLines(5)
+            gravity = android.view.Gravity.TOP
+        }
+        val descriptionHint = TextView(context).apply {
+            text = getString(R.string.description_format_hint)
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 12f
+            setPadding(0, 4, 0, 10)
         }
         val inputPass = EditText(context).apply {
             hint = getString(R.string.password_optional)
@@ -2973,6 +3031,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         layout.addView(inputName)
         layout.addView(inputDesc)
+        layout.addView(descriptionHint)
         layout.addView(inputPass)
 
         AlertDialog.Builder(context)

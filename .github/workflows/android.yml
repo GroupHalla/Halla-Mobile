@@ -67,7 +67,7 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.16
+            ## Halla Mobile v1.0.17
 
             ### Idiomas e interface
             * Detecção automática do idioma do Android, com opção de escolher Português, Inglês ou Espanhol nas configurações.
@@ -75,6 +75,7 @@ jobs:
             * Referências a produtos e aplicativos externos removidas do código e dos textos do projeto.
             * ID único continua sendo usado internamente para sincronização, mas não é exibido na interface.
             * Permissões de comandante respeitadas no menu de usuários.
+            * Descrições de canais preservam espaçamento e aceitam imagens e links clicáveis.
             * Clientes autorizados podem definir ou remover comandantes pelo menu do usuário.
 
             ### Identidade visual
