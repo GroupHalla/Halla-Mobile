@@ -83,9 +83,25 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var editChatMsg: EditText
     private lateinit var btnSendChat: Button
 
-    // TELA DE CONFIGURAÇÕES EM TELA CHEIA (Nova área)
+    // TELA DE CONFIGURAÇÕES EM TELA CHEIA (Hierárquica por submenus!)
     private lateinit var layoutSettings: RelativeLayout
     private lateinit var btnSettingsBack: Button
+    private lateinit var txtSettingsTitle: TextView
+
+    // Submenu de categorias (Painel Principal de seleção)
+    private lateinit var settingsSubmenu: LinearLayout
+    private lateinit var btnSubmenuGeral: LinearLayout
+    private lateinit var btnSubmenuAudio: LinearLayout
+    private lateinit var btnSubmenuAparencia: LinearLayout
+    private lateinit var btnSubmenuSobre: LinearLayout
+
+    // Painéis de detalhes de cada categoria (Ocultos por padrão)
+    private lateinit var panelGeral: LinearLayout
+    private lateinit var panelAudio: LinearLayout
+    private lateinit var panelAparencia: LinearLayout
+    private lateinit var panelSobre: LinearLayout
+
+    // Elementos de controles de opções dentro dos painéis
     private lateinit var switchAutoConnect: Switch
     private lateinit var switchAutoUpdate: Switch
     private lateinit var seekVadSensitivity: SeekBar
@@ -114,7 +130,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.6"
+    private val currentVersionName = "v1.0.7"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -181,6 +197,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Inicializa Tela de Configurações em Tela Cheia
         layoutSettings = findViewById(R.id.layoutSettings)
         btnSettingsBack = findViewById(R.id.btnSettingsBack)
+        txtSettingsTitle = findViewById(R.id.txtSettingsTitle)
+
+        // Mapeia Submenus e Painéis de Categorias das Configurações
+        settingsSubmenu = findViewById(R.id.settingsSubmenu)
+        btnSubmenuGeral = findViewById(R.id.btnSubmenuGeral)
+        btnSubmenuAudio = findViewById(R.id.btnSubmenuAudio)
+        btnSubmenuAparencia = findViewById(R.id.btnSubmenuAparencia)
+        btnSubmenuSobre = findViewById(R.id.btnSubmenuSobre)
+
+        panelGeral = findViewById(R.id.panelGeral)
+        panelAudio = findViewById(R.id.panelAudio)
+        panelAparencia = findViewById(R.id.panelAparencia)
+        panelSobre = findViewById(R.id.panelSobre)
+
         switchAutoConnect = findViewById(R.id.switchAutoConnect)
         switchAutoUpdate = findViewById(R.id.switchAutoUpdate)
         seekVadSensitivity = findViewById(R.id.seekVadSensitivity)
@@ -356,21 +386,41 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             showHelpDialog()
         }
 
-        // Configuração de Cliques da Tela de Configurações
+        // Configuração de Cliques para a Navegação Hierárquica de Configurações (Geral, Audio, Aparencia, Sobre)
         btnSettingsBack.setOnClickListener {
-            showScreen(activeScreenId) // Volta para a tela em que estava anteriormente de forma dinâmica!
+            // Se algum painel de detalhes estiver ativo, o botão voltar retorna para o submenu principal de configurações!
+            if (panelGeral.visibility == View.VISIBLE ||
+                panelAudio.visibility == View.VISIBLE ||
+                panelAparencia.visibility == View.VISIBLE ||
+                panelSobre.visibility == View.VISIBLE) {
+                
+                showSettingsSubmenuPanel()
+            } else {
+                // Se já estiver no submenu principal, o botão voltar fecha as configurações e retorna para a tela principal!
+                showScreen(activeScreenId)
+            }
+        }
+
+        // Cliques para entrar em cada categoria
+        btnSubmenuGeral.setOnClickListener {
+            showSettingsDetailPanel(panelGeral, "Geral")
+        }
+
+        btnSubmenuAudio.setOnClickListener {
+            showSettingsDetailPanel(panelAudio, "Áudio")
+        }
+
+        btnSubmenuAparencia.setOnClickListener {
+            showSettingsDetailPanel(panelAparencia, "Aparência")
+        }
+
+        btnSubmenuSobre.setOnClickListener {
+            showSettingsDetailPanel(panelSobre, "Sobre")
         }
 
         btnSettingsCheckUpdates.setOnClickListener {
             checkUpdatesFromSettings()
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        HallaCore.setCallbacks(null)
-        audioManager.stop()
-        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
     }
 
     // ============================================================================
@@ -384,6 +434,33 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layoutConnect.visibility = if (screenId == R.id.layoutConnect) View.VISIBLE else View.GONE
         layoutServer.visibility = if (screenId == R.id.layoutServer) View.VISIBLE else View.GONE
         layoutSettings.visibility = if (screenId == R.id.layoutSettings) View.VISIBLE else View.GONE
+
+        // Se entrou nas configurações, garante que o submenu principal está aberto por padrão!
+        if (screenId == R.id.layoutSettings) {
+            showSettingsSubmenuPanel()
+        }
+    }
+
+    // Auxiliar para exibir o submenu principal das configurações
+    private fun showSettingsSubmenuPanel() {
+        txtSettingsTitle.text = "Configurações"
+        settingsSubmenu.visibility = View.VISIBLE
+        panelGeral.visibility = View.GONE
+        panelAudio.visibility = View.GONE
+        panelAparencia.visibility = View.GONE
+        panelSobre.visibility = View.GONE
+    }
+
+    // Auxiliar para exibir um painel específico de detalhes ocultando o submenu principal
+    private fun showSettingsDetailPanel(activePanel: View, titleText: String) {
+        txtSettingsTitle.text = titleText
+        settingsSubmenu.visibility = View.GONE
+        panelGeral.visibility = View.GONE
+        panelAudio.visibility = View.GONE
+        panelAparencia.visibility = View.GONE
+        panelSobre.visibility = View.GONE
+
+        activePanel.visibility = View.VISIBLE
     }
 
     // ============================================================================
@@ -879,67 +956,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setMessage("Halla Mobile $currentVersionName\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
             .setPositiveButton("OK", null)
             .show()
-    }
-
-    private fun connectToSavedServer(srv: JSONObject) {
-        val host = srv.getString("host")
-        val port = srv.getInt("port")
-        val nick = srv.getString("nick")
-        val pass = srv.optString("pass", "")
-
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("last_srv_host", host)
-            .putInt("last_srv_port", port)
-            .putString("last_srv_nick", nick)
-            .putString("last_srv_pass", pass).apply()
-
-        txtError.visibility = View.GONE
-        btnConnectStatusConnecting()
-
-        val uid = getOrCreateClientUid()
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
-
-        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-        connectionTimeoutRunnable = Runnable {
-            if (layoutConnect.visibility == View.VISIBLE) {
-                btnConnectStatusNormal()
-                val logContent = readLocalDiagnosticsLog()
-                txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
-                txtError.visibility = View.VISIBLE
-            }
-        }
-        handler.postDelayed(connectionTimeoutRunnable!!, 6000)
-    }
-
-    private fun connectToQuickServer() {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        val host = prefs.getString("last_srv_host", "") ?: ""
-        val port = prefs.getInt("last_srv_port", 0)
-        val nick = prefs.getString("last_srv_nick", "") ?: ""
-        val pass = prefs.getString("last_srv_pass", "") ?: ""
-
-        if (host.isEmpty() || port == 0 || nick.isEmpty()) {
-            Toast.makeText(this, "Nenhum servidor conectado recentemente!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        txtError.visibility = View.GONE
-        btnConnectStatusConnecting()
-
-        val uid = getOrCreateClientUid()
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
-    }
-
-    private fun btnConnectStatusNormal() {
-        btnAddServer.isEnabled = true
-        btnQuickConnect.isEnabled = true
-        btnQuickConnect.text = "➦"
-    }
-
-    private fun btnConnectStatusConnecting() {
-        btnAddServer.isEnabled = false
-        btnQuickConnect.isEnabled = false
-        btnQuickConnect.text = "⏳"
     }
 
     // Varredura de ping de fundo

@@ -58,7 +58,7 @@
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:layout_alignParentEnd="true"
+                android:layout_parentEnd="true"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -645,7 +645,7 @@
         </RelativeLayout>
 
         <!-- ============================================================================ -->
-        <!-- TELA DE CONFIGURAÇÕES EM TELA CHEIA (FULL-SCREEN SETTINGS VIEW - NOVIDADE)   -->
+        <!-- TELA DE CONFIGURAÇÕES EM TELA CHEIA (FULL-SCREEN SETTINGS VIEW - HIERÁRQUICA) -->
         <!-- ============================================================================ -->
         <RelativeLayout
             android:id="@+id/layoutSettings"
@@ -673,6 +673,7 @@
                     android:background="@drawable/ic_disconnect" />
 
                 <TextView
+                    android:id="@+id/txtSettingsTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_centerVertical="true"
@@ -697,277 +698,407 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <!-- SEÇÃO: GERAL -->
+                    <!-- ========================================== -->
+                    <!-- SUBMENU DE SELEÇÃO DE CATEGORIAS (Novo)    -->
+                    <!-- ========================================== -->
                     <LinearLayout
-                        android:id="@+id/cardSettingsGeral"
+                        android:id="@+id/settingsSubmenu"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
                         android:orientation="vertical"
-                        android:padding="16dp"
-                        android:background="#151322">
+                        android:visibility="visible">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Geral"
-                            android:textColor="#8B5CF6"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="12dp" />
-
-                        <!-- Switch AutoConectar -->
-                        <RelativeLayout
+                        <!-- Item Geral -->
+                        <LinearLayout
+                            android:id="@+id/btnSubmenuGeral"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp">
-
+                            android:layout_marginBottom="16dp"
+                            android:padding="16dp"
+                            android:background="#151322"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="⚙️   Geral"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Autoconectar ao iniciar"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
+                                android:text="❯"
+                                android:textColor="#94A3B8"
+                                android:textSize="16sp" />
+                        </LinearLayout>
 
-                            <Switch
-                                android:id="@+id/switchAutoConnect"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
-
-                        </RelativeLayout>
-
-                        <!-- Switch Check Auto Update -->
-                        <RelativeLayout
+                        <!-- Item Áudio -->
+                        <LinearLayout
+                            android:id="@+id/btnSubmenuAudio"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content">
-
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:padding="16dp"
+                            android:background="#151322"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="🎙️   Áudio"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Verificar atualizações no início"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
+                                android:text="❯"
+                                android:textColor="#94A3B8"
+                                android:textSize="16sp" />
+                        </LinearLayout>
 
-                            <Switch
-                                android:id="@+id/switchAutoUpdate"
+                        <!-- Item Aparência -->
+                        <LinearLayout
+                            android:id="@+id/btnSubmenuAparencia"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:padding="16dp"
+                            android:background="#151322"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="🎨   Aparência"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+                            <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
+                                android:text="❯"
+                                android:textColor="#94A3B8"
+                                android:textSize="16sp" />
+                        </LinearLayout>
 
-                        </RelativeLayout>
+                        <!-- Item Sobre -->
+                        <LinearLayout
+                            android:id="@+id/btnSubmenuSobre"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:padding="16dp"
+                            android:background="#151322"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="ℹ️   Sobre"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="❯"
+                                android:textColor="#94A3B8"
+                                android:textSize="16sp" />
+                        </LinearLayout>
 
                     </LinearLayout>
 
-                    <!-- SEÇÃO: ÁUDIO -->
+                    <!-- ========================================== -->
+                    <!-- DETALHE DA CATEGORIA: GERAL (Oculto)       -->
+                    <!-- ========================================== -->
                     <LinearLayout
-                        android:id="@+id/cardSettingsAudio"
+                        android:id="@+id/panelGeral"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
                         android:orientation="vertical"
-                        android:padding="16dp"
-                        android:background="#151322">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Áudio"
-                            android:textColor="#8B5CF6"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="12dp" />
-
-                        <!-- VAD Sensitivity Slider -->
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Sensibilidade do Microfone (VAD)"
-                            android:textColor="#FFFFFF"
-                            android:textSize="14sp" />
+                        android:visibility="gone">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="6dp"
-                            android:layout_marginBottom="16dp"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <SeekBar
-                                android:id="@+id/seekVadSensitivity"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:max="100" />
+                            android:orientation="vertical"
+                            android:padding="16dp"
+                            android:background="#151322">
 
                             <TextView
-                                android:id="@+id/txtVadSensitivityVal"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="50%"
-                                android:textColor="#94A3B8"
-                                android:textSize="14sp"
-                                android:layout_marginStart="8dp" />
+                                android:text="Configurações Gerais"
+                                android:textColor="#8B5CF6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:layout_marginBottom="16dp" />
+
+                            <!-- Switch AutoConectar -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Autoconectar ao iniciar"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchAutoConnect"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
+
+                            <!-- Switch Check Auto Update -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Verificar atualizações no início"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchAutoUpdate"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
 
                         </LinearLayout>
 
-                        <!-- Switch Redução de Ruído -->
-                        <RelativeLayout
+                    </LinearLayout>
+
+                    <!-- ========================================== -->
+                    <!-- DETALHE DA CATEGORIA: ÁUDIO (Oculto)       -->
+                    <!-- ========================================== -->
+                    <LinearLayout
+                        android:id="@+id/panelAudio"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp">
+                            android:orientation="vertical"
+                            android:padding="16dp"
+                            android:background="#151322">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Redução de Ruído (DSP)"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
-
-                            <Switch
-                                android:id="@+id/switchNoiseSuppression"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
-
-                        </RelativeLayout>
-
-                        <!-- Switch Echo Cancellation -->
-                        <RelativeLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content">
+                                android:text="Configurações de Áudio"
+                                android:textColor="#8B5CF6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:layout_marginBottom="16dp" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Cancelamento de Eco"
+                                android:text="Sensibilidade do Microfone (VAD)"
                                 android:textColor="#FFFFFF"
                                 android:textSize="14sp" />
 
-                            <Switch
-                                android:id="@+id/switchEchoCancellation"
-                                android:layout_width="wrap_content"
+                            <LinearLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
+                                android:layout_marginTop="6dp"
+                                android:layout_marginBottom="16dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+                                <SeekBar
+                                    android:id="@+id/seekVadSensitivity"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:max="100" />
+                                <TextView
+                                    android:id="@+id/txtVadSensitivityVal"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="50%"
+                                    android:textColor="#94A3B8"
+                                    android:textSize="14sp"
+                                    android:layout_marginStart="8dp" />
+                            </LinearLayout>
 
-                        </RelativeLayout>
+                            <!-- Switch Redução de Ruído -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginBottom="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Redução de Ruído (DSP)"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchNoiseSuppression"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
+
+                            <!-- Switch Echo Cancellation -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Cancelamento de Eco"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchEchoCancellation"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
+
+                        </LinearLayout>
 
                     </LinearLayout>
 
-                    <!-- SEÇÃO: APARÊNCIA -->
+                    <!-- ========================================== -->
+                    <!-- DETALHE DA CATEGORIA: APARÊNCIA (Oculto)   -->
+                    <!-- ========================================== -->
                     <LinearLayout
-                        android:id="@+id/cardSettingsAparencia"
+                        android:id="@+id/panelAparencia"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
                         android:orientation="vertical"
-                        android:padding="16dp"
-                        android:background="#151322">
+                        android:visibility="gone">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Aparência"
-                            android:textColor="#8B5CF6"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="12dp" />
-
-                        <!-- Switch Dark Theme -->
-                        <RelativeLayout
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginBottom="12dp">
+                            android:orientation="vertical"
+                            android:padding="16dp"
+                            android:background="#151322">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Tema Escuro Premium"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
+                                android:text="Aparência Visual"
+                                android:textColor="#8B5CF6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:layout_marginBottom="16dp" />
 
-                            <Switch
-                                android:id="@+id/switchDarkTheme"
-                                android:layout_width="wrap_content"
+                            <!-- Switch Dark Theme -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
+                                android:layout_marginBottom="12dp">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Tema Escuro Premium"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchDarkTheme"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
 
-                        </RelativeLayout>
+                            <!-- Switch Show Channel Badges -->
+                            <RelativeLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content">
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentStart="true"
+                                    android:text="Exibir badges de contagem de salas"
+                                    android:textColor="#FFFFFF"
+                                    android:textSize="14sp" />
+                                <Switch
+                                    android:id="@+id/switchShowChannelBadges"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_alignParentEnd="true" />
+                            </RelativeLayout>
 
-                        <!-- Switch Show Channel Badges -->
-                        <RelativeLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content">
-
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_alignParentStart="true"
-                                android:text="Exibir badges de contagem de salas"
-                                android:textColor="#FFFFFF"
-                                android:textSize="14sp" />
-
-                            <Switch
-                                android:id="@+id/switchShowChannelBadges"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_alignParentEnd="true" />
-
-                        </RelativeLayout>
+                        </LinearLayout>
 
                     </LinearLayout>
 
-                    <!-- SEÇÃO: SOBRE (Sobre o Halla & Atualizações) -->
+                    <!-- ========================================== -->
+                    <!-- DETALHE DA CATEGORIA: SOBRE (Oculto)       -->
+                    <!-- ========================================== -->
                     <LinearLayout
-                        android:id="@+id/cardSettingsSobre"
+                        android:id="@+id/panelSobre"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="32dp"
                         android:orientation="vertical"
-                        android:padding="16dp"
-                        android:background="#151322">
+                        android:visibility="gone">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Sobre"
-                            android:textColor="#8B5CF6"
-                            android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="12dp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Halla Mobile v1.0.7"
-                            android:textColor="#FFFFFF"
-                            android:textSize="15sp"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:text="Um ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma."
-                            android:textColor="#94A3B8"
-                            android:textSize="12sp" />
-
-                        <!-- Botão Verificar Atualizações -->
-                        <Button
-                            android:id="@+id/btnSettingsCheckUpdates"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="16dp"
-                            android:backgroundTint="#8B5CF6"
-                            android:text="VERIFICAR ATUALIZAÇÕES"
-                            android:textColor="#FFFFFF"
-                            android:textStyle="bold" />
+                            android:orientation="vertical"
+                            android:padding="16dp"
+                            android:background="#151322">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Sobre o Halla Mobile"
+                                android:textColor="#8B5CF6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:layout_marginBottom="16dp" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Halla Mobile v1.0.7"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:text="Um ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma."
+                                android:textColor="#94A3B8"
+                                android:textSize="13sp" />
+
+                            <!-- Botão Verificar Atualizações -->
+                            <Button
+                                android:id="@+id/btnSettingsCheckUpdates"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="20dp"
+                                android:backgroundTint="#8B5CF6"
+                                android:text="VERIFICAR ATUALIZAÇÕES NO GITHUB"
+                                android:textColor="#FFFFFF"
+                                android:textStyle="bold" />
+
+                        </LinearLayout>
 
                     </LinearLayout>
 

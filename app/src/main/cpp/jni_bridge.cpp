@@ -104,6 +104,25 @@ int jsonExtractInt(const std::string& json, const std::string& key) {
     return safeStoi(json.substr(start, end - start));
 }
 
+std::string jsonExtractArray(const std::string& json, const std::string& key) {
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos == std::string::npos) return "[]";
+    pos = json.find("[", pos);
+    if (pos == std::string::npos) return "[]";
+    size_t start = pos;
+    int bracketCount = 0;
+    for (size_t i = start; i < json.size(); ++i) {
+        if (json[i] == '[') bracketCount++;
+        else if (json[i] == ']') {
+            bracketCount--;
+            if (bracketCount == 0) {
+                return json.substr(start, i - start + 1);
+            }
+        }
+    }
+    return "[]";
+}
+
 // Thread-safe helpers to invoke JNI callbacks from background C++ threads
 void invokeOnConnected(const std::string& serverName, const std::string& motd) {
     writeLog("invokeOnConnected chamada!");
@@ -576,8 +595,23 @@ private:
         if (m_udpThread.joinable()) m_udpThread.join();
         m_udpThread = std::thread(&HallaClientCore::udpLoop, this);
 
+        // Dispara o primeiro sinal de furo de NAT
         sendVoiceFrame(nullptr, 0, 1);
         writeLog("Socket UDP configurado com sucesso na porta " + std::to_string(m_udpPort) + " com token " + std::to_string(m_voiceToken));
+
+        // DISPARADOR DE PINGS CONTINUOS UDP PARA PUNCHING DE NAT (MANTÉM O CGNAT SEMPRE ATIVO E QUENTE!)
+        std::thread(&HallaClientCore::udpPingLoop, this).detach();
+        writeLog("[NAT] Loop de keep-alive UDP iniciado (Pings continuos de 5 segundos).");
+    }
+
+    void udpPingLoop() {
+        while (m_connected && m_udpSocket != -1) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            if (!m_connected || m_udpSocket == -1) break;
+            // Envia um datagrama UDP leve e vazio de 10-bytes. O servidor aprende nosso IP/Porta e nao faz relay.
+            sendVoiceFrame(nullptr, 0, 1);
+        }
+        writeLog("[NAT] Loop de keep-alive UDP finalizado.");
     }
 
     void udpLoop() {
@@ -606,9 +640,11 @@ private:
     std::string m_host;
     std::string m_nick;
     std::string m_pass;
+    std::string m_uid;
     int m_tcpSocket;
     int m_udpSocket;
     bool m_connected;
+    std::lock_guard<std::mutex>* m_dummy; // unused
     std::mutex m_tcpMutex;
     std::thread m_tcpThread;
     std::thread m_udpThread;
@@ -651,11 +687,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath) {
+Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath, jstring uid) {
     const char* nativeHost = env->GetStringUTFChars(host, nullptr);
     const char* nativeNick = env->GetStringUTFChars(nick, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
     const char* nativeCache = env->GetStringUTFChars(cachePath, nullptr);
+    const char* nativeUid = env->GetStringUTFChars(uid, nullptr);
 
     g_cachePath = nativeCache;
     writeLog("connectToServer: g_cachePath configurado para " + g_cachePath);
@@ -666,6 +703,7 @@ Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstri
     env->ReleaseStringUTFChars(nick, nativeNick);
     env->ReleaseStringUTFChars(pass, nativePass);
     env->ReleaseStringUTFChars(cachePath, nativeCache);
+    env->ReleaseStringUTFChars(uid, nativeUid);
 }
 
 JNIEXPORT void JNICALL
