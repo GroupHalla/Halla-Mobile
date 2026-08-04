@@ -184,7 +184,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.15"
+    private val currentVersionName = "v1.0.16"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -3165,9 +3165,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val uptime = usr.optInt("uptime", 0)
         val group = usr.optString("group", getString(R.string.member_default))
 
-        val uid = usr.optString("uid", getString(R.string.unknown_value))
         val info = getString(R.string.user_info_name, name) +
-                   getString(R.string.user_info_uid, uid) +
                    getString(R.string.user_info_ip, ip) +
                    getString(R.string.user_info_ping, ping) +
                    getString(R.string.user_info_version, version) +

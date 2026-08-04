@@ -310,5 +310,4 @@ Notas de la versión:
     <string name="error_details">[%1$s] %2$s</string>
     <string name="notification_title">Halla Mobile</string>
     <string name="notification_server_title">Halla — %1$s</string>
-    <string name="user_info_uid">ID único: %1$s\n</string>
 </resources>
