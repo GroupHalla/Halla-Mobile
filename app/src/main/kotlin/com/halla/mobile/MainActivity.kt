@@ -60,11 +60,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     // Botões do Dock Flutuante Inferior (Módulos de LinearLayout)
     private lateinit var btnMuteMicModule: LinearLayout
-    private lateinit var txtMicIcon: TextView
+    private lateinit var imgMicIcon: ImageView
     private lateinit var txtMicText: TextView
 
     private lateinit var btnDeafenModule: LinearLayout
-    private lateinit var txtDeafenIcon: TextView
+    private lateinit var imgDeafenIcon: ImageView
     private lateinit var txtDeafenText: TextView
 
     private lateinit var btnPttModule: LinearLayout
@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var btnOpenChatModule: LinearLayout
 
     private lateinit var btnRecordModule: LinearLayout
-    private lateinit var txtRecordIcon: TextView
+    private lateinit var imgRecordIcon: ImageView
     private lateinit var txtRecordText: TextView
 
     // Painel Deslizante de Chat (Overlay Bottom Sheet)
@@ -139,11 +139,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         // Módulos do Dock Flutuante Inferior
         btnMuteMicModule = findViewById(R.id.btnMuteMicModule)
-        txtMicIcon = findViewById(R.id.txtMicIcon)
+        imgMicIcon = findViewById(R.id.imgMicIcon)
         txtMicText = findViewById(R.id.txtMicText)
 
         btnDeafenModule = findViewById(R.id.btnDeafenModule)
-        txtDeafenIcon = findViewById(R.id.txtDeafenIcon)
+        imgDeafenIcon = findViewById(R.id.imgDeafenIcon)
         txtDeafenText = findViewById(R.id.txtDeafenText)
 
         btnPttModule = findViewById(R.id.btnPttModule)
@@ -152,7 +152,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnOpenChatModule = findViewById(R.id.btnOpenChatModule)
 
         btnRecordModule = findViewById(R.id.btnRecordModule)
-        txtRecordIcon = findViewById(R.id.txtRecordIcon)
+        imgRecordIcon = findViewById(R.id.imgRecordIcon)
         txtRecordText = findViewById(R.id.txtRecordText)
 
         // Painel Deslizante de Chat (Bottom Sheet)
@@ -256,11 +256,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             Toast.makeText(this, "Link de convite do servidor copiado com sucesso!", Toast.LENGTH_SHORT).show()
         }
 
-        // Módulos do Dock Flutuante Inferior
+        // Módulos do Dock Flutuante Inferior (Filtros de Cores Vetoriais)
         btnMuteMicModule.setOnClickListener {
             isMuted = !isMuted
             audioManager.setTransmitEnabled(!isMuted)
-            txtMicIcon.text = if (isMuted) "🔇" else "🎙️"
+            imgMicIcon.setColorFilter(Color.parseColor(if (isMuted) "#EF4444" else "#FFFFFF"))
             txtMicText.text = if (isMuted) "Ativar" else "Desativar"
             btnMuteMicModule.setBackgroundColor(Color.parseColor(if (isMuted) "#EF4444" else "#141322"))
         }
@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnDeafenModule.setOnClickListener {
             isDeaf = !isDeaf
             audioManager.setSpeakersEnabled(!isDeaf)
-            txtDeafenIcon.text = if (isDeaf) "🔇" else "🎧"
+            imgDeafenIcon.setColorFilter(Color.parseColor(if (isDeaf) "#EF4444" else "#FFFFFF"))
             txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
             btnDeafenModule.setBackgroundColor(Color.parseColor(if (isDeaf) "#EF4444" else "#141322"))
         }
@@ -288,14 +288,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnRecordModule.setOnClickListener {
             if (audioManager.isLocalRecording()) {
                 val path = audioManager.stopLocalRecording()
-                txtRecordIcon.text = "🔴"
+                imgRecordIcon.setColorFilter(Color.parseColor("#EF4444"))
                 txtRecordText.text = "Gravar"
                 btnRecordModule.setBackgroundColor(Color.parseColor("#141322"))
                 appendChatText("Sistema", "Gravação salva localmente em: $path")
             } else {
                 val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
                 if (started) {
-                    txtRecordIcon.text = "⏹️"
+                    imgRecordIcon.setColorFilter(Color.parseColor("#FFFFFF"))
                     txtRecordText.text = "Gravando"
                     btnRecordModule.setBackgroundColor(Color.parseColor("#EF4444"))
                     appendChatText("Sistema", "Gravação de áudio iniciada...")
@@ -764,12 +764,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
     }
 
-    private fun btnConnectStatusConnecting() {
-        btnAddServer.isEnabled = false
-        btnQuickConnect.isEnabled = false
-        btnQuickConnect.text = "⏳"
-    }
-
     private fun btnConnectStatusNormal() {
         btnAddServer.isEnabled = true
         btnQuickConnect.isEnabled = true
@@ -1169,7 +1163,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return 0
     }
 
-    // Árvore de canais baseada em cartões (Premium Card-Based UI com Tema Azul)
+    // Árvore de canais baseada em cartões (Premium Card-Based UI com Tema Roxo/Violeta idêntica ao print)
     private fun rebuildChannelTree() {
         containerChannels.removeAllViews()
 
@@ -1181,7 +1175,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val channelUsers = chan.optJSONArray("users")
             val count = channelUsers?.length() ?: 0
 
-            // Card do Canal com Borda Azul na Esquerda
+            // Card do Canal com Borda Roxo/Violeta na Esquerda
             val cardContainer = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
