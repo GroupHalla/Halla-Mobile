@@ -315,6 +315,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        HallaCore.setCallbacks(null)
+        audioManager.stop()
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+    }
+
     // ============================================================================
     // Atualizador Automático via API de Releases do GitHub (Sem bugs!)
     // ============================================================================
@@ -1304,8 +1311,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         // Avatar Circular com Bolinha de Status Sobreposta (Glow Ring)
                         val avatarContainer = FrameLayout(this).apply {
                             layoutParams = LinearLayout.LayoutParams(
-                                LinearLayout.LayoutParams.WRAP_CONTENT,
-                                LinearLayout.LayoutParams.WRAP_CONTENT
+                                HelperIntSize,
+                                HelperIntSize
                             ).apply {
                                 setMargins(0, 0, 20, 0)
                             }
@@ -1381,5 +1388,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun appendChatText(from: String, text: String) {
         val coloredFrom = if (from == "Sistema") "[Sistema]" else "[$from]"
         txtChatBox.append("$coloredFrom: $text\n")
+    }
+
+    companion object {
+        private const val HelperIntSize = 48
     }
 }
