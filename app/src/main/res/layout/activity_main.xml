@@ -28,7 +28,7 @@
                 android:layout_centerVertical="true"
                 android:background="@drawable/ic_menu" />
 
-            <!-- Logo Wave (ı|ı) + Title (Halla) -->
+            <!-- Logo oficial + título do Halla -->
             <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
@@ -41,13 +41,13 @@
                     android:layout_width="20dp"
                     android:layout_height="20dp"
                     android:layout_marginEnd="8dp"
-                    android:src="@drawable/ic_logo_wave" />
+                    android:src="@drawable/halla_logo" />
 
                 <TextView
                     android:id="@+id/txtAppTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Halla"
+                    android:text="@string/app_name"
                     android:textColor="#FFFFFF"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -126,7 +126,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Nenhum servidor salvo.\nClique no '+' para adicionar."
+                    android:text="@string/empty_servers"
                     android:textColor="#8B959E"
                     android:textSize="16sp"
                     android:gravity="center" />
@@ -185,7 +185,7 @@
                 android:layout_marginBottom="16dp"
                 android:padding="16dp">
 
-                <!-- Logo Roxo Esférico Circular -->
+                <!-- Logo oficial no banner do servidor -->
                 <RelativeLayout
                     android:id="@+id/bannerLogoLayout"
                     android:layout_width="48dp"
@@ -198,7 +198,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_centerInParent="true"
-                        android:src="@drawable/ic_logo_wave" />
+                        android:src="@drawable/halla_logo" />
 
                 </RelativeLayout>
 
@@ -216,7 +216,7 @@
                         android:id="@+id/txtActiveServerName"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Servidor Halla"
+                        android:text="@string/server_default"
                         android:textColor="#FFFFFF"
                         android:textSize="18sp"
                         android:textStyle="bold" />
@@ -226,7 +226,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Bem-vindo ao servidor Halla!"
+                        android:text="@string/server_motd"
                         android:textColor="#94A3B8"
                         android:textSize="12sp" />
 
@@ -247,7 +247,7 @@
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
-                            android:text="🟢 Online"
+                            android:text="@string/online"
                             android:textColor="#22C55E"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -263,7 +263,7 @@
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
-                            android:text="👤 2 membros"
+                            android:text="@string/members_initial"
                             android:textColor="#FFFFFF"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -279,7 +279,7 @@
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
-                            android:text="📶 --"
+                            android:text="@string/network_unknown"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -330,12 +330,12 @@
                         android:layout_width="16dp"
                         android:layout_height="16dp"
                         android:layout_marginEnd="6dp"
-                        android:src="@drawable/ic_logo_wave" />
+                        android:src="@drawable/halla_logo" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="CANAIS DE VOZ"
+                        android:text="@string/channels_voice"
                         android:textColor="#94A3B8"
                         android:textSize="12sp"
                         android:textStyle="bold" />
@@ -437,7 +437,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Desativar"
+                            android:text="@string/mute_mic"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -467,14 +467,14 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Fones"
+                            android:text="@string/speakers"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
                             android:textStyle="bold" />
 
                     </LinearLayout>
 
-                    <!-- Módulo 3: Destaque Central PTT Roxo TS3/Mumla -->
+                    <!-- Módulo 3: Destaque central do PTT -->
                     <LinearLayout
                         android:id="@+id/btnPttModule"
                         android:layout_width="0dp"
@@ -489,13 +489,13 @@
                         <ImageView
                             android:layout_width="20dp"
                             android:layout_height="20dp"
-                            android:src="@drawable/ic_logo_wave" />
+                            android:src="@drawable/halla_logo" />
 
                         <TextView
                             android:id="@+id/txtPttText"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="FALANDO"
+                            android:text="@string/talk"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp"
                             android:textStyle="bold" />
@@ -523,7 +523,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Mensagens"
+                            android:text="@string/messages"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -553,7 +553,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
-                            android:text="Gravar"
+                            android:text="@string/record_static"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
                             android:textStyle="bold" />
@@ -588,7 +588,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_alignParentStart="true"
-                        android:text="Mensagens de Texto"
+                        android:text="@string/chat_title"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:textStyle="bold" />
@@ -663,7 +663,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:background="#0D0E15"
-                        android:hint="Escreva uma mensagem..."
+                        android:hint="@string/chat_hint"
                         android:inputType="text"
                         android:padding="10dp"
                         android:textColor="#DCDFE3"
@@ -675,7 +675,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
                         android:backgroundTint="#8B5CF6"
-                        android:text="Enviar"
+                        android:text="@string/send"
                         android:textColor="#FFFFFF" />
 
                 </LinearLayout>
@@ -719,7 +719,7 @@
                     android:layout_centerVertical="true"
                     android:layout_toEndOf="@+id/btnSettingsBack"
                     android:layout_marginStart="16dp"
-                    android:text="Configurações"
+                    android:text="@string/settings"
                     android:textColor="#FFFFFF"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -762,7 +762,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="⚙️   Geral"
+                                android:text="@string/settings_general"
                                 android:textColor="#FFFFFF"
                                 android:textSize="16sp"
                                 android:textStyle="bold" />
@@ -788,7 +788,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="🎙️   Áudio"
+                                android:text="@string/settings_audio"
                                 android:textColor="#FFFFFF"
                                 android:textSize="16sp"
                                 android:textStyle="bold" />
@@ -814,7 +814,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="🎨   Aparência"
+                                android:text="@string/settings_appearance"
                                 android:textColor="#FFFFFF"
                                 android:textSize="16sp"
                                 android:textStyle="bold" />
@@ -840,7 +840,7 @@
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
                                 android:layout_weight="1"
-                                android:text="ℹ️   Sobre"
+                                android:text="@string/settings_about"
                                 android:textColor="#FFFFFF"
                                 android:textSize="16sp"
                                 android:textStyle="bold" />
@@ -874,7 +874,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Configurações Gerais"
+                                android:text="@string/settings_general_title"
                                 android:textColor="#8B5CF6"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
@@ -889,7 +889,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Autoconectar ao iniciar"
+                                    android:text="@string/auto_connect"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -907,7 +907,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Verificar atualizações no início"
+                                    android:text="@string/check_updates_start"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -941,7 +941,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Configurações de Áudio"
+                                android:text="@string/settings_audio_title"
                                 android:textColor="#8B5CF6"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
@@ -950,7 +950,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Sensibilidade do Microfone (VAD)"
+                                android:text="@string/microphone_sensitivity"
                                 android:textColor="#FFFFFF"
                                 android:textSize="14sp" />
 
@@ -986,7 +986,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Redução de Ruído (DSP)"
+                                    android:text="@string/noise_reduction"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -1004,7 +1004,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Cancelamento de Eco"
+                                    android:text="@string/echo_cancellation"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -1038,7 +1038,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Aparência Visual"
+                                android:text="@string/settings_visual_title"
                                 android:textColor="#8B5CF6"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
@@ -1053,7 +1053,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Tema Escuro Premium"
+                                    android:text="@string/premium_dark_theme"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -1071,7 +1071,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentStart="true"
-                                    android:text="Exibir badges de contagem de salas"
+                                    android:text="@string/show_room_badges"
                                     android:textColor="#FFFFFF"
                                     android:textSize="14sp" />
                                 <Switch
@@ -1105,7 +1105,7 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Sobre o Halla Mobile"
+                                android:text="@string/settings_about_title"
                                 android:textColor="#8B5CF6"
                                 android:textSize="16sp"
                                 android:textStyle="bold"
@@ -1114,7 +1114,8 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Halla Mobile v1.0.7"
+                                android:id="@+id/txtAboutVersion"
+                                android:text="@string/about_version_static"
                                 android:textColor="#FFFFFF"
                                 android:textSize="15sp"
                                 android:textStyle="bold" />
@@ -1123,7 +1124,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
-                                android:text="Um ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma."
+                                android:text="@string/about_description"
                                 android:textColor="#94A3B8"
                                 android:textSize="13sp" />
 
@@ -1134,7 +1135,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="20dp"
                                 android:backgroundTint="#8B5CF6"
-                                android:text="VERIFICAR ATUALIZAÇÕES NO GITHUB"
+                                android:text="@string/check_updates"
                                 android:textColor="#FFFFFF"
                                 android:textStyle="bold" />
 
@@ -1167,7 +1168,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="24dp"
-            android:text="Halla Mobile"
+            android:id="@+id/txtDrawerTitle"
+            android:text="@string/app_name"
             android:textColor="#2E7FC4"
             android:textSize="24sp"
             android:textStyle="bold" />
@@ -1185,7 +1187,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             android:padding="12dp"
-            android:text="⚙️   Configurações"
+            android:text="@string/menu_settings"
             android:textColor="#DCDFE3"
             android:textSize="16sp"
             android:textStyle="bold"
@@ -1198,7 +1200,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             android:padding="12dp"
-            android:text="❓   Ajuda"
+            android:text="@string/menu_help"
             android:textColor="#DCDFE3"
             android:textSize="16sp"
             android:textStyle="bold"
@@ -1210,10 +1212,11 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/txtDrawerVersion"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:text="v1.0.7"
+            android:text="@string/about_version_static"
             android:textColor="#5E636A"
             android:textSize="12sp" />
 

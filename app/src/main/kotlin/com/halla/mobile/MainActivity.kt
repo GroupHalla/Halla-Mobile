@@ -107,8 +107,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         "channel" to StringBuilder()
     )
     private val chatTabLabels = linkedMapOf(
-        "server" to "Servidor",
-        "channel" to "Canal"
+        "server" to "",
+        "channel" to ""
     )
     private var activeChatKey = "channel"
 
@@ -183,7 +183,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.13"
+    private val currentVersionName = "v1.0.14"
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,6 +247,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtRecordText = findViewById(R.id.txtRecordText)
 
         // Painel Deslizante de Chat (Bottom Sheet)
+        chatTabLabels["server"] = getString(R.string.server_chat)
+        chatTabLabels["channel"] = getString(R.string.channel_chat)
         layoutChatOverlay = findViewById(R.id.layoutChatOverlay)
         btnCloseChat = findViewById(R.id.btnCloseChat)
         txtChatBox = findViewById(R.id.txtChatBox)
@@ -255,6 +261,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layoutSettings = findViewById(R.id.layoutSettings)
         btnSettingsBack = findViewById(R.id.btnSettingsBack)
         txtSettingsTitle = findViewById(R.id.txtSettingsTitle)
+        findViewById<TextView>(R.id.txtAboutVersion).text =
+            getString(R.string.about_version, currentVersionName)
+        findViewById<TextView>(R.id.txtDrawerVersion).text = currentVersionName
 
         // Mapeia Submenus e Painéis de Categorias das Configurações
         settingsSubmenu = findViewById(R.id.settingsSubmenu)
@@ -279,7 +288,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnSettingsCheckUpdates = findViewById(R.id.btnSettingsCheckUpdates)
 
         btnTransmissionMode = Button(this).apply {
-            text = "🎙️ Modo de Transmissão: VAD"
+            text = getString(R.string.voice_activation_mode)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
@@ -289,21 +298,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 setMargins(0, 24, 0, 0)
             }
             setOnClickListener {
-                val modes = arrayOf("Ativação por Voz (VAD)", "Push-to-Talk (PTT)", "Transmissão Contínua")
+                val modes = arrayOf(
+                    getString(R.string.voice_activation),
+                    getString(R.string.push_to_talk),
+                    getString(R.string.continuous_transmission)
+                )
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Modo de Transmissão")
+                    .setTitle(getString(R.string.mode_dialog_title))
                     .setItems(modes) { _, which ->
                         val prefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
                         prefs.edit().putInt("transmission_mode", which).apply()
                         audioManager.transmissionMode = which
                         if (HallaService.isRunning()) HallaService.setTransmissionMode(this@MainActivity, which)
                         updatePttOptionsVisibility()
-                        text = "🎙️ Modo de Transmissão: " + when(which) {
-                            1 -> "PTT"
-                            2 -> "Contínuo"
-                            else -> "VAD"
+                        text = when (which) {
+                            1 -> getString(R.string.push_to_talk_mode)
+                            2 -> getString(R.string.continuous_mode)
+                            else -> getString(R.string.voice_activation_mode)
                         }
-                        Toast.makeText(this@MainActivity, "Modo alterado para ${modes[which]}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity,
+                            getString(R.string.mode_changed, modes[which]), Toast.LENGTH_SHORT).show()
                     }
                     .show()
             }
@@ -311,7 +325,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         panelAudio.addView(btnTransmissionMode)
 
         val btnWhisperLists = Button(this).apply {
-            text = "🟠 LISTA DE SUSSURRO"
+            text = getString(R.string.whisper_list_button)
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             layoutParams = LinearLayout.LayoutParams(
@@ -332,14 +346,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setBackgroundColor(Color.parseColor("#151322"))
         }
         val overlayHint = TextView(this).apply {
-            text = "Opções do Push-to-Talk"
+            text = getString(R.string.ptt_options)
             setTextColor(Color.WHITE)
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
         }
         floatingOptions.addView(overlayHint)
         val floatingSwitch = Switch(this).apply {
-            text = "Botão PTT flutuante sobre outros apps/jogos"
+            text = getString(R.string.floating_ptt)
             setTextColor(Color.WHITE)
             isChecked = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
                 .getBoolean(HallaService.PREF_OVERLAY, false)
@@ -347,7 +361,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (enabled && !Settings.canDrawOverlays(this@MainActivity)) {
                     isChecked = false
                     Toast.makeText(this@MainActivity,
-                        "Permita 'aparecer sobre outros apps' para ativar o PTT flutuante.",
+                        getString(R.string.overlay_permission_message),
                         Toast.LENGTH_LONG).show()
                     startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:$packageName")))
@@ -358,11 +372,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         floatingOptions.addView(floatingSwitch)
         val positionKeys = listOf("top_start", "top_end", "bottom_start", "bottom_end", "custom")
-        val positionNames = listOf("Superior esquerdo", "Superior direito", "Inferior esquerdo", "Inferior direito", "Personalizada (arraste)")
+        val positionNames = listOf(
+            getString(R.string.top_left), getString(R.string.top_right),
+            getString(R.string.bottom_left), getString(R.string.bottom_right),
+            getString(R.string.custom_drag)
+        )
         val positionButton = Button(this).apply {
             val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
             val current = prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
-            text = "Posição do botão: ${positionNames[positionKeys.indexOf(current).coerceAtLeast(0)]}"
+            text = getString(R.string.floating_position,
+                positionNames[positionKeys.indexOf(current).coerceAtLeast(0)])
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             setOnClickListener {
@@ -370,14 +389,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
                 ).coerceAtLeast(0)
                 AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Posição do PTT flutuante")
+                    .setTitle(getString(R.string.floating_position_title))
                     .setSingleChoiceItems(positionNames.toTypedArray(), selected) { dialog, which ->
                         prefs.edit().putString(HallaService.PREF_OVERLAY_POSITION, positionKeys[which]).apply()
-                        text = "Posição do botão: ${positionNames[which]}"
+                        text = getString(R.string.floating_position, positionNames[which])
                         HallaService.setOverlayPosition(this@MainActivity, positionKeys[which])
                         dialog.dismiss()
                     }
-                    .setNegativeButton("Cancelar", null)
+                    .setNegativeButton(getString(R.string.cancel), null)
                     .show()
             }
         }
@@ -389,7 +408,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         updatePttOptionsVisibility()
 
         val btnManageIds = Button(this).apply {
-            text = "👥 GERENCIAR IDENTIDADES"
+            text = getString(R.string.manage_identities)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
@@ -405,7 +424,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         panelGeral.addView(btnManageIds)
 
         val btnUsePrivilegeKey = Button(this).apply {
-            text = "🔑 USAR CHAVE DE PRIVILÉGIO"
+            text = getString(R.string.use_privilege_key)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(
@@ -415,6 +434,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setOnClickListener { showPrivilegeKeyDialog() }
         }
         panelGeral.addView(btnUsePrivilegeKey)
+
+        val btnLanguage = Button(this).apply {
+            text = getString(R.string.settings_language)
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setOnClickListener { showLanguageDialog() }
+        }
+        panelGeral.addView(btnLanguage)
 
         // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
@@ -454,7 +485,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnOpenChatModule.background = bubbleShape()
         btnRecordModule.background = bubbleShape()
 
-        // Estiliza o botão de PTT central com cantos arredondados Roxo TS3/Mumble
+        // Estiliza o botão PTT central com cantos arredondados.
         val pttShape = GradientDrawable().apply {
             setColor(Color.parseColor("#8B5CF6"))
             cornerRadius = 28f
@@ -549,7 +580,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnInviteMembers.setOnClickListener {
-            Toast.makeText(this, "Link de convite do servidor copiado com sucesso!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.invite_copied), Toast.LENGTH_SHORT).show()
         }
 
         // Módulos do Dock Flutuante Inferior (Filtros de Cores Vetoriais de acordo com o mockup)
@@ -558,7 +589,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (HallaService.isRunning()) HallaService.setMicMuted(this, isMuted)
             else audioManager.setTransmitEnabled(!isMuted)
             imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
-            txtMicText.text = if (isMuted) "Ativar" else "Desativar"
+            txtMicText.text = if (isMuted) getString(R.string.unmute_mic) else getString(R.string.mute_mic)
             btnMuteMicModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
             HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
         }
@@ -568,7 +599,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (HallaService.isRunning()) HallaService.setSpeakersMuted(this, isDeaf)
             else audioManager.setSpeakersEnabled(!isDeaf)
             imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
-            txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
+            txtDeafenText.text = if (isDeaf) getString(R.string.unmute_speakers) else getString(R.string.speakers)
             btnDeafenModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
 
             if (isDeaf) {
@@ -576,7 +607,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 isMuted = true
                 if (!HallaService.isRunning()) audioManager.setTransmitEnabled(false)
                 imgMicIcon.setImageResource(R.drawable.ic_mic_mute)
-                txtMicText.text = "Ativar"
+                txtMicText.text = getString(R.string.unmute_mic)
                 btnMuteMicModule.background = bubbleShape()
             }
             if (!HallaService.isRunning()) {
@@ -591,13 +622,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     MotionEvent.ACTION_DOWN -> {
                         if (HallaService.isRunning()) HallaService.setPtt(this, true)
                         else audioManager.isPttPressed = true
-                        txtPttText.text = "FALANDO"
+                        txtPttText.text = getString(R.string.talking)
                         setPttButtonBackground(Color.parseColor("#22C55E"))
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         if (HallaService.isRunning()) HallaService.setPtt(this, false)
                         else audioManager.isPttPressed = false
-                        txtPttText.text = "FALAR"
+                        txtPttText.text = getString(R.string.talk)
                         setPttButtonBackground(Color.parseColor("#8B5CF6"))
                     }
                 }
@@ -610,12 +641,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnPttModule.setOnClickListener {
             val mode = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE).getInt("transmission_mode", 0)
             if (mode == 1) {
-                Toast.makeText(this, "Segure para falar (Push-to-Talk)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.hold_to_talk), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this, "Modo de Transmissão: " + when(mode) {
-                    2 -> "Contínuo"
-                    else -> "Ativação por Voz (VAD)"
-                }, Toast.LENGTH_SHORT).show()
+                val modeName = if (mode == 2) getString(R.string.continuous_transmission)
+                               else getString(R.string.voice_activation)
+                Toast.makeText(this, getString(R.string.mode_info, modeName), Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -634,15 +664,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnRecordModule.setOnClickListener {
             if (audioManager.isLocalRecording()) {
                 val path = audioManager.stopLocalRecording()
-                txtRecordText.text = "Gravar"
+                txtRecordText.text = getString(R.string.record)
                 btnRecordModule.background = bubbleShape()
-                appendChatText("Sistema", "Gravação salva localmente em: $path")
+                appendChatText(getString(R.string.system), getString(R.string.recording_saved, path))
             } else {
                 val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
                 if (started) {
-                    txtRecordText.text = "Gravando"
+                    txtRecordText.text = getString(R.string.recording)
                     btnRecordModule.background = bubbleShape()
-                    appendChatText("Sistema", "Gravação de áudio iniciada...")
+                    appendChatText(getString(R.string.system), getString(R.string.recording_started))
                 }
             }
         }
@@ -675,19 +705,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         // Cliques para entrar em cada categoria
         btnSubmenuGeral.setOnClickListener {
-            showSettingsDetailPanel(panelGeral, "Geral")
+            showSettingsDetailPanel(panelGeral, getString(R.string.settings_general))
         }
 
         btnSubmenuAudio.setOnClickListener {
-            showSettingsDetailPanel(panelAudio, "Áudio")
+            showSettingsDetailPanel(panelAudio, getString(R.string.settings_audio))
         }
 
         btnSubmenuAparencia.setOnClickListener {
-            showSettingsDetailPanel(panelAparencia, "Aparência")
+            showSettingsDetailPanel(panelAparencia, getString(R.string.settings_appearance))
         }
 
         btnSubmenuSobre.setOnClickListener {
-            showSettingsDetailPanel(panelSobre, "Sobre")
+            showSettingsDetailPanel(panelSobre, getString(R.string.settings_about))
         }
 
         btnSettingsCheckUpdates.setOnClickListener {
@@ -722,10 +752,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun updateTalkingUi(talking: Boolean) {
         if (talking) {
-            txtPttText.text = "FALANDO"
+            txtPttText.text = getString(R.string.talking)
             setPttButtonBackground(Color.parseColor("#22C55E"))
         } else {
-            txtPttText.text = "FALAR"
+            txtPttText.text = getString(R.string.talk)
             setPttButtonBackground(Color.parseColor("#8B5CF6"))
         }
     }
@@ -737,10 +767,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         isAway = prefs.getBoolean(HallaService.PREF_AWAY, isAway)
         isChannelCommander = prefs.getBoolean(HallaService.PREF_COMMANDER, isChannelCommander)
         imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
-        txtMicText.text = if (isMuted) "Ativar" else "Desativar"
+        txtMicText.text = if (isMuted) getString(R.string.unmute_mic) else getString(R.string.mute_mic)
         imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
-        txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
-        txtPttText.text = "FALAR"
+        txtDeafenText.text = if (isDeaf) getString(R.string.unmute_speakers) else getString(R.string.speakers)
+        txtPttText.text = getString(R.string.talk)
     }
 
     // ============================================================================
@@ -763,7 +793,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     // Auxiliar para exibir o submenu principal das configurações
     private fun showSettingsSubmenuPanel() {
-        txtSettingsTitle.text = "Configurações"
+        txtSettingsTitle.text = getString(R.string.settings)
         settingsSubmenu.visibility = View.VISIBLE
         panelGeral.visibility = View.GONE
         panelAudio.visibility = View.GONE
@@ -802,13 +832,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val tMode = settingsPrefs.getInt("transmission_mode", 0)
         audioManager.transmissionMode = tMode
-        btnTransmissionMode.text = "🎙️ Modo de Transmissão: " + when(tMode) {
-            1 -> "PTT"
-            2 -> "Contínuo"
-            else -> "VAD"
+        btnTransmissionMode.text = when (tMode) {
+            1 -> getString(R.string.push_to_talk_mode)
+            2 -> getString(R.string.continuous_mode)
+            else -> getString(R.string.voice_activation_mode)
         }
         audioManager.vadThreshold = vadSens * 3.0
-        txtPttText.text = "FALAR"
+        txtPttText.text = getString(R.string.talk)
         updatePttOptionsVisibility()
 
         // Configura ouvintes de alteração para salvar instantaneamente
@@ -835,7 +865,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         switchDarkTheme.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("dark_theme", isChecked).apply()
-            Toast.makeText(this, "Tema Roxo Metálico mantido por padrão.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.theme_notice), Toast.LENGTH_SHORT).show()
         }
         switchShowChannelBadges.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("show_badges", isChecked).apply()
@@ -888,7 +918,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun checkUpdatesFromSettings() {
-        Toast.makeText(this, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.check_updates), Toast.LENGTH_SHORT).show()
         thread {
             try {
                 val url = URL("https://api.github.com/repos/GroupHalla/Halla-Mobile/releases/latest")
@@ -914,16 +944,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             showUpdateNotificationDialog(tag, json.optString("body", ""), apkUrl)
                         } else {
                             AlertDialog.Builder(this)
-                                .setTitle("🔄 Atualizações")
-                                .setMessage("Parabéns! Seu Halla Mobile $currentVersionName está totalmente atualizado!")
-                                .setPositiveButton("Excelente", null)
+                                .setTitle(getString(R.string.update_title))
+                                .setMessage(getString(R.string.fully_updated, currentVersionName))
+                                .setPositiveButton(getString(R.string.excellent), null)
                                 .show()
                         }
                     }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    Toast.makeText(this, "Não foi possível verificar atualizações no momento.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.update_error), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -942,10 +972,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun showUpdateNotificationDialog(newTag: String, notes: String, apkUrl: String) {
-        val action = if (apkUrl.isNotEmpty()) "Baixar e instalar agora" else "Abrir página da release"
+        val action = if (apkUrl.isNotEmpty()) getString(R.string.download_install) else getString(R.string.open_release)
         AlertDialog.Builder(this)
-            .setTitle("🔄 Nova Versão Disponível!")
-            .setMessage("Uma nova versão ($newTag) do Halla Mobile foi publicada.\n\nNotas da versão:\n$notes\n\nDeseja $action?")
+            .setTitle(getString(R.string.update_title))
+            .setMessage(getString(R.string.auto_update_available, newTag, notes))
             .setPositiveButton(action) { dialog, _ ->
                 dialog.dismiss()
                 if (apkUrl.isNotEmpty()) {
@@ -955,7 +985,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         Uri.parse("https://github.com/GroupHalla/Halla-Mobile/releases/latest")))
                 }
             }
-            .setNegativeButton("Depois") { dialog, _ -> dialog.dismiss() }
+            .setNegativeButton(getString(R.string.later)) { dialog, _ -> dialog.dismiss() }
             .show()
     }
 
@@ -965,10 +995,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             isIndeterminate = true
         }
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Baixando atualização $version")
-            .setMessage("O APK será baixado e o instalador do Android será aberto em seguida.")
+            .setTitle(getString(R.string.downloading_update, version))
+            .setMessage(getString(R.string.update_download_message))
             .setView(progress)
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .create()
         dialog.show()
 
@@ -1013,7 +1043,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 output = target
                 connection.disconnect()
             } catch (e: Exception) {
-                error = e.message ?: "falha desconhecida"
+                error = e.message ?: getString(R.string.unknown_failure)
             }
 
             runOnUiThread {
@@ -1021,7 +1051,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (output != null) {
                     installDownloadedApk(output!!)
                 } else {
-                    Toast.makeText(this, "Não foi possível baixar a atualização: $error", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.update_download_error, error), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -1031,7 +1061,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !packageManager.canRequestPackageInstalls()) {
             Toast.makeText(this,
-                "Permita a instalação de aplicativos desta fonte e tente novamente.",
+                getString(R.string.install_permission),
                 Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:$packageName")))
@@ -1046,7 +1076,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
             startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(this, "Não foi possível abrir o instalador: ${e.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.installer_error, e.message), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -1161,12 +1191,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             
             setOnClickListener { view ->
                 val popup = PopupMenu(context, view)
-                popup.menu.add("Editar")
-                popup.menu.add("Excluir")
+                popup.menu.add(getString(R.string.channel_edit))
+                popup.menu.add(getString(R.string.whisper_delete))
                 popup.setOnMenuItemClickListener { menuItem ->
-                    if (menuItem.title == "Editar") {
+                    if (menuItem.title == getString(R.string.channel_edit)) {
                         showServerFormDialog(srv)
-                    } else if (menuItem.title == "Excluir") {
+                    } else if (menuItem.title == getString(R.string.whisper_delete)) {
                         savedServers.remove(index)
                         saveServersToStorage()
                     }
@@ -1191,7 +1221,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val txtStatus = TextView(context).apply {
             val savedSlots = srv.optString("slots", "0/500") // Slots default corrigidos para 500!
-            text = "Disponível ($currentVersionName)  $savedSlots slots"
+            text = getString(R.string.available_slots, savedSlots)
             setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             val rParams = RelativeLayout.LayoutParams(
@@ -1203,7 +1233,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtPing = TextView(context).apply {
-            text = "Buscando..."
+            text = getString(R.string.searching)
             tag = "ping_text_$index"
             setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
@@ -1291,7 +1321,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtTitle = TextView(context).apply {
-            text = if (editSrv != null) "Editar Servidor" else "Adicionar Servidor"
+            text = if (editSrv != null) getString(R.string.edit_server) else getString(R.string.add_server)
             setTextColor(Color.parseColor("#FFFFFF"))
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
@@ -1300,7 +1330,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(txtTitle)
 
         val inputName = EditText(context).apply {
-            hint = "Nome do Servidor (ex: Halla Oficial)"
+            hint = getString(R.string.server_name_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("name") ?: "")
@@ -1308,7 +1338,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(inputName)
 
         val inputNick = EditText(context).apply {
-            hint = "Seu Apelido (Nickname)"
+            hint = getString(R.string.nickname_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("nick") ?: "HallaMobile")
@@ -1316,7 +1346,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(inputNick)
 
         val inputHost = EditText(context).apply {
-            hint = "IP ou Endereço do Servidor"
+            hint = getString(R.string.host_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("host") ?: "127.0.0.1")
@@ -1324,7 +1354,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(inputHost)
 
         val inputPort = EditText(context).apply {
-            hint = "Porta"
+            hint = getString(R.string.port_label)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -1333,7 +1363,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(inputPort)
 
         val inputPass = EditText(context).apply {
-            hint = "Senha do Servidor (Opcional)"
+            hint = getString(R.string.server_password_optional)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -1342,7 +1372,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialogView.addView(inputPass)
 
         var selectedUid = editSrv?.optString("identity_uid") ?: ""
-        var selectedIdentityName = "Padrão (Celular)"
+        var selectedIdentityName = getString(R.string.default_identity)
         
         val idList = getSavedIdentities()
         for (i in 0 until idList.length()) {
@@ -1354,7 +1384,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val btnSelectIdentity = Button(context).apply {
-            text = "Identidade: $selectedIdentityName"
+            text = getString(R.string.identity_label, selectedIdentityName)
             setBackgroundColor(Color.parseColor("#1C1B2B"))
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
@@ -1367,10 +1397,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     uids[i] = obj.getString("uid")
                 }
                 AlertDialog.Builder(context)
-                    .setTitle("Escolher Identidade")
+                    .setTitle(getString(R.string.choose_identity))
                     .setItems(names) { _, index ->
                         selectedUid = uids[index]
-                        text = "Identidade: ${names[index]}"
+                        text = getString(R.string.identity_label, names[index])
                     }
                     .show()
             }
@@ -1383,7 +1413,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .create()
 
         val btnSave = Button(context).apply {
-            text = "SALVAR"
+            text = getString(R.string.save_upper)
             setBackgroundColor(Color.parseColor("#8B5CF6"))
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
@@ -1394,7 +1424,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val pass = inputPass.text.toString().trim()
 
                 if (name.isEmpty() || nick.isEmpty() || host.isEmpty() || portStr.isEmpty()) {
-                    Toast.makeText(context, "Preencha todos os campos obrigatórios!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.required_fields), Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
                 }
 
@@ -1456,7 +1486,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (layoutConnect.visibility == View.VISIBLE) {
                 btnConnectStatusNormal()
                 val logContent = readLocalDiagnosticsLog()
-                txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
+                txtError.text = getString(R.string.timeout_details, logContent)
                 txtError.visibility = View.VISIBLE
             }
         }
@@ -1471,7 +1501,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val pass = prefs.getString("last_srv_pass", "") ?: ""
 
         if (host.isEmpty() || port == 0 || nick.isEmpty()) {
-            Toast.makeText(this, "Nenhum servidor conectado recentemente!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.no_recent_server), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1523,7 +1553,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
-                        updateServerPingOnUI(i, "Offline", false)
+                        updateServerPingOnUI(i, getString(R.string.offline), false)
                     }
                 }
             }
@@ -1566,10 +1596,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val lines = logFile.readLines()
                 lines.takeLast(8).joinToString("\n")
             } else {
-                "Arquivo de log nao encontrado."
+                getString(R.string.log_file_not_found)
             }
         } catch (e: Exception) {
-            "Erro ao ler logs: ${e.message}"
+            getString(R.string.log_read_error, e.message ?: getString(R.string.unknown_value))
         }
     }
 
@@ -1577,27 +1607,48 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Diálogos de Opções Laterais (Settings, Help, About)
     // ============================================================================
 
+    private fun showLanguageDialog() {
+        val prefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+        val keys = arrayOf(LocaleManager.SYSTEM, LocaleManager.PORTUGUESE, LocaleManager.ENGLISH, LocaleManager.SPANISH)
+        val labels = arrayOf(
+            getString(R.string.language_system),
+            getString(R.string.language_portuguese),
+            getString(R.string.language_english),
+            getString(R.string.language_spanish)
+        )
+        val current = keys.indexOf(prefs.getString(LocaleManager.PREF_LANGUAGE, LocaleManager.SYSTEM)).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.settings_language))
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                prefs.edit().putString(LocaleManager.PREF_LANGUAGE, keys[which]).apply()
+                dialog.dismiss()
+                recreate()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
     private fun showSettingsDialog() {
         AlertDialog.Builder(this)
-            .setTitle("⚙️ Configurações")
-            .setMessage("• Sensibilidade de VAD (MIC): Ativação de fala definida em 150 RMS.\n• Dispositivos de Áudio: Sistema padrão ativo.\n• Codec: Compressão e descompressão Opus em tempo real ativa.")
-            .setPositiveButton("OK") { d, _ -> d.dismiss() }
+            .setTitle(getString(R.string.settings))
+            .setMessage(getString(R.string.settings_info_message))
+            .setPositiveButton(getString(R.string.ok)) { d, _ -> d.dismiss() }
             .show()
     }
 
     private fun showAboutDialog() {
         AlertDialog.Builder(this)
-            .setTitle("ℹ️ Sobre o Halla Mobile")
-            .setMessage("Halla Mobile $currentVersionName\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
-            .setPositiveButton("Fechar", null)
+            .setTitle(getString(R.string.settings_about_title))
+            .setMessage("Halla Mobile $currentVersionName\n\n" + getString(R.string.about_description))
+            .setPositiveButton(getString(R.string.close), null)
             .show()
     }
 
     private fun showHelpDialog() {
         val context = this
-        val options = arrayOf("Sobre o Halla", "Verificar atualizações")
+        val options = arrayOf(getString(R.string.help_about), getString(R.string.check_updates))
         AlertDialog.Builder(context)
-            .setTitle("❓ Ajuda")
+            .setTitle(getString(R.string.help))
             .setItems(options) { _, which ->
                 if (which == 0) {
                     showAboutDialog()
@@ -1620,7 +1671,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             txtActiveServerName.text = serverName
             txtActiveMotd.text = motd
-            txtNetworkQuality.text = "📶 --"
+            txtNetworkQuality.text = getString(R.string.network_unknown)
             txtNetworkQuality.setTextColor(Color.parseColor("#94A3B8"))
             chatHistories.values.forEach { it.clear() }
             chatHistories.keys.filter { it.startsWith("private:") }.toList()
@@ -1643,8 +1694,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             systemAudio.isSpeakerphoneOn = true
             routeBluetoothIfAvailable()
 
-            appendChatText("Sistema", "Conectado ao servidor: $serverName", "server")
-            appendChatText("MOTD", motd)
+            appendChatText(getString(R.string.system), getString(R.string.connected_to, serverName), "server")
+            appendChatText(getString(R.string.motd_label), motd)
         }
     }
 
@@ -1680,7 +1731,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val clientsCount = usersData.length()
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
-                txtActiveUsersCountBadge.text = "👤 $clientsCount/$maxClients membros"
+                txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$maxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 updateActiveServerSlots(clientsCount, maxClients)
@@ -1735,7 +1786,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 
                 // Atualiza contadores dinâmicos no banner
-                txtActiveUsersCountBadge.text = "👤 ${usersData.length()} membros"
+                txtActiveUsersCountBadge.text = getString(R.string.members, usersData.length().toString())
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 rebuildChannelTree()
@@ -1751,7 +1802,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 scope == "server" -> "server"
                 scope == "private" -> {
                     val peerId = if (fromUserId == selfId) toUserId else fromUserId
-                    ensurePrivateChatTab(peerId, if (fromName.isNotEmpty()) fromName else "Privado")
+                    ensurePrivateChatTab(peerId, if (fromName.isNotEmpty()) fromName else getString(R.string.private_chat))
                     "private:$peerId"
                 }
                 else -> "channel"
@@ -1772,14 +1823,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (HallaService.isReconnecting()) return
         runOnUiThread {
             btnConnectStatusNormal()
-            txtError.text = "Erro: $reason"
+            txtError.text = getString(R.string.connection_error, reason)
             txtError.visibility = View.VISIBLE
         }
     }
 
     override fun onError(code: String, msg: String) {
         runOnUiThread {
-            txtError.text = if (msg.isNotEmpty()) "[$code] $msg" else code
+            txtError.text = if (msg.isNotEmpty()) getString(R.string.error_details, code, msg) else code
             txtError.visibility = View.VISIBLE
             if (code == "no_talk_power") {
                 if (HallaService.isRunning()) HallaService.forceStopTalking(this)
@@ -1797,7 +1848,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 else -> Color.parseColor("#22C55E")
             }
             val pingText = if (pingMs >= 0) "${pingMs}ms" else "--"
-            txtNetworkQuality.text = "📶 $pingText · perda $packetLossPercent%"
+            txtNetworkQuality.text = getString(R.string.network_quality, pingText, packetLossPercent)
             txtNetworkQuality.setTextColor(color)
         }
     }
@@ -1837,9 +1888,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
 
             AlertDialog.Builder(this)
-                .setTitle("👉 CUTUCÃO!")
-                .setMessage("Você foi cutucado por $fromName:\n\n$msg")
-                .setPositiveButton("OK", null)
+                .setTitle(getString(R.string.poke_title))
+                .setMessage(getString(R.string.poked_by, fromName, msg))
+                .setPositiveButton(getString(R.string.ok), null)
                 .show()
         }
     }
@@ -2073,7 +2124,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             // Badge de Membros (ex: 👤 2)
             val txtBadge = TextView(this).apply {
-                text = "👤 $count"
+                text = getString(R.string.members, count.toString())
                 setTextColor(Color.parseColor("#94A3B8"))
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
@@ -2174,7 +2225,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                         // Nome do usuário
                         val isAwayUsr = usr.optBoolean("away", false)
-                        val awayText = if (isAwayUsr) " (Ausente)" else ""
+                        val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
                         val txtUser = TextView(this).apply {
                             text = "$name$awayText"
                             setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
@@ -2245,7 +2296,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val arr = JSONArray()
             val defaultUid = getOrCreateClientUid()
             val defaultId = JSONObject().apply {
-                put("name", "Padrão (Celular)")
+                put("name", getString(R.string.default_identity))
                 put("uid", defaultUid)
             }
             arr.put(defaultId)
@@ -2266,22 +2317,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val names = ArrayList<String>()
         for (i in 0 until list.length()) {
             val obj = list.getJSONObject(i)
-            names.add("${obj.getString("name")} (${obj.getString("uid").take(6)}...)")
+            names.add(getString(R.string.identity_list_item, obj.getString("name"), obj.getString("uid").take(6)))
         }
 
         AlertDialog.Builder(context)
-            .setTitle("👥 Identidades Salvas")
+            .setTitle(getString(R.string.identity_manager))
             .setItems(names.toTypedArray()) { _, index ->
                 val identity = list.getJSONObject(index)
                 showIdentityDetailsDialog(identity, index)
             }
-            .setPositiveButton("Nova") { _, _ ->
+            .setPositiveButton(getString(R.string.new_identity)) { _, _ ->
                 showNewIdentityDialog()
             }
-            .setNeutralButton("Importar") { _, _ ->
+            .setNeutralButton(getString(R.string.import_identity)) { _, _ ->
                 showImportIdentityDialog()
             }
-            .setNegativeButton("Fechar", null)
+            .setNegativeButton(getString(R.string.close), null)
             .show()
     }
 
@@ -2291,30 +2342,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val uid = identity.getString("uid")
 
         AlertDialog.Builder(context)
-            .setTitle("ID: $name")
-            .setMessage("UID Completa:\n$uid")
-            .setPositiveButton("Exportar UID") { _, _ ->
+            .setTitle(getString(R.string.identity_name) + ": " + name)
+            .setMessage(getString(R.string.identity_uid_full, uid))
+            .setPositiveButton(getString(R.string.export_identity)) { _, _ ->
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("Halla UID", uid)
+                val clip = android.content.ClipData.newPlainText(getString(R.string.identity_clip_label), uid)
                 clipboard.setPrimaryClip(clip)
                 val share = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Identidade Halla - $name")
+                    putExtra(Intent.EXTRA_SUBJECT, getString(R.string.identity_share_subject, name))
                     putExtra(Intent.EXTRA_TEXT, uid)
                 }
-                startActivity(Intent.createChooser(share, "Exportar identidade Halla"))
+                startActivity(Intent.createChooser(share, getString(R.string.identity_share_chooser)))
             }
-            .setNeutralButton("Excluir") { _, _ ->
+            .setNeutralButton(getString(R.string.whisper_delete)) { _, _ ->
                 if (index == 0) {
-                    Toast.makeText(context, "Não é possível excluir a identidade padrão!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.identity_delete_forbidden), Toast.LENGTH_SHORT).show()
                     return@setNeutralButton
                 }
                 val list = getSavedIdentities()
                 list.remove(index)
                 saveIdentities(list)
-                Toast.makeText(context, "Identidade excluída!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.identity_deleted), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Voltar") { _, _ ->
+            .setNegativeButton(getString(R.string.back)) { _, _ ->
                 showManageIdentitiesDialog()
             }
             .show()
@@ -2336,15 +2387,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val lists = loadWhisperLists()
         val names = Array(lists.length()) { i ->
             val item = lists.optJSONObject(i)
-            val type = if (item?.optString("type") == "channel") "canais" else "usuários"
-            "${item?.optString("name", "Sussurro ${i + 1}")} · $type"
+            val type = if (item?.optString("type") == "channel") getString(R.string.whisper_channels) else getString(R.string.whisper_users)
+            getString(R.string.whisper_list_item,
+                item?.optString("name", "${getString(R.string.list_whisper_title)} ${i + 1}"), type)
         }
         AlertDialog.Builder(this)
-            .setTitle("Lista de Sussurro")
-            .setMessage(if (lists.length() == 0) "Crie uma lista para direcionar sua voz a canais ou usuários." else null)
+            .setTitle(getString(R.string.list_whisper_title))
+            .setMessage(if (lists.length() == 0) getString(R.string.whisper_list_message) else null)
             .setItems(names) { _, which -> showWhisperListEditor(which) }
-            .setPositiveButton("Nova lista") { _, _ -> showWhisperListEditor(-1) }
-            .setNegativeButton("Fechar", null)
+            .setPositiveButton(getString(R.string.new_whisper_list)) { _, _ -> showWhisperListEditor(-1) }
+            .setNegativeButton(getString(R.string.close), null)
             .show()
     }
 
@@ -2357,7 +2409,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setBackgroundColor(Color.parseColor("#151322"))
         }
         val nameInput = EditText(this).apply {
-            hint = "Nome da lista"
+            hint = getString(R.string.whisper_name_hint)
             setText(existing?.optString("name", "") ?: "")
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
@@ -2367,7 +2419,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(nameInput)
 
         val typeSpinner = Spinner(this)
-        val typeNames = arrayOf("Canais", "Usuários")
+        val typeNames = arrayOf(getString(R.string.whisper_channels), getString(R.string.whisper_users))
         val typeAdapter = object : ArrayAdapter<String>(
             this, android.R.layout.simple_spinner_dropdown_item, typeNames
         ) {
@@ -2389,7 +2441,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(typeSpinner)
 
         val targetsTitle = TextView(this).apply {
-            text = "Selecione os destinos"
+            text = getString(R.string.select_targets)
             setTextColor(Color.WHITE)
             setPadding(0, 16, 0, 4)
         }
@@ -2402,7 +2454,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(targetsLayout)
 
         val floating = Switch(this).apply {
-            text = "Criar botão flutuante para esta lista"
+            text = getString(R.string.floating_list_button)
             setTextColor(Color.WHITE)
             buttonTintList = ColorStateList.valueOf(Color.WHITE)
             isChecked = existing?.optBoolean("floating", true) ?: true
@@ -2420,7 +2472,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (channelsMode) {
                 if (channelsData.length() == 0) {
                     targetsLayout.addView(TextView(this).apply {
-                        text = "Conecte-se a um servidor para selecionar canais."
+                        text = getString(R.string.no_channels)
                         setTextColor(Color.parseColor("#94A3B8"))
                     })
                 }
@@ -2428,7 +2480,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val channel = channelsData.optJSONObject(i) ?: continue
                     val id = channel.optInt("id", 0).toString()
                     val check = CheckBox(this).apply {
-                        text = channel.optString("name", "Canal $id")
+                        text = channel.optString("name", getString(R.string.default_channel_name, id))
                         tag = id
                         setTextColor(Color.WHITE)
                         buttonTintList = ColorStateList.valueOf(Color.WHITE)
@@ -2439,7 +2491,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             } else {
                 if (usersData.length() == 0) {
                     targetsLayout.addView(TextView(this).apply {
-                        text = "Conecte-se a um servidor para selecionar usuários."
+                        text = getString(R.string.no_users)
                         setTextColor(Color.parseColor("#94A3B8"))
                     })
                 }
@@ -2467,12 +2519,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         rebuildTargets()
 
         val builder = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) "Nova lista de sussurro" else "Editar lista de sussurro")
+            .setTitle(if (existing == null) getString(R.string.new_whisper_title) else getString(R.string.edit_whisper_title))
             .setView(layout)
-            .setPositiveButton("Salvar") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = nameInput.text.toString().trim()
                 if (name.isEmpty()) {
-                    Toast.makeText(this, "Informe um nome para a lista.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.name_required), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 val targets = JSONArray()
@@ -2487,11 +2539,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 item.put("floating", floating.isChecked)
                 if (existing == null) lists.put(item) else lists.put(index, item)
                 saveWhisperLists(lists)
-                Toast.makeText(this, "Lista de sussurro salva.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.whisper_saved), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
         if (existing != null) {
-            builder.setNeutralButton("Excluir") { _, _ ->
+            builder.setNeutralButton(getString(R.string.whisper_delete)) { _, _ ->
                 lists.remove(index)
                 saveWhisperLists(lists)
             }
@@ -2501,19 +2553,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showPrivilegeKeyDialog() {
         val input = EditText(this).apply {
-            hint = "HL3-XXXX-XXXX-XXXX-XXXX"
+            hint = getString(R.string.privilege_hint)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
-            .setTitle("Chave de privilégio")
-            .setMessage("Cole a chave fornecida pelo administrador do servidor.")
+            .setTitle(getString(R.string.privilege_title))
+            .setMessage(getString(R.string.privilege_message))
             .setView(input)
-            .setPositiveButton("Usar") { _, _ ->
+            .setPositiveButton(getString(R.string.use_privilege_key)) { _, _ ->
                 val key = input.text.toString().trim()
                 if (key.isNotEmpty()) HallaCore.sendUsePrivilegeKey(key)
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2523,12 +2575,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(40, 24, 40, 8)
         }
         val inputName = EditText(this).apply {
-            hint = "Nome da identidade"
+            hint = getString(R.string.identity_name_hint)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val inputUid = EditText(this).apply {
-            hint = "Cole a UID exportada do Halla Desktop"
+            hint = getString(R.string.identity_uid_hint)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
             setSingleLine(false)
@@ -2537,14 +2589,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(inputUid)
 
         AlertDialog.Builder(this)
-            .setTitle("Importar identidade")
-            .setMessage("Cole aqui a UID copiada na janela Identidades do Halla Desktop.")
+            .setTitle(getString(R.string.import_identity))
+            .setMessage(getString(R.string.identity_import_paste))
             .setView(layout)
-            .setPositiveButton("Importar") { _, _ ->
+            .setPositiveButton(getString(R.string.import_identity)) { _, _ ->
                 val name = inputName.text.toString().trim()
                 val uid = inputUid.text.toString().trim()
                 if (name.isEmpty() || uid.isEmpty()) {
-                    Toast.makeText(this, "Nome e UID são obrigatórios.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.name_uid_required), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 val list = getSavedIdentities()
@@ -2563,9 +2615,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     })
                 }
                 saveIdentities(list)
-                Toast.makeText(this, "Identidade importada com sucesso.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.identity_success), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2576,12 +2628,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(40, 40, 40, 40)
         }
         val inputName = EditText(context).apply {
-            hint = "Nome da Identidade"
+            hint = getString(R.string.identity_name_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val inputUid = EditText(context).apply {
-            hint = "Cole uma UID (vazia para gerar)"
+            hint = getString(R.string.uid_generate_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
@@ -2589,13 +2641,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(inputUid)
 
         AlertDialog.Builder(context)
-            .setTitle("Nova Identidade")
+            .setTitle(getString(R.string.new_identity_title))
             .setView(layout)
-            .setPositiveButton("Salvar") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = inputName.text.toString().trim()
                 var uid = inputUid.text.toString().trim()
                 if (name.isEmpty()) {
-                    Toast.makeText(context, "Nome é obrigatório!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.name_required_short), Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 if (uid.isEmpty()) {
@@ -2611,10 +2663,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 list.put(newObj)
                 saveIdentities(list)
-                Toast.makeText(context, "Identidade criada!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.identity_success_created), Toast.LENGTH_SHORT).show()
                 showManageIdentitiesDialog()
             }
-            .setNegativeButton("Cancelar") { _, _ -> showManageIdentitiesDialog() }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ -> showManageIdentitiesDialog() }
             .show()
     }
 
@@ -2660,7 +2712,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManagerSystem.isSpeakerphoneOn = true
             audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
             btnAudioRoute.setBackgroundResource(R.drawable.ic_speaker)
-            Toast.makeText(this, "Áudio: Viva-Voz (Speaker)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.audio_speaker), Toast.LENGTH_SHORT).show()
             
             // Desativa sensor de proximidade no viva-voz
             sensorManager?.unregisterListener(proximityListener)
@@ -2669,7 +2721,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManagerSystem.isSpeakerphoneOn = false
             audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
             btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
-            Toast.makeText(this, "Áudio: Alto-falante de Ouvido (Earpiece)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.audio_earpiece), Toast.LENGTH_SHORT).show()
 
             // Ativa sensor de proximidade no modo auricular
             proximitySensor?.let {
@@ -2729,7 +2781,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
                 audioManagerSystem.isBluetoothScoOn = true
                 audioManagerSystem.startBluetoothSco()
-                Toast.makeText(context, "Bluetooth conectado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.bluetooth_connected), Toast.LENGTH_SHORT).show()
             } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
                 audioManagerSystem.isBluetoothScoOn = false
                 audioManagerSystem.stopBluetoothSco()
@@ -2790,13 +2842,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         val text = buildString {
-            if (topic.isNotBlank()) append("Tópico: $topic\n\n")
-            append(if (description.isBlank()) "Este canal não possui descrição." else description)
+            if (topic.isNotBlank()) append(getString(R.string.topic_prefix, topic))
+            append(if (description.isBlank()) getString(R.string.no_description) else description)
         }
         AlertDialog.Builder(this)
-            .setTitle("Descrição — $chanName")
+            .setTitle(getString(R.string.channel_description_title, chanName))
             .setMessage(text)
-            .setPositiveButton("Fechar", null)
+            .setPositiveButton(getString(R.string.close), null)
             .show()
     }
 
@@ -2806,26 +2858,27 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val isCollapsed = collapsedChannels.contains(chanId)
 
         val options = ArrayList<String>()
-        options.add("➦ Entrar no Canal")
-        if (hasSub) {
-            options.add(if (isCollapsed) "📁 Expandir Canal" else "📁 Recolher Canal")
-        }
-        options.add("⚙️ Editar Canal")
-        options.add("➕ Criar Subcanal")
+        val joinLabel = "➦ ${getString(R.string.channel_join)}"
+        val expandLabel = "📁 ${getString(R.string.channel_expand)}"
+        val collapseLabel = "📁 ${getString(R.string.channel_collapse)}"
+        options.add(joinLabel)
+        if (hasSub) options.add(if (isCollapsed) expandLabel else collapseLabel)
+        options.add("⚙️ ${getString(R.string.channel_edit)}")
+        options.add("➕ ${getString(R.string.channel_create_sub)}")
 
         AlertDialog.Builder(context)
-            .setTitle("Canal: $chanName")
+            .setTitle(getString(R.string.channel_title, chanName))
             .setItems(options.toTypedArray()) { _, which ->
                 val choice = options[which]
-                if (choice.contains("Entrar")) {
+                if (choice == joinLabel) {
                     joinChannelWithPassword(chanId, chanName)
-                } else if (choice.contains("Expandir") || choice.contains("Recolher")) {
+                } else if (choice == expandLabel || choice == collapseLabel) {
                     if (isCollapsed) collapsedChannels.remove(chanId)
                     else collapsedChannels.add(chanId)
                     rebuildChannelTree()
-                } else if (choice.contains("Editar")) {
+                } else if (choice.contains(getString(R.string.channel_edit))) {
                     showEditChannelDialog(chanId, chanName)
-                } else if (choice.contains("Criar")) {
+                } else if (choice.contains(getString(R.string.create))) {
                     showCreateSubchannelDialog(chanId)
                 }
             }
@@ -2848,20 +2901,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val input = EditText(this).apply {
-            hint = "Senha do canal"
+            hint = getString(R.string.channel_password)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
-            .setTitle("Entrar em $chanName")
-            .setMessage("Este canal é protegido por senha.")
+            .setTitle(getString(R.string.join_channel, chanName))
+            .setMessage(getString(R.string.protected_channel))
             .setView(input)
-            .setPositiveButton("Entrar") { _, _ ->
+            .setPositiveButton(getString(R.string.channel_join)) { _, _ ->
                 HallaCore.joinChannel(chanId, input.text.toString())
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2872,18 +2925,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(40, 40, 40, 40)
         }
         val inputName = EditText(context).apply {
-            hint = "Nome do Canal"
+            hint = getString(R.string.channel_name)
             setText(currentName)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val inputDesc = EditText(context).apply {
-            hint = "Descrição"
+            hint = getString(R.string.description)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val inputPass = EditText(context).apply {
-            hint = "Senha (deixe em branco se sem)"
+            hint = getString(R.string.password_optional)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
@@ -2892,18 +2945,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(inputPass)
 
         AlertDialog.Builder(context)
-            .setTitle("Editar Canal")
+            .setTitle(getString(R.string.edit_channel_title))
             .setView(layout)
-            .setPositiveButton("Salvar") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val name = inputName.text.toString().trim()
                 val desc = inputDesc.text.toString().trim()
                 val pass = inputPass.text.toString().trim()
                 if (name.isNotEmpty()) {
                     HallaCore.sendEditChannel(chanId, name, desc, pass)
-                    Toast.makeText(context, "Solicitação de edição enviada", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2914,16 +2967,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(40, 40, 40, 40)
         }
         val inputName = EditText(context).apply {
-            hint = "Nome do Subcanal"
+            hint = getString(R.string.subchannel_name)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(inputName)
 
         AlertDialog.Builder(context)
-            .setTitle("Criar Subcanal")
+            .setTitle(getString(R.string.create_subchannel_title))
             .setView(layout)
-            .setPositiveButton("Criar") { _, _ ->
+            .setPositiveButton(getString(R.string.create)) { _, _ ->
                 val name = inputName.text.toString().trim()
                 if (name.isNotEmpty()) {
                     val msg = JSONObject().apply {
@@ -2936,10 +2989,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("max", -1)
                     }.toString()
                     HallaCore.sendRawJson(msg)
-                    Toast.makeText(context, "Solicitação de criação de subcanal enviada", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.create_request), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -2948,26 +3001,28 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val userId = usr.getInt("id")
         val name = usr.getString("name")
 
+        val awayLabel = if (isAway) getString(R.string.away_unmark) else getString(R.string.away_mark)
+        val commanderLabel = if (isChannelCommander) getString(R.string.commander_disable) else getString(R.string.commander_enable)
         val options = ArrayList<String>()
         if (userId == selfId) {
-            options.add(if (isAway) "💤 Desmarcar Ausente" else "💤 Ficar Ausente (Away)")
-            options.add(if (isChannelCommander) "👑 Remover Channel Commander" else "👑 Ativar Channel Commander")
-            options.add("✏️ Alterar Apelido (Nickname)")
+            options.add("💤 $awayLabel")
+            options.add("👑 $commanderLabel")
+            options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
-            options.add("👉 Cutucar (Poke)")
-            options.add("💬 Mensagem privada")
-            options.add("ℹ️ Informações do Cliente")
-            options.add("➦ Mover para Canal")
-            options.add("🚫 Expulsar do Canal")
-            options.add("🚫 Expulsar do Servidor")
-            options.add("🚷 Banir Usuário")
+            options.add("👉 ${getString(R.string.poke)}")
+            options.add("💬 ${getString(R.string.private_message)}")
+            options.add("ℹ️ ${getString(R.string.client_info)}")
+            options.add("➦ ${getString(R.string.move_to_channel)}")
+            options.add("🚫 ${getString(R.string.kick_channel)}")
+            options.add("🚫 ${getString(R.string.kick_server)}")
+            options.add("🚷 ${getString(R.string.ban_user)}")
         }
 
         AlertDialog.Builder(context)
-            .setTitle("Usuário: $name")
+            .setTitle(getString(R.string.user_title, name))
             .setItems(options.toTypedArray()) { _, which ->
                 val choice = options[which]
-                if (choice.contains("Ausente")) {
+                if (choice.contains(awayLabel)) {
                     isAway = !isAway
                     getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
                         .putBoolean(HallaService.PREF_AWAY, isAway).apply()
@@ -2975,29 +3030,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         showAwayMessageDialog()
                     } else {
                         HallaCore.sendStatus(isMuted, isDeaf, false, false, isChannelCommander)
-                        Toast.makeText(context, "Você não está mais ausente", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, getString(R.string.not_away), Toast.LENGTH_SHORT).show()
                     }
-                } else if (choice.contains("Channel Commander")) {
+                } else if (choice.contains(commanderLabel)) {
                     isChannelCommander = !isChannelCommander
                     getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
                         .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
                     HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
-                    Toast.makeText(context, "Channel Commander: " + if (isChannelCommander) "Ativado" else "Desativado", Toast.LENGTH_SHORT).show()
-                } else if (choice.contains("Apelido")) {
+                    Toast.makeText(context, getString(R.string.commander_status,
+                        if (isChannelCommander) getString(R.string.yes) else getString(R.string.no)), Toast.LENGTH_SHORT).show()
+                } else if (choice.contains(getString(R.string.change_nickname))) {
                     showChangeNicknameDialog()
-                } else if (choice.contains("Cutucar")) {
+                } else if (choice.contains(getString(R.string.poke))) {
                     showSendPokeDialog(userId, name)
-                } else if (choice.contains("Mensagem privada")) {
+                } else if (choice.contains(getString(R.string.private_message))) {
                     showPrivateMessageDialog(userId, name)
-                } else if (choice.contains("Informações")) {
+                } else if (choice.contains(getString(R.string.client_info))) {
                     showClientInfoDialog(usr)
-                } else if (choice.contains("Mover")) {
+                } else if (choice.contains(getString(R.string.move_to_channel))) {
                     showMoveUserDialog(userId, name)
-                } else if (choice.contains("Expulsar do Canal")) {
+                } else if (choice.contains(getString(R.string.kick_channel))) {
                     showKickDialog(userId, false, name)
-                } else if (choice.contains("Expulsar do Servidor")) {
+                } else if (choice.contains(getString(R.string.kick_server))) {
                     showKickDialog(userId, true, name)
-                } else if (choice.contains("Banir")) {
+                } else if (choice.contains(getString(R.string.ban_user))) {
                     showBanDialog(userId, name)
                 }
             }
@@ -3007,84 +3063,84 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showAwayMessageDialog() {
         val context = this
         val input = EditText(context).apply {
-            hint = "Mensagem de Ausência (ex: Almoçando)"
+            hint = getString(R.string.away_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
-            .setTitle("Mensagem de Ausência")
+            .setTitle(getString(R.string.away_title))
             .setView(input)
-            .setPositiveButton("Confirmar") { _, _ ->
+            .setPositiveButton(getString(R.string.confirm)) { _, _ ->
                 awayMessage = input.text.toString().trim()
                 HallaCore.sendStatus(isMuted, isDeaf, true, false, isChannelCommander)
-                Toast.makeText(context, "Você está ausente: $awayMessage", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.away_status, awayMessage), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancelar") { _, _ -> isAway = false }
+            .setNegativeButton(getString(R.string.cancel)) { _, _ -> isAway = false }
             .show()
     }
 
     private fun showChangeNicknameDialog() {
         val context = this
         val input = EditText(context).apply {
-            hint = "Novo Apelido"
+            hint = getString(R.string.new_nickname_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
-            .setTitle("Alterar Apelido")
+            .setTitle(getString(R.string.change_nickname))
             .setView(input)
-            .setPositiveButton("Salvar") { _, _ ->
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val newNick = input.text.toString().trim()
                 if (newNick.isNotEmpty()) {
                     HallaCore.sendRename(newNick)
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showSendPokeDialog(toUserId: Int, targetName: String) {
         val context = this
         val input = EditText(context).apply {
-            hint = "Mensagem do Cutucão"
+            hint = getString(R.string.poke_hint)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
-            .setTitle("Cutucar $targetName")
+            .setTitle(getString(R.string.poke_user_title, targetName))
             .setView(input)
-            .setPositiveButton("Enviar") { _, _ ->
+            .setPositiveButton(getString(R.string.send)) { _, _ ->
                 val msg = input.text.toString().trim()
                 if (msg.isNotEmpty()) {
                     HallaCore.sendPoke(toUserId, msg)
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showClientInfoDialog(usr: JSONObject) {
         val context = this
         val name = usr.getString("name")
-        val ip = usr.optString("ip", "Desconhecido")
+        val ip = usr.optString("ip", getString(R.string.unknown_value))
         val ping = usr.optInt("ping", 0)
         val version = usr.optString("ver", "1.0.0")
         val platform = usr.optString("platform", "Android")
         val uptime = usr.optInt("uptime", 0)
-        val group = usr.optString("group", "Membro")
+        val group = usr.optString("group", getString(R.string.member_default))
 
-        val info = "Nome: $name\n" +
-                   "IP: $ip\n" +
-                   "Ping: ${ping}ms\n" +
-                   "Versão do App: $version\n" +
-                   "Plataforma: $platform\n" +
-                   "Uptime: ${uptime}s\n" +
-                   "Grupo: $group"
+        val info = getString(R.string.user_info_name, name) +
+                   getString(R.string.user_info_ip, ip) +
+                   getString(R.string.user_info_ping, ping) +
+                   getString(R.string.user_info_version, version) +
+                   getString(R.string.user_info_platform, platform) +
+                   getString(R.string.user_info_uptime, uptime) +
+                   getString(R.string.user_info_group, group)
 
         AlertDialog.Builder(context)
-            .setTitle("ℹ️ Detalhes de $name")
+            .setTitle(getString(R.string.client_details, name))
             .setMessage(info)
-            .setPositiveButton("Fechar", null)
+            .setPositiveButton(getString(R.string.close), null)
             .show()
     }
 
@@ -3099,11 +3155,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         AlertDialog.Builder(context)
-            .setTitle("Mover $userName para...")
+            .setTitle(getString(R.string.move_user_title, userName))
             .setItems(names.toTypedArray()) { _, index ->
                 val targetChanId = ids[index]
                 HallaCore.sendMoveOther(userId, targetChanId)
-                Toast.makeText(context, "Solicitação de movimento enviada", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.move_request_sent), Toast.LENGTH_SHORT).show()
             }
             .show()
     }
@@ -3111,19 +3167,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showKickDialog(userId: Int, fromServer: Boolean, userName: String) {
         val context = this
         val input = EditText(context).apply {
-            hint = "Motivo do Kick"
+            hint = getString(R.string.kick_reason)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
-            .setTitle(if (fromServer) "Expulsar do Servidor: $userName" else "Expulsar do Canal: $userName")
+            .setTitle(if (fromServer) getString(R.string.kick_title_server, userName) else getString(R.string.kick_title_channel, userName))
             .setView(input)
-            .setPositiveButton("Kick") { _, _ ->
+            .setPositiveButton(getString(R.string.kick_button)) { _, _ ->
                 val reason = input.text.toString().trim()
                 HallaCore.sendKick(userId, fromServer, reason)
-                Toast.makeText(context, "Kick enviado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.kick_sent), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -3134,12 +3190,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(40, 40, 40, 40)
         }
         val inputReason = EditText(context).apply {
-            hint = "Motivo do Ban"
+            hint = getString(R.string.ban_reason)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val inputMinutes = EditText(context).apply {
-            hint = "Tempo em Minutos (0 para permanente)"
+            hint = getString(R.string.ban_time)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
@@ -3148,16 +3204,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(inputMinutes)
 
         AlertDialog.Builder(context)
-            .setTitle("Banir Usuário: $userName")
+            .setTitle(getString(R.string.ban_title, userName))
             .setView(layout)
-            .setPositiveButton("Banir") { _, _ ->
+            .setPositiveButton(getString(R.string.ban_user)) { _, _ ->
                 val reason = inputReason.text.toString().trim()
                 val minutesStr = inputMinutes.text.toString().trim()
                 val minutes = minutesStr.toIntOrNull() ?: 0
                 HallaCore.sendBan(userId, reason, minutes)
-                Toast.makeText(context, "Ban enviado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.ban_sent), Toast.LENGTH_SHORT).show()
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
@@ -3182,7 +3238,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun ensurePrivateChatTab(userId: Int, name: String): String {
         if (userId <= 0) return "channel"
         val key = "private:$userId"
-        chatTabLabels[key] = if (name.isBlank()) "Privado" else name
+        chatTabLabels[key] = if (name.isBlank()) getString(R.string.private_chat) else name
         chatHistories.getOrPut(key) { StringBuilder() }
         rebuildChatTabs()
         return key
@@ -3197,7 +3253,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun appendChatText(from: String, text: String, key: String = "server") {
         val history = chatHistories.getOrPut(key) { StringBuilder() }
-        val coloredFrom = if (from == "Sistema") "[Sistema]" else "[$from]"
+        val coloredFrom = if (from == getString(R.string.system)) "[${getString(R.string.system)}]" else "[$from]"
         history.append("$coloredFrom: $text\n")
         if (key == activeChatKey) txtChatBox.text = history.toString()
     }
@@ -3206,20 +3262,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         ensurePrivateChatTab(userId, targetName)
         selectChatTab("private:$userId")
         val input = EditText(this).apply {
-            hint = "Mensagem para $targetName"
+            hint = getString(R.string.private_message_hint, targetName)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
-            .setTitle("Mensagem privada")
+            .setTitle(getString(R.string.private_message))
             .setView(input)
-            .setPositiveButton("Enviar") { _, _ ->
+            .setPositiveButton(getString(R.string.send)) { _, _ ->
                 val text = input.text.toString().trim()
                 if (text.isNotEmpty()) {
                     HallaCore.sendChatMessageScoped("private", userId, text)
                 }
             }
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 

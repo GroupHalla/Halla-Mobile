@@ -179,6 +179,8 @@ class HallaService : Service(), HallaCore.Callbacks {
     private var overlayView: TextView? = null
     private var overlayWindow: WindowManager? = null
     private var overlayPttDown = false
+    private fun t(id: Int, vararg args: Any): String = LocaleManager.wrap(this).getString(id, *args)
+
     private val whisperViews = linkedMapOf<String, TextView>()
     private val activeWhispers = linkedMapOf<String, List<Int>>()
 
@@ -194,7 +196,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                 broadcastState(talking)
                 updateNotification()
                 overlayView?.let {
-                    it.text = if (talking) "FALANDO" else "FALAR"
+                    it.text = if (talking) t(R.string.talking) else t(R.string.talk)
                     it.background = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
                         setColor(if (talking) 0xFF22C55E.toInt() else 0xFF8B5CF6.toInt())
@@ -286,7 +288,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         everConnected = false
         reconnectAttempt = 0
 
-        startForegroundCompat(buildNotification("Conectando…"))
+        startForegroundCompat(buildNotification(t(R.string.notification_connecting)))
         val mode = getSharedPreferences("HallaSettings", MODE_PRIVATE)
             .getInt("transmission_mode", 0)
         if (mode == 1 && getSharedPreferences("HallaPrefs", MODE_PRIVATE)
@@ -379,14 +381,14 @@ class HallaService : Service(), HallaCore.Callbacks {
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         notificationManager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Sessão de voz Halla", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Conexão e controles rápidos do Halla"
+            NotificationChannel(CHANNEL_ID, t(R.string.notification_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+                description = t(R.string.notification_channel_desc)
                 setShowBadge(false)
             }
         )
         notificationManager.createNotificationChannel(
-            NotificationChannel(SOCIAL_CHANNEL_ID, "Mensagens e cutucões", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Alertas de mensagens privadas e cutucões"
+            NotificationChannel(SOCIAL_CHANNEL_ID, t(R.string.social_channel_name), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = t(R.string.social_channel_desc)
                 enableVibration(true)
             }
         )
@@ -404,7 +406,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         val prefs = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
         val micMuted = prefs.getBoolean(PREF_MIC_MUTED, false)
         val spkMuted = prefs.getBoolean(PREF_SPK_MUTED, false)
-        val title = if (lastServerName.isEmpty()) "Halla Mobile" else "Halla — $lastServerName"
+        val title = if (lastServerName.isEmpty()) t(R.string.notification_title)
+        else t(R.string.notification_server_title, lastServerName)
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -424,17 +427,17 @@ class HallaService : Service(), HallaCore.Callbacks {
             .setCategory(Notification.CATEGORY_CALL)
             .addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(this, if (micMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic),
-                if (micMuted) "Ativar mic" else "Mutar mic",
+                if (micMuted) t(R.string.action_unmic) else t(R.string.action_mic),
                 pendingAction(ACTION_MUTE_MIC)
             ).build())
             .addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(this, if (spkMuted) R.drawable.ic_deafen_mute else R.drawable.ic_headphones),
-                if (spkMuted) "Ativar fones" else "Mutar fones",
+                if (spkMuted) t(R.string.action_unspeakers) else t(R.string.action_speakers),
                 pendingAction(ACTION_MUTE_SPEAKERS)
             ).build())
             .addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_disconnect),
-                "Desconectar",
+                t(R.string.action_disconnect),
                 pendingAction(ACTION_STOP)
             ).build())
             .build()
@@ -451,9 +454,9 @@ class HallaService : Service(), HallaCore.Callbacks {
     private fun updateNotification(text: String? = null) {
         if (!::notificationManager.isInitialized) return
         val status = text ?: when {
-            reconnecting -> "Reconectando…"
-            sessionActive -> "Conectado — áudio ativo"
-            else -> "Conectando…"
+            reconnecting -> t(R.string.notification_reconnecting)
+            sessionActive -> t(R.string.notification_connected)
+            else -> t(R.string.notification_connecting)
         }
         notificationManager.notify(NOTIFICATION_ID, buildNotification(status))
     }
@@ -465,7 +468,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                 if (sessionActive && !explicitDisconnect) {
                     networkWasLost = true
                     reconnecting = true
-                    updateNotification("Rede alterada — reconectando…")
+                    updateNotification(t(R.string.notification_network))
                     scheduleReconnect(1500)
                 }
             }
@@ -490,7 +493,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     private fun scheduleReconnect(delay: Long = 1500) {
         if (explicitDisconnect || host.isEmpty() || reconnectRunnable != null || connecting) return
         reconnecting = true
-        updateNotification("Reconectando…")
+        updateNotification(t(R.string.notification_reconnecting))
         val nextDelay = delay.coerceAtMost(10_000L)
         reconnectRunnable = Runnable {
             reconnectRunnable = null
@@ -554,7 +557,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             var startX = params.x
             var startY = params.y
             val view = TextView(this).apply {
-                text = "FALAR"
+                text = t(R.string.talk)
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setTextColor(0xFFFFFFFF.toInt())
@@ -571,7 +574,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                             startY = params.y
                             overlayPttDown = true
                             audio.isPttPressed = true
-                            text = "FALANDO"
+                            text = t(R.string.talking)
                             true
                         }
                         MotionEvent.ACTION_MOVE -> {
@@ -585,7 +588,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             overlayPttDown = false
                             audio.isPttPressed = false
-                            text = "FALAR"
+                            text = t(R.string.talk)
                             if (position == "custom") {
                                 getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
                                     .putInt("overlay_custom_x", params.x)
@@ -685,7 +688,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         for (i in 0 until lists.length()) {
             val list = lists.optJSONObject(i) ?: continue
             if (!list.optBoolean("floating", false)) continue
-            val key = list.optString("name", "Sussurro ${i + 1}")
+            val key = list.optString("name", t(R.string.whisper_default_name, i + 1))
             if (whisperViews.containsKey(key)) continue
             val size = (54 * resources.displayMetrics.density).toInt()
             val density = resources.displayMetrics.density
@@ -810,7 +813,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             reconnectAttempt = 0
             startAudio()
             sendCurrentStatus()
-            updateNotification("Conectado — áudio ativo")
+            updateNotification(t(R.string.notification_connected))
         }
     }
 
@@ -829,10 +832,10 @@ class HallaService : Service(), HallaCore.Callbacks {
                 scheduleReconnect(1500)
             } else if (shouldReconnect) {
                 reconnecting = true
-                updateNotification("Reconectando…")
+                updateNotification(t(R.string.notification_reconnecting))
             } else {
                 reconnecting = false
-                updateNotification("Desconectado")
+                updateNotification(t(R.string.notification_disconnected))
             }
         }
     }
@@ -852,7 +855,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     override fun onUserListReceived(usersJson: String) = Unit
 
     override fun onChatMessageReceived(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
-        if (scope == "private") notifySocial("Mensagem privada", "$fromName: $text")
+        if (scope == "private") notifySocial(t(R.string.social_private), "$fromName: $text")
     }
 
     override fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray) {
@@ -863,7 +866,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         handler.post {
             connecting = false
             if (!everConnected) {
-                updateNotification("Falha: $reason")
+                updateNotification(t(R.string.notification_failure, reason))
             } else if (!explicitDisconnect) {
                 scheduleReconnect(2000)
             }
@@ -878,11 +881,11 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     override fun onPingUpdated(pingMs: Int, packetLossPercent: Int) {
-        updateNotification("Ping ${pingMs.coerceAtLeast(0)} ms — perda $packetLossPercent%")
+        updateNotification(t(R.string.notification_ping, pingMs.coerceAtLeast(0), packetLossPercent))
     }
 
     override fun onPokeReceived(fromName: String, msg: String) {
-        notifySocial("Cutucão de $fromName", msg)
+        notifySocial(t(R.string.social_poke, fromName), msg)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
