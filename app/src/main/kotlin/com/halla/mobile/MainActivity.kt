@@ -770,6 +770,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnQuickConnect.text = "➦"
     }
 
+    private fun btnConnectStatusConnecting() {
+        btnAddServer.isEnabled = false
+        btnQuickConnect.isEnabled = false
+        btnQuickConnect.text = "⏳"
+    }
+
     // Varredura de ping de fundo
     private fun pingServersInBackground() {
         for (i in 0 until savedServers.length()) {
