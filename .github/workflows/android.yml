@@ -67,30 +67,27 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## 🚀 Novidades do Halla Mobile ${{ github.ref_name }}
+            ## Halla Mobile v1.0.8
 
-            Esta versão estende o ecossistema com suporte completo a controles de áudio, identidades e administração direta do celular:
+            ### Correções de voz e conexão
+            * Corrigido o início da captura antes da preparação do UDP, evitando que a voz do celular só funcionasse depois de alguém falar pelo PC.
+            * Registro de NAT/endpoint UDP repetido e keep-alive controlado por threads gerenciadas.
+            * Sinalização `talking` enviada ao servidor e encerrada corretamente ao mutar, parar ou desconectar.
+            * Erros de permissão e senha de canal não derrubam mais a sessão inteira.
+            * Entrada em canais protegidos por senha com diálogo no celular.
+            * Encerramento seguro de sockets, threads e codecs Opus.
 
-            ### 🔊 Roteamento de Áudio & Hardware Inteligente
-            * **Alternância Rápida:** Botão na barra superior para alternar instantaneamente entre **Viva-Voz (Speaker)** e **Alto-falante de Ouvido (Earpiece)**.
-            * **Sensor de Proximidade:** Apaga a tela do celular automaticamente ao encostar na orelha no modo Earpiece, prevenindo toques acidentais.
-            * **Suporte a Bluetooth (SCO):** Reconhecimento e roteamento nativo automático ao conectar fones Bluetooth ou som de carros.
+            ### Identidades e favoritos
+            * UID escolhida no favorito agora é enviada de fato ao servidor.
+            * Importação de UID do Halla Desktop e exportação por copiar/compartilhar.
+            * Favoritos e identidades incluídos no Auto Backup/Device Transfer do Android.
 
-            ### 👥 Identidades Múltiplas e Import/Export
-            * **Múltiplos Perfis:** Gerencie e crie várias identidades (UIDs) nas configurações gerais.
-            * **Escolha por Favorito:** Vincule uma identidade específica para cada servidor salvo (favorito).
-            * **Sincronização:** Copie a UID (exportar) ou cole/importe a UID do cliente Desktop para manter seus cargos e grupos de servidor.
-
-            ### 📂 Árvore Sanfona (Expand/Collapse)
-            * **Organização de Canais:** Toque em qualquer canal com subcanais para expandir ou recolher a árvore inteira, economizando espaço de tela útil.
-
-            ### 💬 Interação Social Avançada
-            * **Cutucar (Poke):** Envie e receba cutucões que geram **vibração física de 300ms**, alerta sonoro e pop-up em tela.
-            * **Informações do Cliente:** Toque em qualquer usuário para abrir o menu que permite visualizar IP, Ping, Versão do App, Uptime e grupos associados.
-
-            ### ⚙️ Administração e Moderação Mobile
-            * **Ações Rápidas:** Toque em qualquer membro para abrir o menu de moderador e aplicar **Kick do Canal**, **Kick do Servidor**, **Ban** ou para **Mover Usuário** entre salas.
-            * **Edição de Canal:** Altere o nome, descrição ou senha de qualquer sala diretamente do smartphone.
-            * **Mutar Microfone com Fone:** Ao mutar os fones (Deafen), o microfone agora se muta automaticamente por segurança.
+            ### Interface e recursos
+            * Abas de chat para servidor, canal e conversas privadas.
+            * Mensagens privadas pelo menu do usuário.
+            * Árvore de canais com subcanais hierárquicos e recolhimento recursivo.
+            * Chave de privilégio disponível nas configurações gerais.
+            * Melhorias no mute/deafen, PTT/VAD, roteamento Bluetooth e indicador de voz.
+            * JSON de saída com escape correto para apelidos, senhas e mensagens.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
