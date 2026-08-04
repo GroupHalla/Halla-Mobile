@@ -62,21 +62,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Handshake UDP e seta de retorno
+          name: Halla Mobile ${{ github.ref_name }} — Foreground Service, PTT flutuante e reconexão
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.9
+            ## Halla Mobile v1.0.10
 
-            ### Correção definitiva do primeiro áudio UDP
-            * Ao conectar, o Mobile agora prepara o socket UDP antes de iniciar a captura.
-            * O cliente envia frames Opus de silêncio válidos para registrar o endpoint UDP no servidor, em vez de depender apenas de datagramas vazios.
-            * O registro é repetido no início e durante o keep-alive, corrigindo o cenário em que o áudio só funcionava depois de alguém falar pelo PC.
+            ### Sessão em segundo plano
+            * Foreground Service com notificação fixa e ações rápidas para mutar o microfone, mutar os fones e desconectar.
+            * A conexão não é encerrada quando a Activity é minimizada, destruída ou a tela é apagada.
+            * Reconexão silenciosa durante a troca de Wi-Fi para 4G/5G, mantendo a mesma identidade e servidor.
+
+            ### Áudio e conectividade
+            * PTT flutuante opcional sobre outros aplicativos mediante a permissão do Android.
+            * Ping e perda de pacotes exibidos no cartão do servidor com indicação verde/amarela/vermelha.
+            * Mensagens privadas e cutucões geram notificação/vibração mesmo com o app em segundo plano.
+            * Atualizador baixa o APK da release e abre o instalador do Android, sem redirecionar o usuário para o navegador.
 
             ### Interface
-            * O botão de voltar das configurações voltou a usar uma seta clara.
-
-            O APK continua incluindo as correções de identidade, favoritos, canais protegidos, chat privado, PTT/VAD, mute/deafen e encerramento seguro da versão anterior.
+            * O botão inferior mostra **FALAR** quando parado e **FALANDO** durante a transmissão.
+            * Pressionar um canal exibe a descrição e o tópico.
+            * A seta de retorno das configurações voltou ao símbolo de seta.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

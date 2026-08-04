@@ -1,5 +1,7 @@
 package com.halla.mobile
 
+import java.util.concurrent.CopyOnWriteArraySet
+
 object HallaCore {
     init {
         System.loadLibrary("halla-core")
@@ -65,63 +67,81 @@ object HallaCore {
         fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray)
         fun onConnectionFailed(reason: String)
         fun onError(code: String, msg: String)
+        fun onPingUpdated(pingMs: Int, packetLossPercent: Int)
         fun onPokeReceived(fromName: String, msg: String)
     }
 
-    private var callbacks: Callbacks? = null
+    private val callbacks = CopyOnWriteArraySet<Callbacks>()
 
+    // O Service foreground e a Activity podem observar o mesmo core. Isso
+    // evita que destruir a Activity ao apagar a tela derrube o callback da
+    // conexão que continua viva no serviço.
     fun setCallbacks(cb: Callbacks?) {
-        this.callbacks = cb
+        callbacks.clear()
+        if (cb != null) callbacks.add(cb)
+    }
+
+    fun addCallbacks(cb: Callbacks) {
+        callbacks.add(cb)
+    }
+
+    fun removeCallbacks(cb: Callbacks) {
+        callbacks.remove(cb)
     }
 
     // Métodos chamados pelo JNI (C++) para encaminhar eventos ao Kotlin
     @JvmStatic
     fun triggerOnConnected(serverName: String, motd: String) {
-        callbacks?.onConnected(serverName, motd)
+        callbacks.forEach { it.onConnected(serverName, motd) }
     }
 
     @JvmStatic
     fun triggerOnDisconnected() {
-        callbacks?.onDisconnected()
+        callbacks.forEach { it.onDisconnected() }
     }
 
     @JvmStatic
     fun triggerOnWelcome(welcomeJson: String) {
-        callbacks?.onWelcomeReceived(welcomeJson)
+        callbacks.forEach { it.onWelcomeReceived(welcomeJson) }
     }
 
     @JvmStatic
     fun triggerOnChannelList(channelsJson: String) {
-        callbacks?.onChannelListReceived(channelsJson)
+        callbacks.forEach { it.onChannelListReceived(channelsJson) }
     }
 
     @JvmStatic
     fun triggerOnUserList(usersJson: String) {
-        callbacks?.onUserListReceived(usersJson)
+        callbacks.forEach { it.onUserListReceived(usersJson) }
     }
 
     @JvmStatic
     fun triggerOnChatMessage(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
-        callbacks?.onChatMessageReceived(scope, fromUserId, toUserId, fromName, text)
+        callbacks.forEach { it.onChatMessageReceived(scope, fromUserId, toUserId, fromName, text) }
     }
 
     @JvmStatic
     fun triggerOnAudioFrame(fromUserId: Int, pcmData: ByteArray) {
-        callbacks?.onAudioFrameReceived(fromUserId, pcmData)
+        callbacks.forEach { it.onAudioFrameReceived(fromUserId, pcmData) }
     }
 
     @JvmStatic
     fun triggerOnConnectionFailed(reason: String) {
-        callbacks?.onConnectionFailed(reason)
+        callbacks.forEach { it.onConnectionFailed(reason) }
     }
 
     @JvmStatic
     fun triggerOnError(code: String, msg: String) {
-        callbacks?.onError(code, msg)
+        callbacks.forEach { it.onError(code, msg) }
+    }
+
+    @JvmStatic
+    fun triggerOnPing(pingMs: Int, packetLossPercent: Int) {
+        callbacks.forEach { it.onPingUpdated(pingMs, packetLossPercent) }
     }
 
     @JvmStatic
     fun triggerOnPoke(fromName: String, msg: String) {
-        callbacks?.onPokeReceived(fromName, msg)
+        callbacks.forEach { it.onPokeReceived(fromName, msg) }
     }
 }

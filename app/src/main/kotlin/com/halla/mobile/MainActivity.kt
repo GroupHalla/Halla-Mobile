@@ -27,6 +27,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.PowerManager
+import android.provider.Settings
 import android.media.AudioManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -38,6 +39,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -70,6 +72,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var txtActiveMotd: TextView
     private lateinit var containerChannels: LinearLayout
     private lateinit var txtActiveUsersCountBadge: TextView
+    private lateinit var txtNetworkQuality: TextView
     private lateinit var txtCategoryChannelsCount: TextView
     private lateinit var btnBannerSettings: Button
 
@@ -176,7 +179,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.9"
+    private val currentVersionName = "v1.0.10"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -213,6 +216,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
         containerChannels = findViewById(R.id.containerChannels)
         txtActiveUsersCountBadge = findViewById(R.id.txtActiveUsersCountBadge)
+        txtNetworkQuality = findViewById(R.id.txtNetworkQuality)
         txtCategoryChannelsCount = findViewById(R.id.txtCategoryChannelsCount)
         btnBannerSettings = findViewById(R.id.btnBannerSettings)
 
@@ -328,6 +332,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelGeral.addView(btnUsePrivilegeKey)
 
+        val switchOverlayPtt = Switch(this).apply {
+            text = "PTT flutuante sobre outros apps"
+            setTextColor(Color.WHITE)
+            isChecked = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+                .getBoolean(HallaService.PREF_OVERLAY, false)
+            setOnCheckedChangeListener { _, enabled ->
+                if (enabled && !Settings.canDrawOverlays(this@MainActivity)) {
+                    isChecked = false
+                    Toast.makeText(this@MainActivity,
+                        "Permita 'aparecer sobre outros apps' para usar o PTT flutuante.",
+                        Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } else {
+                    HallaService.setOverlayEnabled(this@MainActivity, enabled)
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 16, 0, 0) }
+        }
+        panelGeral.addView(switchOverlayPtt)
+
         // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
         val bannerGradient = GradientDrawable(
@@ -381,23 +409,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 102)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 103)
+        }
 
         // Inicializa AudioManager
         audioManager = HallaAudioManager(cacheDir)
         audioManager.onTalkingStateChanged = { talking ->
-            runOnUiThread {
-                if (talking) {
-                    txtPttText.text = "TRANSMITINDO"
-                    btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
-                } else {
-                    txtPttText.text = "FALANDO"
-                    btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6")) // Purple mockup default
-                }
-            }
+            runOnUiThread { updateTalkingUi(talking) }
         }
 
-        // Configura Callbacks do C++ Core JNI
-        HallaCore.setCallbacks(this)
+        // Configura Callbacks do C++ Core JNI. O foreground service também
+        // observa o core para manter áudio/rede vivos sem a Activity.
+        HallaCore.addCallbacks(this)
 
         // Carrega Servidores Salvos
         loadSavedServers()
@@ -409,6 +434,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         proximitySensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         registerReceiver(bluetoothReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
+        ContextCompat.registerReceiver(
+            this,
+            serviceStateReceiver,
+            IntentFilter(HallaService.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
             .registerAudioDeviceCallback(audioDeviceCallback, handler)
         routeBluetoothIfAvailable()
@@ -430,8 +461,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnDisconnect.setOnClickListener {
-            audioManager.stop()
-            HallaCore.disconnectFromServer()
+            if (HallaService.isRunning()) HallaService.stop(this)
+            else {
+                audioManager.stop()
+                HallaCore.disconnectFromServer()
+            }
         }
 
         btnSendChat.setOnClickListener {
@@ -461,7 +495,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Módulos do Dock Flutuante Inferior (Filtros de Cores Vetoriais de acordo com o mockup)
         btnMuteMicModule.setOnClickListener {
             isMuted = !isMuted
-            audioManager.setTransmitEnabled(!isMuted)
+            if (HallaService.isRunning()) HallaService.setMicMuted(this, isMuted)
+            else audioManager.setTransmitEnabled(!isMuted)
             imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
             txtMicText.text = if (isMuted) "Ativar" else "Desativar"
             btnMuteMicModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
@@ -470,21 +505,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnDeafenModule.setOnClickListener {
             isDeaf = !isDeaf
-            audioManager.setSpeakersEnabled(!isDeaf)
+            if (HallaService.isRunning()) HallaService.setSpeakersMuted(this, isDeaf)
+            else audioManager.setSpeakersEnabled(!isDeaf)
             imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
             txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
             btnDeafenModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
 
             if (isDeaf) {
-                // Ao mutar o fone, precisa mutar o microfone também!
+                // Ao mutar os fones, o microfone é mutado também.
                 isMuted = true
-                audioManager.setTransmitEnabled(false)
+                if (!HallaService.isRunning()) audioManager.setTransmitEnabled(false)
                 imgMicIcon.setImageResource(R.drawable.ic_mic_mute)
                 txtMicText.text = "Ativar"
                 btnMuteMicModule.background = bubbleShape()
-                HallaCore.sendStatus(true, true, isAway, false, isChannelCommander)
-            } else {
-                HallaCore.sendStatus(isMuted, false, isAway, false, isChannelCommander)
+            }
+            if (!HallaService.isRunning()) {
+                HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
             }
         }
 
@@ -493,13 +529,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (mode == 1) { // PTT mode
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        audioManager.isPttPressed = true
-                        txtPttText.text = "TRANSMITINDO"
+                        if (HallaService.isRunning()) HallaService.setPtt(this, true)
+                        else audioManager.isPttPressed = true
+                        txtPttText.text = "FALANDO"
                         btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        audioManager.isPttPressed = false
-                        txtPttText.text = "FALANDO"
+                        if (HallaService.isRunning()) HallaService.setPtt(this, false)
+                        else audioManager.isPttPressed = false
+                        txtPttText.text = "FALAR"
                         btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6")) // Purple mockup default
                     }
                 }
@@ -595,6 +633,41 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnSettingsCheckUpdates.setOnClickListener {
             checkUpdatesFromSettings()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncAudioUiFromPreferences()
+        if (HallaService.isSessionActive() && layoutServer.visibility != View.VISIBLE) {
+            val welcome = HallaService.currentWelcomeJson()
+            if (welcome.isNotEmpty()) {
+                onConnected(HallaService.currentServerName(), HallaService.currentMotd())
+                onWelcomeReceived(welcome)
+            }
+        }
+    }
+
+    private fun updateTalkingUi(talking: Boolean) {
+        if (talking) {
+            txtPttText.text = "FALANDO"
+            btnPttModule.setBackgroundColor(Color.parseColor("#22C55E"))
+        } else {
+            txtPttText.text = "FALAR"
+            btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6"))
+        }
+    }
+
+    private fun syncAudioUiFromPreferences() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        isMuted = prefs.getBoolean(HallaService.PREF_MIC_MUTED, isMuted)
+        isDeaf = prefs.getBoolean(HallaService.PREF_SPK_MUTED, isDeaf)
+        isAway = prefs.getBoolean(HallaService.PREF_AWAY, isAway)
+        isChannelCommander = prefs.getBoolean(HallaService.PREF_COMMANDER, isChannelCommander)
+        imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
+        txtMicText.text = if (isMuted) "Ativar" else "Desativar"
+        imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
+        txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
+        txtPttText.text = "FALAR"
     }
 
     // ============================================================================
@@ -725,10 +798,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val json = JSONObject(response.toString())
                     val tag = json.optString("tag_name", "")
                     val body = json.optString("body", "")
+                    val apkUrl = findApkDownloadUrl(json)
 
                     if (tag.isNotEmpty() && tag != currentVersionName) {
                         runOnUiThread {
-                            showUpdateNotificationDialog(tag, body)
+                            showUpdateNotificationDialog(tag, body, apkUrl)
                         }
                     }
                 }
@@ -759,9 +833,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                     val json = JSONObject(response.toString())
                     val tag = json.optString("tag_name", "")
+                    val apkUrl = findApkDownloadUrl(json)
                     runOnUiThread {
                         if (tag.isNotEmpty() && tag != currentVersionName) {
-                            showUpdateNotificationDialog(tag, json.optString("body", ""))
+                            showUpdateNotificationDialog(tag, json.optString("body", ""), apkUrl)
                         } else {
                             AlertDialog.Builder(this)
                                 .setTitle("🔄 Atualizações")
@@ -779,17 +854,125 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    private fun showUpdateNotificationDialog(newTag: String, notes: String) {
+    private fun findApkDownloadUrl(json: JSONObject): String {
+        val assets = json.optJSONArray("assets") ?: return ""
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            val name = asset.optString("name", "")
+            if (name.equals("HallaMobile.apk", ignoreCase = true) || name.endsWith(".apk", true)) {
+                return asset.optString("browser_download_url", "")
+            }
+        }
+        return ""
+    }
+
+    private fun showUpdateNotificationDialog(newTag: String, notes: String, apkUrl: String) {
+        val action = if (apkUrl.isNotEmpty()) "Baixar e instalar agora" else "Abrir página da release"
         AlertDialog.Builder(this)
             .setTitle("🔄 Nova Versão Disponível!")
-            .setMessage("Uma nova versão ($newTag) do Halla Mobile foi publicada no GitHub com melhorias de sincronia e áudio.\n\nNotas da versão:\n$notes\n\nDeseja baixar a atualização agora?")
-            .setPositiveButton("Baixar Agora") { dialog, _ ->
+            .setMessage("Uma nova versão ($newTag) do Halla Mobile foi publicada.\n\nNotas da versão:\n$notes\n\nDeseja $action?")
+            .setPositiveButton(action) { dialog, _ ->
                 dialog.dismiss()
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/GroupHalla/Halla-Mobile/releases/latest"))
-                startActivity(browserIntent)
+                if (apkUrl.isNotEmpty()) {
+                    downloadAndInstallUpdate(apkUrl, newTag)
+                } else {
+                    startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/GroupHalla/Halla-Mobile/releases/latest")))
+                }
             }
             .setNegativeButton("Depois") { dialog, _ -> dialog.dismiss() }
             .show()
+    }
+
+    private fun downloadAndInstallUpdate(url: String, version: String) {
+        val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            isIndeterminate = true
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Baixando atualização $version")
+            .setMessage("O APK será baixado e o instalador do Android será aberto em seguida.")
+            .setView(progress)
+            .setNegativeButton("Cancelar", null)
+            .create()
+        dialog.show()
+
+        thread {
+            var output: File? = null
+            var error: String? = null
+            try {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 30000
+                    setRequestProperty("User-Agent", "Halla-Mobile-Updater")
+                }
+                if (connection.responseCode !in 200..299) {
+                    throw IllegalStateException("HTTP ${connection.responseCode}")
+                }
+                val total = connection.contentLengthLong
+                val fileName = "HallaMobile-${version.replace(Regex("[^A-Za-z0-9._-]"), "_")}.apk"
+                val target = File(cacheDir, fileName)
+                connection.inputStream.use { input ->
+                    FileOutputStream(target).use { out ->
+                        val buffer = ByteArray(32 * 1024)
+                        var downloaded = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            out.write(buffer, 0, read)
+                            downloaded += read
+                            if (total > 0) {
+                                val pct = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                                runOnUiThread {
+                                    if (dialog.isShowing) {
+                                        progress.isIndeterminate = false
+                                        progress.progress = pct
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                output = target
+                connection.disconnect()
+            } catch (e: Exception) {
+                error = e.message ?: "falha desconhecida"
+            }
+
+            runOnUiThread {
+                if (dialog.isShowing) dialog.dismiss()
+                if (output != null) {
+                    installDownloadedApk(output!!)
+                } else {
+                    Toast.makeText(this, "Não foi possível baixar a atualização: $error", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun installDownloadedApk(file: File) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(this,
+                "Permita a instalação de aplicativos desta fonte e tente novamente.",
+                Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")))
+            return
+        }
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Não foi possível abrir o instalador: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     // ============================================================================
@@ -1191,7 +1374,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         } else {
             getOrCreateClientUid()
         }
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+        HallaService.start(this, host, port, nick, pass, uid)
 
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         connectionTimeoutRunnable = Runnable {
@@ -1230,7 +1413,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
-        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+        HallaService.start(this, host, port, nick, pass, uid)
     }
 
     private fun btnConnectStatusNormal() {
@@ -1362,6 +1545,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             txtActiveServerName.text = serverName
             txtActiveMotd.text = motd
+            txtNetworkQuality.text = "📶 --"
+            txtNetworkQuality.setTextColor(Color.parseColor("#94A3B8"))
             chatHistories.values.forEach { it.clear() }
             chatHistories.keys.filter { it.startsWith("private:") }.toList()
                 .forEach { chatHistories.remove(it) }
@@ -1382,8 +1567,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             @Suppress("DEPRECATION")
             systemAudio.isSpeakerphoneOn = true
             routeBluetoothIfAvailable()
-            audioManager.startCapture()
-            audioManager.startPlayback()
 
             appendChatText("Sistema", "Conectado ao servidor: $serverName", "server")
             appendChatText("MOTD", motd)
@@ -1392,15 +1575,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onDisconnected() {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        if (HallaService.isReconnecting()) return
         runOnUiThread {
-            audioManager.stop()
-            // Libera sockets/threads nativos também quando o servidor fecha
-            // a conexão sozinho; antes eles ficavam vivos até o próximo login.
-            HallaCore.disconnectFromServer()
             showScreen(R.id.layoutConnect)
             btnConnectStatusNormal()
 
-            // Alterna visibilidade dos botões do Header Superior de volta para Home
+            // Só volta para a tela inicial em uma desconexão explícita ou
+            // quando a sessão ainda não conseguiu ser estabelecida.
             btnDisconnect.visibility = View.GONE
             btnInviteMembers.visibility = View.GONE
             btnAudioRoute.visibility = View.GONE
@@ -1500,19 +1681,21 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 else -> "channel"
             }
+            if (scope == "private") vibrateShort()
             appendChatText(fromName, text, key)
         }
     }
 
     override fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray) {
-        audioManager.handleIncomingVoice(pcmData)
+        // O foreground service reproduz o áudio mesmo com a Activity fora da
+        // tela. O fallback local só é usado se o serviço não estiver ativo.
+        if (!HallaService.isRunning()) audioManager.handleIncomingVoice(pcmData)
     }
 
     override fun onConnectionFailed(reason: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        if (HallaService.isReconnecting()) return
         runOnUiThread {
-            audioManager.stop()
-            HallaCore.disconnectFromServer()
             btnConnectStatusNormal()
             txtError.text = "Erro: $reason"
             txtError.visibility = View.VISIBLE
@@ -1523,18 +1706,47 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         runOnUiThread {
             txtError.text = if (msg.isNotEmpty()) "[$code] $msg" else code
             txtError.visibility = View.VISIBLE
-            if (code == "no_talk_power") audioManager.forceStopTalking()
+            if (code == "no_talk_power") {
+                if (HallaService.isRunning()) HallaService.forceStopTalking(this)
+                else audioManager.forceStopTalking()
+            }
             Toast.makeText(this, msg.ifEmpty { code }, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onPingUpdated(pingMs: Int, packetLossPercent: Int) {
+        runOnUiThread {
+            val color = when {
+                packetLossPercent >= 20 || pingMs < 0 -> Color.parseColor("#EF4444")
+                packetLossPercent >= 5 || pingMs >= 180 -> Color.parseColor("#F59E0B")
+                else -> Color.parseColor("#22C55E")
+            }
+            val pingText = if (pingMs >= 0) "${pingMs}ms" else "--"
+            txtNetworkQuality.text = "📶 $pingText · perda $packetLossPercent%"
+            txtNetworkQuality.setTextColor(color)
+        }
+    }
+
+    private fun vibrateShort() {
+        try {
+            val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                v.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                v.vibrate(180)
+            }
+        } catch (_: Exception) { }
     }
 
     override fun onPokeReceived(fromName: String, msg: String) {
         runOnUiThread {
             try {
                 val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     v.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
                 } else {
+                    @Suppress("DEPRECATION")
                     v.vibrate(300)
                 }
             } catch (e: Exception) {
@@ -1724,6 +1936,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 background = cardShape
                 setOnClickListener {
                     showChannelOptionsDialog(chanId, chanName)
+                }
+                setOnLongClickListener {
+                    showChannelDescriptionDialog(chanId, chanName)
+                    true
                 }
             }
 
@@ -2234,6 +2450,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
+    private val serviceStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != HallaService.ACTION_STATE_CHANGED) return
+            val talking = if (intent.hasExtra("talking"))
+                intent.getBooleanExtra("talking", false) else null
+            if (intent.hasExtra(HallaService.PREF_MIC_MUTED)) {
+                isMuted = intent.getBooleanExtra(HallaService.PREF_MIC_MUTED, isMuted)
+            }
+            if (intent.hasExtra(HallaService.PREF_SPK_MUTED)) {
+                isDeaf = intent.getBooleanExtra(HallaService.PREF_SPK_MUTED, isDeaf)
+            }
+            runOnUiThread {
+                syncAudioUiFromPreferences()
+                if (talking != null) updateTalkingUi(talking)
+            }
+        }
+    }
+
     private val bluetoothReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
@@ -2250,10 +2484,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onDestroy() {
-        audioManager.stop()
-        HallaCore.disconnectFromServer()
+        // Destruir/minimizar a Activity não encerra a sessão. A conexão, a
+        // captura e o playback pertencem ao foreground service.
+        HallaCore.removeCallbacks(this)
         try {
             unregisterReceiver(bluetoothReceiver)
+            unregisterReceiver(serviceStateReceiver)
         } catch (e: Exception) {}
         (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
             .unregisterAudioDeviceCallback(audioDeviceCallback)
@@ -2286,6 +2522,28 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (chan.optInt("parent", 0) == chanId) return true
         }
         return false
+    }
+
+    private fun showChannelDescriptionDialog(chanId: Int, chanName: String) {
+        var description = ""
+        var topic = ""
+        for (i in 0 until channelsData.length()) {
+            val channel = channelsData.getJSONObject(i)
+            if (channel.optInt("id", -1) == chanId) {
+                description = channel.optString("desc", "")
+                topic = channel.optString("topic", "")
+                break
+            }
+        }
+        val text = buildString {
+            if (topic.isNotBlank()) append("Tópico: $topic\n\n")
+            append(if (description.isBlank()) "Este canal não possui descrição." else description)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Descrição — $chanName")
+            .setMessage(text)
+            .setPositiveButton("Fechar", null)
+            .show()
     }
 
     private fun showChannelOptionsDialog(chanId: Int, chanName: String) {
@@ -2457,6 +2715,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val choice = options[which]
                 if (choice.contains("Ausente")) {
                     isAway = !isAway
+                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+                        .putBoolean(HallaService.PREF_AWAY, isAway).apply()
                     if (isAway) {
                         showAwayMessageDialog()
                     } else {
@@ -2465,6 +2725,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     }
                 } else if (choice.contains("Channel Commander")) {
                     isChannelCommander = !isChannelCommander
+                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+                        .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
                     HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
                     Toast.makeText(context, "Channel Commander: " + if (isChannelCommander) "Ativado" else "Desativado", Toast.LENGTH_SHORT).show()
                 } else if (choice.contains("Apelido")) {

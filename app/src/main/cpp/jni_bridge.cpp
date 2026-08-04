@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdint>
 #include <vector>
 #include <map>
 #include <sys/socket.h>
@@ -41,6 +42,7 @@ static jmethodID g_onChatMessageMethod = nullptr;
 static jmethodID g_onAudioFrameMethod = nullptr;
 static jmethodID g_onConnectionFailedMethod = nullptr;
 static jmethodID g_onErrorMethod = nullptr;
+static jmethodID g_onPingMethod = nullptr;
 static jmethodID g_onPokeMethod = nullptr;
 
 static std::string g_cachePath = "";
@@ -139,6 +141,11 @@ std::string jsonUnescape(const std::string& input) {
     return out;
 }
 
+uint64_t nowMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 // Helpers to extract JSON string fields (zero dependencies, ultra fast & safe)
 std::string jsonExtractString(const std::string& json, const std::string& key) {
     size_t pos = json.find("\"" + key + "\"");
@@ -171,6 +178,22 @@ int jsonExtractInt(const std::string& json, const std::string& key) {
     while (end < json.size() && json[end] >= '0' && json[end] <= '9') end++;
     if (start == end) return 0;
     return safeStoi(json.substr(start, end - start));
+}
+
+uint64_t jsonExtractUint64(const std::string& json, const std::string& key) {
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos == std::string::npos) return 0;
+    pos = json.find(":", pos);
+    if (pos == std::string::npos) return 0;
+    while (pos < json.size() && (json[pos] == ':' || json[pos] == ' ' || json[pos] == '\t')) pos++;
+    uint64_t value = 0;
+    bool found = false;
+    while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
+        found = true;
+        value = value * 10 + static_cast<uint64_t>(json[pos] - '0');
+        ++pos;
+    }
+    return found ? value : 0;
 }
 
 std::string jsonExtractArray(const std::string& json, const std::string& key) {
@@ -376,6 +399,21 @@ void invokeOnError(const std::string& code, const std::string& msg) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
+void invokeOnPing(int pingMs, int packetLossPercent) {
+    if (!g_vm || !g_coreClass || !g_onPingMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        env->CallStaticVoidMethod(g_coreClass, g_onPingMethod, pingMs, packetLossPercent);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
 void invokeOnPoke(const std::string& fromName, const std::string& msg) {
     writeLog("invokeOnPoke chamada!");
     if (!g_vm || !g_coreClass || !g_onPokeMethod) return;
@@ -414,6 +452,10 @@ public:
         m_uid = uid;
         m_connected = true;
         m_authenticated = false;
+        m_pingPending = false;
+        m_lastPingSentMs = 0;
+        m_pingTotal = 0;
+        m_pingSuccess = 0;
 
         // Inicializa o codificador Opus Oficial de voz VoIP
         int err = 0;
@@ -461,6 +503,7 @@ public:
         m_udpPort = 0;
         m_voiceToken = 0;
         m_authenticated = false;
+        m_pingPending = false;
 
         // Libera recursos do codec Opus somente depois que as threads de áudio
         // terminaram. A captura Android pode chamar encodeAndSendVoice em
@@ -612,8 +655,9 @@ public:
 
 private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
-                         m_authenticated(false), m_udpPort(0), m_voiceToken(0),
-                         m_encoder(nullptr) {}
+                         m_authenticated(false), m_pingPending(false),
+                         m_lastPingSentMs(0), m_pingTotal(0), m_pingSuccess(0),
+                         m_udpPort(0), m_voiceToken(0), m_encoder(nullptr) {}
     ~HallaClientCore() { disconnect(); }
 
     void sendTcp(const std::string& data) {
@@ -737,7 +781,16 @@ private:
             for (int i = 0; i < 150 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!m_connected) break;
-            sendTcp("{\"t\":\"ping\"}\n");
+            const uint64_t ts = nowMs();
+            m_lastPingSentMs = ts;
+            const bool previousPending = m_pingPending.exchange(true);
+            const int total = m_pingTotal.fetch_add(1) + 1;
+            if (previousPending) {
+                const int success = m_pingSuccess.load();
+                const int loss = total > 0 ? ((total - success) * 100) / total : 0;
+                invokeOnPing(-1, loss);
+            }
+            sendTcp("{\"t\":\"ping\",\"ts\":" + std::to_string(ts) + "}\n");
         }
     }
 
@@ -807,6 +860,26 @@ private:
                 m_voiceToken = safeStoul(jsonExtractString(line, "token"));
                 writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
                 setupUdpVoice();
+                return;
+            }
+
+            if (t == "pong") {
+                const uint64_t sent = jsonExtractUint64(line, "ts");
+                const uint64_t now = nowMs();
+                if (sent > 0 && sent == m_lastPingSentMs && m_pingPending.exchange(false)) {
+                    const int rtt = static_cast<int>(now >= sent ? now - sent : 0);
+                    const int success = m_pingSuccess.fetch_add(1) + 1;
+                    const int total = m_pingTotal.load();
+                    const int loss = total > 0 ? ((total - success) * 100) / total : 0;
+                    invokeOnPing(rtt, loss);
+                }
+                return;
+            }
+
+            if (t == "kicked") {
+                const std::string reason = jsonExtractString(line, "reason");
+                invokeOnError("kicked", reason);
+                m_connected = false;
                 return;
             }
 
@@ -963,6 +1036,10 @@ private:
     int m_udpSocket;
     std::atomic<bool> m_connected;
     std::atomic<bool> m_authenticated;
+    std::atomic<bool> m_pingPending;
+    std::atomic<uint64_t> m_lastPingSentMs;
+    std::atomic<int> m_pingTotal;
+    std::atomic<int> m_pingSuccess;
     std::mutex m_tcpMutex;
     std::mutex m_udpMutex;
     std::mutex m_codecMutex;
@@ -1006,6 +1083,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onAudioFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnAudioFrame", "(I[B)V");
     g_onConnectionFailedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnectionFailed", "(Ljava/lang/String;)V");
     g_onErrorMethod = env->GetStaticMethodID(g_coreClass, "triggerOnError", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onPingMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPing", "(II)V");
     g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
 
     return JNI_VERSION_1_6;
