@@ -24,6 +24,10 @@ class HallaAudioManager(private val cacheDir: File) {
     private var transmitEnabled = true
     private var speakerEnabled = true
 
+    var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
+    var isPttPressed = false
+    var vadThreshold = 150.0
+
     // Nível atual de volume do microfone de 0.0 a 100.0 (DSP RMS)
     var currentVoiceLevel: Double = 0.0
         private set
@@ -70,8 +74,12 @@ class HallaAudioManager(private val cacheDir: File) {
                             val voiceLevel = (rms / 32768.0) * 100.0
                             currentVoiceLevel = Math.min(voiceLevel, 100.0)
 
-                            // Limiar VAD para transmissão
-                            val voiceNow = rms > 150.0
+                            // Limiar VAD / PTT / Contínuo para transmissão
+                            val voiceNow = when (transmissionMode) {
+                                1 -> isPttPressed // PTT
+                                2 -> true // Contínuo
+                                else -> rms > vadThreshold // VAD
+                            }
                             if (voiceNow != isTalking) {
                                 isTalking = voiceNow
                                 onTalkingStateChanged?.invoke(isTalking)

@@ -61,19 +61,35 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Painel Hierárquico e Keep-Alive NAT
+          name: Halla Mobile ${{ github.ref_name }} — Áudio Inteligente, Multi-Identidades, Árvore Sanfona e Moderação
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
             ## 🚀 Novidades do Halla Mobile ${{ github.ref_name }}
 
-            Esta versão traz melhorias críticas de infraestrutura de rede VoIP e uma navegação de configurações totalmente reformulada:
+            Esta versão estende o ecossistema com suporte completo a controles de áudio, identidades e administração direta do celular:
 
-            ### ⚙️ Painel de Configurações Hierárquico
-            * **Navegação por Submenus:** As configurações agora são divididas em 4 submenus independentes (Geral, Áudio, Aparência e Sobre). Cada tela exibe exclusivamente os seus respectivos ajustes, evitando poluição visual e permitindo navegar de forma extremamente limpa e organizada!
+            ### 🔊 Roteamento de Áudio & Hardware Inteligente
+            * **Alternância Rápida:** Botão na barra superior para alternar instantaneamente entre **Viva-Voz (Speaker)** e **Alto-falante de Ouvido (Earpiece)**.
+            * **Sensor de Proximidade:** Apaga a tela do celular automaticamente ao encostar na orelha no modo Earpiece, prevenindo toques acidentais.
+            * **Suporte a Bluetooth (SCO):** Reconhecimento e roteamento nativo automático ao conectar fones Bluetooth ou som de carros.
 
-            ### 📡 Keep-Alive Contínuo UDP para Furo de NAT
-            * **Fim do Atraso de Voz:** Implementado um loop contínuo de sinalização keep-alive UDP em segundo plano no C++ nativo que dispara pings leves de 5 segundos. Isso mantém as portas de CGNAT/NAT de redes móveis ou Wi-Fi permanentemente ativas. A transmissão da sua voz agora funciona instantaneamente no primeiro segundo, sem depender de nenhuma fala prévia do PC!
+            ### 👥 Identidades Múltiplas e Import/Export
+            * **Múltiplos Perfis:** Gerencie e crie várias identidades (UIDs) nas configurações gerais.
+            * **Escolha por Favorito:** Vincule uma identidade específica para cada servidor salvo (favorito).
+            * **Sincronização:** Copie a UID (exportar) ou cole/importe a UID do cliente Desktop para manter seus cargos e grupos de servidor.
+
+            ### 📂 Árvore Sanfona (Expand/Collapse)
+            * **Organização de Canais:** Toque em qualquer canal com subcanais para expandir ou recolher a árvore inteira, economizando espaço de tela útil.
+
+            ### 💬 Interação Social Avançada
+            * **Cutucar (Poke):** Envie e receba cutucões que geram **vibração física de 300ms**, alerta sonoro e pop-up em tela.
+            * **Informações do Cliente:** Toque em qualquer usuário para abrir o menu que permite visualizar IP, Ping, Versão do App, Uptime e grupos associados.
+
+            ### ⚙️ Administração e Moderação Mobile
+            * **Ações Rápidas:** Toque em qualquer membro para abrir o menu de moderador e aplicar **Kick do Canal**, **Kick do Servidor**, **Ban** ou para **Mover Usuário** entre salas.
+            * **Edição de Canal:** Altere o nome, descrição ou senha de qualquer sala diretamente do smartphone.
+            * **Mutar Microfone com Fone:** Ao mutar os fones (Deafen), o microfone agora se muta automaticamente por segurança.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -32,6 +32,7 @@ static jmethodID g_onUserListMethod = nullptr;
 static jmethodID g_onChatMessageMethod = nullptr;
 static jmethodID g_onAudioFrameMethod = nullptr;
 static jmethodID g_onConnectionFailedMethod = nullptr;
+static jmethodID g_onPokeMethod = nullptr;
 
 static std::string g_cachePath = "";
 
@@ -283,6 +284,26 @@ void invokeOnConnectionFailed(const std::string& reason) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
+void invokeOnPoke(const std::string& fromName, const std::string& msg) {
+    writeLog("invokeOnPoke chamada!");
+    if (!g_vm || !g_coreClass || !g_onPokeMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jFrom = env->NewStringUTF(fromName.c_str());
+        jstring jMsg = env->NewStringUTF(msg.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onPokeMethod, jFrom, jMsg);
+        env->DeleteLocalRef(jFrom);
+        env->DeleteLocalRef(jMsg);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
 // Motor de Rede C++ Portável e de Alta Performance para o Halla Mobile
 class HallaClientCore {
 public:
@@ -351,6 +372,58 @@ public:
         sendTcp(msg);
     }
 
+    void sendStatus(bool mic, bool spk, bool away, bool rec, bool cc) {
+        std::string msg = "{\"t\":\"status\",\"mic\":" + std::string(mic ? "true" : "false") + 
+                          ",\"spk\":" + std::string(spk ? "true" : "false") + 
+                          ",\"away\":" + std::string(away ? "true" : "false") + 
+                          ",\"rec\":" + std::string(rec ? "true" : "false") + 
+                          ",\"cc\":" + std::string(cc ? "true" : "false") + "}\n";
+        sendTcp(msg);
+    }
+
+    void sendRename(const std::string& newName) {
+        std::string msg = "{\"t\":\"nick\",\"name\":\"" + newName + "\"}\n";
+        sendTcp(msg);
+    }
+
+    void sendPoke(int toUserId, const std::string& text) {
+        std::string msg = "{\"t\":\"poke\",\"to\":" + std::to_string(toUserId) + ",\"msg\":\"" + text + "\"}\n";
+        sendTcp(msg);
+    }
+
+    void sendKick(int userId, bool fromServer, const std::string& reason) {
+        std::string msg = "{\"t\":\"kick\",\"id\":" + std::to_string(userId) + 
+                          ",\"from\":\"" + (fromServer ? "server" : "channel") + 
+                          "\",\"reason\":\"" + reason + "\"}\n";
+        sendTcp(msg);
+    }
+
+    void sendBan(int userId, const std::string& reason, int minutes) {
+        std::string msg = "{\"t\":\"ban\",\"id\":" + std::to_string(userId) + 
+                          ",\"reason\":\"" + reason + "\",\"minutes\":" + std::to_string(minutes) + "}\n";
+        sendTcp(msg);
+    }
+
+    void sendMoveOther(int userId, int channelId) {
+        std::string msg = "{\"t\":\"move_other\",\"id\":" + std::to_string(userId) + ",\"channel\":" + std::to_string(channelId) + "}\n";
+        sendTcp(msg);
+    }
+
+    void sendUsePrivilegeKey(const std::string& key) {
+        std::string msg = "{\"t\":\"privkey\",\"key\":\"" + key + "\"}\n";
+        sendTcp(msg);
+    }
+
+    void sendEditChannel(int channelId, const std::string& name, const std::string& desc, const std::string& pass) {
+        std::string msg = "{\"t\":\"chan_edit\",\"id\":" + std::to_string(channelId) + 
+                          ",\"name\":\"" + name + "\",\"desc\":\"" + desc + "\",\"pass\":\"" + pass + "\"}\n";
+        sendTcp(msg);
+    }
+
+    void sendRawJson(const std::string& json) {
+        sendTcp(json + "\n");
+    }
+
     void sendVoiceFrame(const char* pcm, int size, uint16_t seq) {
         if (m_udpSocket == -1 || m_udpPort == 0 || m_voiceToken == 0) return;
 
@@ -362,16 +435,8 @@ public:
             memcpy(packet.data() + 10, pcm, size);
         }
 
-        struct sockaddr_in servAddr;
-        memset(&servAddr, 0, sizeof(servAddr));
-        servAddr.sin_family = AF_INET;
-        servAddr.sin_port = htons(m_udpPort);
-        
-        struct hostent* host = gethostbyname(m_host.c_str());
-        if (host) {
-            memcpy(&servAddr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
-            sendto(m_udpSocket, packet.data(), packet.size(), 0, (struct sockaddr*)&servAddr, sizeof(servAddr));
-        }
+        m_serverUdpAddr.sin_port = htons(m_udpPort);
+        sendto(m_udpSocket, packet.data(), packet.size(), 0, (struct sockaddr*)&m_serverUdpAddr, sizeof(m_serverUdpAddr));
     }
 
     // Codifica PCM bruto de 16-bit Mono @ 48kHz em frames Opus VoIP e transmite
@@ -562,6 +627,13 @@ private:
                 return;
             }
 
+            if (t == "poke") {
+                std::string from = jsonExtractString(line, "fromName");
+                std::string msg = jsonExtractString(line, "msg");
+                invokeOnPoke(from, msg);
+                return;
+            }
+
             if (t == "user_joined" || t == "user_left" || t == "user_moved" || t == "chan_update" || t == "chan_removed" || t == "user_state") {
                 invokeOnUserList(line);
             }
@@ -591,6 +663,20 @@ private:
         localAddr.sin_port = htons(0);
         localAddr.sin_addr.s_addr = htonl(INADDR_ANY);
         bind(m_udpSocket, (struct sockaddr*)&localAddr, sizeof(localAddr));
+
+        // Resolve o host do servidor uma vez de forma robusta e persistente
+        memset(&m_serverUdpAddr, 0, sizeof(m_serverUdpAddr));
+        m_serverUdpAddr.sin_family = AF_INET;
+        m_serverUdpAddr.sin_port = htons(m_udpPort);
+        struct hostent* host = gethostbyname(m_host.c_str());
+        if (host) {
+            memcpy(&m_serverUdpAddr.sin_addr.s_addr, host->h_addr_list[0], host->h_length);
+            writeLog("[NAT] IP do Servidor resolvido com sucesso via gethostbyname.");
+        } else {
+            // Se gethostbyname falhar (comum para IPs puros em algumas versões do Android), tenta inet_pton / inet_addr
+            m_serverUdpAddr.sin_addr.s_addr = inet_addr(m_host.c_str());
+            writeLog("[NAT] Fallback do IP usando inet_addr.");
+        }
 
         if (m_udpThread.joinable()) m_udpThread.join();
         m_udpThread = std::thread(&HallaClientCore::udpLoop, this);
@@ -651,6 +737,7 @@ private:
 
     int m_udpPort;
     uint32_t m_voiceToken;
+    struct sockaddr_in m_serverUdpAddr;
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;
@@ -682,6 +769,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onChatMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChatMessage", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onAudioFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnAudioFrame", "(I[B)V");
     g_onConnectionFailedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnectionFailed", "(Ljava/lang/String;)V");
+    g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
 
     return JNI_VERSION_1_6;
 }
@@ -732,6 +820,69 @@ Java_com_halla_mobile_HallaCore_sendVoiceFrame(JNIEnv* env, jclass clazz, jbyteA
     HallaClientCore::getInstance().encodeAndSendVoice(reinterpret_cast<const int16_t*>(body), len / 2);
 
     env->ReleaseByteArrayElements(pcmData, body, JNI_ABORT);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendRawJson(JNIEnv* env, jclass clazz, jstring json) {
+    const char* nativeText = env->GetStringUTFChars(json, nullptr);
+    HallaClientCore::getInstance().sendRawJson(nativeText);
+    env->ReleaseStringUTFChars(json, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendStatus(JNIEnv* env, jclass clazz, jboolean mic, jboolean spk, jboolean away, jboolean rec, jboolean cc) {
+    HallaClientCore::getInstance().sendStatus(mic, spk, away, rec, cc);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendRename(JNIEnv* env, jclass clazz, jstring newName) {
+    const char* nativeText = env->GetStringUTFChars(newName, nullptr);
+    HallaClientCore::getInstance().sendRename(nativeText);
+    env->ReleaseStringUTFChars(newName, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendPoke(JNIEnv* env, jclass clazz, jint toUserId, jstring msg) {
+    const char* nativeText = env->GetStringUTFChars(msg, nullptr);
+    HallaClientCore::getInstance().sendPoke(toUserId, nativeText);
+    env->ReleaseStringUTFChars(msg, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendKick(JNIEnv* env, jclass clazz, jint userId, jboolean fromServer, jstring reason) {
+    const char* nativeText = env->GetStringUTFChars(reason, nullptr);
+    HallaClientCore::getInstance().sendKick(userId, fromServer, nativeText);
+    env->ReleaseStringUTFChars(reason, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendBan(JNIEnv* env, jclass clazz, jint userId, jstring reason, jint minutes) {
+    const char* nativeText = env->GetStringUTFChars(reason, nullptr);
+    HallaClientCore::getInstance().sendBan(userId, nativeText, minutes);
+    env->ReleaseStringUTFChars(reason, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendMoveOther(JNIEnv* env, jclass clazz, jint userId, jint channelId) {
+    HallaClientCore::getInstance().sendMoveOther(userId, channelId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendUsePrivilegeKey(JNIEnv* env, jclass clazz, jstring key) {
+    const char* nativeText = env->GetStringUTFChars(key, nullptr);
+    HallaClientCore::getInstance().sendUsePrivilegeKey(nativeText);
+    env->ReleaseStringUTFChars(key, nativeText);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint channelId, jstring name, jstring desc, jstring pass) {
+    const char* nativeName = env->GetStringUTFChars(name, nullptr);
+    const char* nativeDesc = env->GetStringUTFChars(desc, nullptr);
+    const char* nativePass = env->GetStringUTFChars(pass, nullptr);
+    HallaClientCore::getInstance().sendEditChannel(channelId, nativeName, nativeDesc, nativePass);
+    env->ReleaseStringUTFChars(name, nativeName);
+    env->ReleaseStringUTFChars(desc, nativeDesc);
+    env->ReleaseStringUTFChars(pass, nativePass);
 }
 
 }

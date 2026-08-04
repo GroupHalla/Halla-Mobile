@@ -19,6 +19,18 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.drawerlayout.widget.DrawerLayout
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.PowerManager
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.view.MotionEvent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -111,6 +123,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var switchDarkTheme: Switch
     private lateinit var switchShowChannelBadges: Switch
     private lateinit var btnSettingsCheckUpdates: Button
+    private lateinit var btnTransmissionMode: Button
 
     // Gerenciador de Áudio Nativo
     private lateinit var audioManager: HallaAudioManager
@@ -119,6 +132,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var isDeaf = false
     private var channelsData = JSONArray()
     private var usersData = JSONArray()
+
+    // Novas variáveis para Áudio, Sensor, Identidades e Status
+    private lateinit var btnAudioRoute: Button
+    private var isSpeakerPhone = true
+    private var sensorManager: SensorManager? = null
+    private var proximitySensor: Sensor? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private val collapsedChannels = HashSet<Int>()
+    private var selfId = 0
+    private var isChannelCommander = false
+    private var isAway = false
+    private var awayMessage = ""
 
     private val handler = Handler(Looper.getMainLooper())
     private var connectionTimeoutRunnable: Runnable? = null
@@ -157,6 +182,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnQuickConnect = findViewById(R.id.btnQuickConnect)
         btnInviteMembers = findViewById(R.id.btnInviteMembers)
         btnDisconnect = findViewById(R.id.btnDisconnect)
+        btnAudioRoute = findViewById(R.id.btnAudioRoute)
 
         btnNavSettings = findViewById(R.id.btnNavSettings)
         btnNavHelp = findViewById(R.id.btnNavHelp)
@@ -220,6 +246,52 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         switchDarkTheme = findViewById(R.id.switchDarkTheme)
         switchShowChannelBadges = findViewById(R.id.switchShowChannelBadges)
         btnSettingsCheckUpdates = findViewById(R.id.btnSettingsCheckUpdates)
+
+        btnTransmissionMode = Button(this).apply {
+            text = "🎙️ Modo de Transmissão: VAD"
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 24, 0, 0)
+            }
+            setOnClickListener {
+                val modes = arrayOf("Ativação por Voz (VAD)", "Push-to-Talk (PTT)", "Transmissão Contínua")
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Modo de Transmissão")
+                    .setItems(modes) { _, which ->
+                        val prefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+                        prefs.edit().putInt("transmission_mode", which).apply()
+                        audioManager.transmissionMode = which
+                        text = "🎙️ Modo de Transmissão: " + when(which) {
+                            1 -> "PTT"
+                            2 -> "Contínuo"
+                            else -> "VAD"
+                        }
+                        Toast.makeText(this@MainActivity, "Modo alterado para ${modes[which]}", Toast.LENGTH_SHORT).show()
+                    }
+                    .show()
+            }
+        }
+        panelAudio.addView(btnTransmissionMode)
+
+        val btnManageIds = Button(this).apply {
+            text = "👥 GERENCIAR IDENTIDADES"
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 24, 0, 0)
+            }
+            setOnClickListener {
+                showManageIdentitiesDialog()
+            }
+        }
+        panelGeral.addView(btnManageIds)
 
         // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
@@ -294,6 +366,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Carrega as configurações persistidas do SharedPreferences
         loadHallaSettings()
 
+        // Inicializa sensores de proximidade e bluetooth
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        proximitySensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+        registerReceiver(bluetoothReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
+
         // Verifica atualizações de forma automática na inicialização direto do GitHub
         checkForUpdatesSilently()
 
@@ -345,10 +422,55 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             imgDeafenIcon.setImageResource(if (isDeaf) R.drawable.ic_deafen_mute else R.drawable.ic_headphones)
             txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
             btnDeafenModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
+
+            if (isDeaf) {
+                // Ao mutar o fone, precisa mutar o microfone também!
+                isMuted = true
+                audioManager.setTransmitEnabled(false)
+                imgMicIcon.setImageResource(R.drawable.ic_mic_mute)
+                txtMicText.text = "Ativar"
+                btnMuteMicModule.background = bubbleShape()
+                HallaCore.sendStatus(true, true, isAway, false, isChannelCommander)
+            } else {
+                HallaCore.sendStatus(isMuted, false, isAway, false, isChannelCommander)
+            }
+        }
+
+        btnPttModule.setOnTouchListener { view, event ->
+            val mode = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE).getInt("transmission_mode", 0)
+            if (mode == 1) { // PTT mode
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        audioManager.isPttPressed = true
+                        txtPttText.text = "TRANSMITINDO"
+                        btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        audioManager.isPttPressed = false
+                        txtPttText.text = "FALANDO"
+                        btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6")) // Purple mockup default
+                    }
+                }
+                true
+            } else {
+                false // let click listener handle it
+            }
         }
 
         btnPttModule.setOnClickListener {
-            Toast.makeText(this, "Modo de Transmissão de Voz Ativo (VAD)", Toast.LENGTH_SHORT).show()
+            val mode = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE).getInt("transmission_mode", 0)
+            if (mode == 1) {
+                Toast.makeText(this, "Segure para falar (Push-to-Talk)", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Modo de Transmissão: " + when(mode) {
+                    2 -> "Contínuo"
+                    else -> "Ativação por Voz (VAD)"
+                }, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnAudioRoute.setOnClickListener {
+            toggleAudioRoute()
         }
 
         btnOpenChatModule.setOnClickListener {
@@ -480,6 +602,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         switchDarkTheme.isChecked = settingsPrefs.getBoolean("dark_theme", true)
         switchShowChannelBadges.isChecked = settingsPrefs.getBoolean("show_badges", true)
 
+        val tMode = settingsPrefs.getInt("transmission_mode", 0)
+        audioManager.transmissionMode = tMode
+        btnTransmissionMode.text = "🎙️ Modo de Transmissão: " + when(tMode) {
+            1 -> "PTT"
+            2 -> "Contínuo"
+            else -> "VAD"
+        }
+        audioManager.vadThreshold = vadSens * 3.0
+
         // Configura ouvintes de alteração para salvar instantaneamente
         switchAutoConnect.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("auto_connect", isChecked).apply()
@@ -491,6 +622,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 txtVadSensitivityVal.text = "$progress%"
                 settingsPrefs.edit().putInt("vad_sensitivity", progress).apply()
+                audioManager.vadThreshold = progress * 3.0
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
@@ -899,6 +1031,42 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         dialogView.addView(inputPass)
 
+        var selectedUid = editSrv?.optString("identity_uid") ?: ""
+        var selectedIdentityName = "Padrão (Celular)"
+        
+        val idList = getSavedIdentities()
+        for (i in 0 until idList.length()) {
+            val idObj = idList.getJSONObject(i)
+            if (idObj.getString("uid") == selectedUid) {
+                selectedIdentityName = idObj.getString("name")
+                break
+            }
+        }
+
+        val btnSelectIdentity = Button(context).apply {
+            text = "Identidade: $selectedIdentityName"
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setOnClickListener {
+                val list = getSavedIdentities()
+                val names = Array(list.length()) { "" }
+                val uids = Array(list.length()) { "" }
+                for (i in 0 until list.length()) {
+                    val obj = list.getJSONObject(i)
+                    names[i] = obj.getString("name")
+                    uids[i] = obj.getString("uid")
+                }
+                AlertDialog.Builder(context)
+                    .setTitle("Escolher Identidade")
+                    .setItems(names) { _, index ->
+                        selectedUid = uids[index]
+                        text = "Identidade: ${names[index]}"
+                    }
+                    .show()
+            }
+        }
+        dialogView.addView(btnSelectIdentity)
+
         val dialog = AlertDialog.Builder(context)
             .setView(dialogView)
             .setCancelable(true)
@@ -928,6 +1096,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     editSrv.put("host", host)
                     editSrv.put("port", port)
                     editSrv.put("pass", pass)
+                    editSrv.put("identity_uid", selectedUid)
                 } else {
                     val newSrv = JSONObject().apply {
                         put("name", name)
@@ -935,6 +1104,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("host", host)
                         put("port", port)
                         put("pass", pass)
+                        put("identity_uid", selectedUid)
                         put("slots", "0/500") // Slots default corrigidos para 500!
                     }
                     savedServers.put(newSrv)
@@ -964,7 +1134,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
 
-        val uid = getOrCreateClientUid()
+        val uid = if (srv.has("identity_uid") && srv.getString("identity_uid").isNotEmpty()) {
+            srv.getString("identity_uid")
+        } else {
+            getOrCreateClientUid()
+        }
         HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
 
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
@@ -994,7 +1168,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
 
-        val uid = getOrCreateClientUid()
+        var uid = getOrCreateClientUid()
+        for (i in 0 until savedServers.length()) {
+            val srv = savedServers.getJSONObject(i)
+            if (srv.getString("host") == host && srv.getInt("port") == port) {
+                if (srv.has("identity_uid") && srv.getString("identity_uid").isNotEmpty()) {
+                    uid = srv.getString("identity_uid")
+                }
+                break
+            }
+        }
         HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
     }
 
@@ -1092,6 +1275,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
+    private fun showAboutDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("ℹ️ Sobre o Halla Mobile")
+            .setMessage("Halla Mobile $currentVersionName\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
+            .setPositiveButton("Fechar", null)
+            .show()
+    }
+
     private fun showHelpDialog() {
         val context = this
         val options = arrayOf("Sobre o Halla", "Verificar atualizações")
@@ -1124,6 +1315,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // Alterna visibilidade dos botões do Header Superior
             btnDisconnect.visibility = View.VISIBLE
             btnInviteMembers.visibility = View.VISIBLE
+            btnAudioRoute.visibility = View.VISIBLE
             btnAddServer.visibility = View.GONE
             btnQuickConnect.visibility = View.GONE
 
@@ -1145,6 +1337,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // Alterna visibilidade dos botões do Header Superior de volta para Home
             btnDisconnect.visibility = View.GONE
             btnInviteMembers.visibility = View.GONE
+            btnAudioRoute.visibility = View.GONE
             btnAddServer.visibility = View.VISIBLE
             btnQuickConnect.visibility = View.VISIBLE
 
@@ -1156,6 +1349,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         runOnUiThread {
             try {
                 val obj = JSONObject(welcomeJson)
+                selfId = obj.optInt("selfId", 0)
                 channelsData = obj.getJSONArray("channels")
                 usersData = obj.getJSONArray("users")
                 
@@ -1239,6 +1433,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnConnectStatusNormal()
             txtError.text = "Erro: $reason"
             txtError.visibility = View.VISIBLE
+        }
+    }
+
+    override fun onPokeReceived(fromName: String, msg: String) {
+        runOnUiThread {
+            try {
+                val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    v.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    v.vibrate(300)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            try {
+                val notification = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val r = RingtoneManager.getRingtone(applicationContext, notification)
+                r.play()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            AlertDialog.Builder(this)
+                .setTitle("👉 CUTUCÃO!")
+                .setMessage("Você foi cutucado por $fromName:\n\n$msg")
+                .setPositiveButton("OK", null)
+                .show()
         }
     }
 
@@ -1372,6 +1595,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val chanId = chan.getInt("id")
             val chanName = chan.getString("name")
 
+            if (isChannelCollapsed(chanId)) {
+                continue
+            }
+
             val channelUsers = chan.optJSONArray("users")
             val count = channelUsers?.length() ?: 0
 
@@ -1391,6 +1618,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     cornerRadius = 16f
                 }
                 background = cardShape
+                setOnClickListener {
+                    showChannelOptionsDialog(chanId, chanName)
+                }
             }
 
             // Borda Lateral Esquerda em Roxo/Violeta Brilhante (ı|ı - exato do mockup)
@@ -1432,8 +1662,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
 
             // Nome do Canal
+            val isCollapsed = collapsedChannels.contains(chanId)
+            val indicator = if (hasSubchannels(chanId)) (if (isCollapsed) "  [+]" else "  [-]") else ""
             val txtName = TextView(this).apply {
-                text = chanName
+                text = "$chanName$indicator"
                 setTextColor(Color.parseColor("#FFFFFF"))
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
@@ -1467,7 +1699,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             contentLayout.addView(headerRow)
 
             // Lista de Membros Conectados (Dentro do próprio Card de Canal Expandido)
-            if (count > 0) {
+            if (count > 0 && !isCollapsed) {
                 // Divisor sutil interno
                 val divider = View(this).apply {
                     setBackgroundColor(Color.parseColor("#0D0E15"))
@@ -1522,7 +1754,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             val d = GradientDrawable().apply {
                                 shape = GradientDrawable.OVAL
                                 setColor(Color.parseColor("#0D0E15"))
-                                setStroke(2, Color.parseColor("#8B5CF6")) // Borda roxa do avatar
+                                val isCc = usr.optBoolean("cc", false)
+                                setStroke(2, Color.parseColor(if (isCc) "#EF4444" else "#8B5CF6")) // Borda vermelha se Channel Commander, roxa se normal
                             }
                             background = d
                             layoutParams = FrameLayout.LayoutParams(48, 48) // 24dp diameter
@@ -1545,8 +1778,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         avatarContainer.addView(viewStatusDot)
 
                         // Nome do usuário
+                        val isAwayUsr = usr.optBoolean("away", false)
+                        val awayText = if (isAwayUsr) " (Ausente)" else ""
                         val txtUser = TextView(this).apply {
-                            text = name
+                            text = "$name$awayText"
                             setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
                             textSize = 14f
                             layoutParams = LinearLayout.LayoutParams(
@@ -1569,6 +1804,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         userRow.addView(txtUser)
                         userRow.addView(txtStatusIcon)
 
+                        userRow.setOnLongClickListener {
+                            showUserOptionsDialog(usr)
+                            true
+                        }
+                        userRow.setOnClickListener {
+                            showUserOptionsDialog(usr)
+                        }
+
                         contentLayout.addView(userRow)
                     }
                 }
@@ -1577,6 +1820,547 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             cardContainer.addView(contentLayout)
             containerChannels.addView(cardContainer)
         }
+    }
+
+    // ============================================================================
+    // Gestão de Identidades Múltiplas e Import/Export
+    // ============================================================================
+
+    private fun getSavedIdentities(): JSONArray {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        val str = prefs.getString("identities_list", "") ?: ""
+        if (str.isEmpty()) {
+            val arr = JSONArray()
+            val defaultUid = getOrCreateClientUid()
+            val defaultId = JSONObject().apply {
+                put("name", "Padrão (Celular)")
+                put("uid", defaultUid)
+            }
+            arr.put(defaultId)
+            prefs.edit().putString("identities_list", arr.toString()).apply()
+            return arr
+        }
+        return JSONArray(str)
+    }
+
+    private fun saveIdentities(arr: JSONArray) {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("identities_list", arr.toString()).apply()
+    }
+
+    private fun showManageIdentitiesDialog() {
+        val context = this
+        val list = getSavedIdentities()
+        val names = ArrayList<String>()
+        for (i in 0 until list.length()) {
+            val obj = list.getJSONObject(i)
+            names.add("${obj.getString("name")} (${obj.getString("uid").take(6)}...)")
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("👥 Identidades Salvas")
+            .setItems(names.toTypedArray()) { _, index ->
+                val identity = list.getJSONObject(index)
+                showIdentityDetailsDialog(identity, index)
+            }
+            .setPositiveButton("Nova") { _, _ ->
+                showNewIdentityDialog()
+            }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun showIdentityDetailsDialog(identity: JSONObject, index: Int) {
+        val context = this
+        val name = identity.getString("name")
+        val uid = identity.getString("uid")
+
+        AlertDialog.Builder(context)
+            .setTitle("ID: $name")
+            .setMessage("UID Completa:\n$uid")
+            .setPositiveButton("Copiar UID") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Halla UID", uid)
+                clipboard.setPrimaryClip(clip)
+                Toast.makeText(context, "UID Copiada!", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Excluir") { _, _ ->
+                if (index == 0) {
+                    Toast.makeText(context, "Não é possível excluir a identidade padrão!", Toast.LENGTH_SHORT).show()
+                    return@setNeutralButton
+                }
+                val list = getSavedIdentities()
+                list.remove(index)
+                saveIdentities(list)
+                Toast.makeText(context, "Identidade excluída!", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Voltar") { _, _ ->
+                showManageIdentitiesDialog()
+            }
+            .show()
+    }
+
+    private fun showNewIdentityDialog() {
+        val context = this
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 40, 40, 40)
+        }
+        val inputName = EditText(context).apply {
+            hint = "Nome da Identidade"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val inputUid = EditText(context).apply {
+            hint = "Cole uma UID (vazia para gerar)"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(inputName)
+        layout.addView(inputUid)
+
+        AlertDialog.Builder(context)
+            .setTitle("Nova Identidade")
+            .setView(layout)
+            .setPositiveButton("Salvar") { _, _ ->
+                val name = inputName.text.toString().trim()
+                var uid = inputUid.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(context, "Nome é obrigatório!", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                if (uid.isEmpty()) {
+                    val random = java.util.UUID.randomUUID().toString().replace("-", "")
+                    val rawBytes = random.take(20).toByteArray()
+                    uid = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP).trim()
+                    if (uid.length > 27) uid = uid.substring(0, 27) + "="
+                }
+                val list = getSavedIdentities()
+                val newObj = JSONObject().apply {
+                    put("name", name)
+                    put("uid", uid)
+                }
+                list.put(newObj)
+                saveIdentities(list)
+                Toast.makeText(context, "Identidade criada!", Toast.LENGTH_SHORT).show()
+                showManageIdentitiesDialog()
+            }
+            .setNegativeButton("Cancelar") { _, _ -> showManageIdentitiesDialog() }
+            .show()
+    }
+
+    // ============================================================================
+    // Roteamento de Áudio, Proximidade e Bluetooth
+    // ============================================================================
+
+    private fun toggleAudioRoute() {
+        isSpeakerPhone = !isSpeakerPhone
+        val audioManagerSystem = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (isSpeakerPhone) {
+            audioManagerSystem.isSpeakerphoneOn = true
+            audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
+            Toast.makeText(this, "Áudio: Viva-Voz (Speaker)", Toast.LENGTH_SHORT).show()
+            
+            // Desativa sensor de proximidade no viva-voz
+            sensorManager?.unregisterListener(proximityListener)
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } else {
+            audioManagerSystem.isSpeakerphoneOn = false
+            audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
+            Toast.makeText(this, "Áudio: Alto-falante de Ouvido (Earpiece)", Toast.LENGTH_SHORT).show()
+
+            // Ativa sensor de proximidade no modo auricular
+            sensorManager?.registerListener(proximityListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+    }
+
+    private val proximityListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_PROXIMITY) {
+                val distance = event.values[0]
+                val isClose = distance < (proximitySensor?.maximumRange ?: 5f)
+                if (!isSpeakerPhone && isClose) {
+                    if (wakeLock == null) {
+                        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                        wakeLock = powerManager.newWakeLock(
+                            PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
+                            "HallaMobile:ProximityScreenOff"
+                        )
+                    }
+                    if (wakeLock?.isHeld == false) {
+                        wakeLock?.acquire()
+                    }
+                } else {
+                    if (wakeLock?.isHeld == true) {
+                        wakeLock?.release()
+                    }
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    private val bluetoothReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
+            val audioManagerSystem = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
+                audioManagerSystem.isBluetoothScoOn = true
+                audioManagerSystem.startBluetoothSco()
+                Toast.makeText(context, "Bluetooth conectado", Toast.LENGTH_SHORT).show()
+            } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
+                audioManagerSystem.isBluetoothScoOn = false
+                audioManagerSystem.stopBluetoothSco()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(bluetoothReceiver)
+        } catch (e: Exception) {}
+        sensorManager?.unregisterListener(proximityListener)
+        if (wakeLock?.isHeld == true) wakeLock?.release()
+    }
+
+    // ============================================================================
+    // Árvore Sanfona (Expand/Collapse)
+    // ============================================================================
+
+    private fun isChannelCollapsed(chanId: Int): Boolean {
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            if (chan.getInt("id") == chanId) {
+                val parentId = chan.optInt("parent", 0)
+                if (parentId != 0) {
+                    if (collapsedChannels.contains(parentId)) return true
+                    return isChannelCollapsed(parentId)
+                }
+            }
+        }
+        return false
+    }
+
+    private fun hasSubchannels(chanId: Int): Boolean {
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            if (chan.optInt("parent", 0) == chanId) return true
+        }
+        return false
+    }
+
+    private fun showChannelOptionsDialog(chanId: Int, chanName: String) {
+        val context = this
+        val hasSub = hasSubchannels(chanId)
+        val isCollapsed = collapsedChannels.contains(chanId)
+
+        val options = ArrayList<String>()
+        options.add("➦ Entrar no Canal")
+        if (hasSub) {
+            options.add(if (isCollapsed) "📁 Expandir Canal" else "📁 Recolher Canal")
+        }
+        options.add("⚙️ Editar Canal")
+        options.add("➕ Criar Subcanal")
+
+        AlertDialog.Builder(context)
+            .setTitle("Canal: $chanName")
+            .setItems(options.toTypedArray()) { _, which ->
+                val choice = options[which]
+                if (choice.contains("Entrar")) {
+                    HallaCore.joinChannel(chanId)
+                } else if (choice.contains("Expandir") || choice.contains("Recolher")) {
+                    if (isCollapsed) collapsedChannels.remove(chanId)
+                    else collapsedChannels.add(chanId)
+                    rebuildChannelTree()
+                } else if (choice.contains("Editar")) {
+                    showEditChannelDialog(chanId, chanName)
+                } else if (choice.contains("Criar")) {
+                    showCreateSubchannelDialog(chanId)
+                }
+            }
+            .show()
+    }
+
+    private fun showEditChannelDialog(chanId: Int, currentName: String) {
+        val context = this
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 40, 40, 40)
+        }
+        val inputName = EditText(context).apply {
+            hint = "Nome do Canal"
+            setText(currentName)
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val inputDesc = EditText(context).apply {
+            hint = "Descrição"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val inputPass = EditText(context).apply {
+            hint = "Senha (deixe em branco se sem)"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(inputName)
+        layout.addView(inputDesc)
+        layout.addView(inputPass)
+
+        AlertDialog.Builder(context)
+            .setTitle("Editar Canal")
+            .setView(layout)
+            .setPositiveButton("Salvar") { _, _ ->
+                val name = inputName.text.toString().trim()
+                val desc = inputDesc.text.toString().trim()
+                val pass = inputPass.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    HallaCore.sendEditChannel(chanId, name, desc, pass)
+                    Toast.makeText(context, "Solicitação de edição enviada", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showCreateSubchannelDialog(parentChanId: Int) {
+        val context = this
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 40, 40, 40)
+        }
+        val inputName = EditText(context).apply {
+            hint = "Nome do Subcanal"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(inputName)
+
+        AlertDialog.Builder(context)
+            .setTitle("Criar Subcanal")
+            .setView(layout)
+            .setPositiveButton("Criar") { _, _ ->
+                val name = inputName.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    val msg = "{\"t\":\"chan_create\",\"parent\":$parentChanId,\"name\":\"$name\"}"
+                    HallaCore.sendRawJson(msg)
+                    Toast.makeText(context, "Solicitação de criação de subcanal enviada", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showUserOptionsDialog(usr: JSONObject) {
+        val context = this
+        val userId = usr.getInt("id")
+        val name = usr.getString("name")
+
+        val options = ArrayList<String>()
+        if (userId == selfId) {
+            options.add(if (isAway) "💤 Desmarcar Ausente" else "💤 Ficar Ausente (Away)")
+            options.add(if (isChannelCommander) "👑 Remover Channel Commander" else "👑 Ativar Channel Commander")
+            options.add("✏️ Alterar Apelido (Nickname)")
+        } else {
+            options.add("👉 Cutucar (Poke)")
+            options.add("ℹ️ Informações do Cliente")
+            options.add("➦ Mover para Canal")
+            options.add("🚫 Expulsar do Canal")
+            options.add("🚫 Expulsar do Servidor")
+            options.add("🚷 Banir Usuário")
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("Usuário: $name")
+            .setItems(options.toTypedArray()) { _, which ->
+                val choice = options[which]
+                if (choice.contains("Ausente")) {
+                    isAway = !isAway
+                    if (isAway) {
+                        showAwayMessageDialog()
+                    } else {
+                        HallaCore.sendStatus(isMuted, isDeaf, false, false, isChannelCommander)
+                        Toast.makeText(context, "Você não está mais ausente", Toast.LENGTH_SHORT).show()
+                    }
+                } else if (choice.contains("Channel Commander")) {
+                    isChannelCommander = !isChannelCommander
+                    HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
+                    Toast.makeText(context, "Channel Commander: " + if (isChannelCommander) "Ativado" else "Desativado", Toast.LENGTH_SHORT).show()
+                } else if (choice.contains("Apelido")) {
+                    showChangeNicknameDialog()
+                } else if (choice.contains("Cutucar")) {
+                    showSendPokeDialog(userId, name)
+                } else if (choice.contains("Informações")) {
+                    showClientInfoDialog(usr)
+                } else if (choice.contains("Mover")) {
+                    showMoveUserDialog(userId, name)
+                } else if (choice.contains("Expulsar do Canal")) {
+                    showKickDialog(userId, false, name)
+                } else if (choice.contains("Expulsar do Servidor")) {
+                    showKickDialog(userId, true, name)
+                } else if (choice.contains("Banir")) {
+                    showBanDialog(userId, name)
+                }
+            }
+            .show()
+    }
+
+    private fun showAwayMessageDialog() {
+        val context = this
+        val input = EditText(context).apply {
+            hint = "Mensagem de Ausência (ex: Almoçando)"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Mensagem de Ausência")
+            .setView(input)
+            .setPositiveButton("Confirmar") { _, _ ->
+                awayMessage = input.text.toString().trim()
+                HallaCore.sendStatus(isMuted, isDeaf, true, false, isChannelCommander)
+                Toast.makeText(context, "Você está ausente: $awayMessage", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar") { _, _ -> isAway = false }
+            .show()
+    }
+
+    private fun showChangeNicknameDialog() {
+        val context = this
+        val input = EditText(context).apply {
+            hint = "Novo Apelido"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Alterar Apelido")
+            .setView(input)
+            .setPositiveButton("Salvar") { _, _ ->
+                val newNick = input.text.toString().trim()
+                if (newNick.isNotEmpty()) {
+                    HallaCore.sendRename(newNick)
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showSendPokeDialog(toUserId: Int, targetName: String) {
+        val context = this
+        val input = EditText(context).apply {
+            hint = "Mensagem do Cutucão"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Cutucar $targetName")
+            .setView(input)
+            .setPositiveButton("Enviar") { _, _ ->
+                val msg = input.text.toString().trim()
+                if (msg.isNotEmpty()) {
+                    HallaCore.sendPoke(toUserId, msg)
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showClientInfoDialog(usr: JSONObject) {
+        val context = this
+        val name = usr.getString("name")
+        val ip = usr.optString("ip", "Desconhecido")
+        val ping = usr.optInt("ping", 0)
+        val version = usr.optString("ver", "1.0.0")
+        val platform = usr.optString("platform", "Android")
+        val uptime = usr.optInt("uptime", 0)
+        val group = usr.optString("group", "Membro")
+
+        val info = "Nome: $name\n" +
+                   "IP: $ip\n" +
+                   "Ping: ${ping}ms\n" +
+                   "Versão do App: $version\n" +
+                   "Plataforma: $platform\n" +
+                   "Uptime: ${uptime}s\n" +
+                   "Grupo: $group"
+
+        AlertDialog.Builder(context)
+            .setTitle("ℹ️ Detalhes de $name")
+            .setMessage(info)
+            .setPositiveButton("Fechar", null)
+            .show()
+    }
+
+    private fun showMoveUserDialog(userId: Int, userName: String) {
+        val context = this
+        val names = ArrayList<String>()
+        val ids = ArrayList<Int>()
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.getJSONObject(i)
+            names.add(chan.getString("name"))
+            ids.add(chan.getInt("id"))
+        }
+
+        AlertDialog.Builder(context)
+            .setTitle("Mover $userName para...")
+            .setItems(names.toTypedArray()) { _, index ->
+                val targetChanId = ids[index]
+                HallaCore.sendMoveOther(userId, targetChanId)
+                Toast.makeText(context, "Solicitação de movimento enviada", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun showKickDialog(userId: Int, fromServer: Boolean, userName: String) {
+        val context = this
+        val input = EditText(context).apply {
+            hint = "Motivo do Kick"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(context)
+            .setTitle(if (fromServer) "Expulsar do Servidor: $userName" else "Expulsar do Canal: $userName")
+            .setView(input)
+            .setPositiveButton("Kick") { _, _ ->
+                val reason = input.text.toString().trim()
+                HallaCore.sendKick(userId, fromServer, reason)
+                Toast.makeText(context, "Kick enviado", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showBanDialog(userId: Int, userName: String) {
+        val context = this
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 40, 40, 40)
+        }
+        val inputReason = EditText(context).apply {
+            hint = "Motivo do Ban"
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val inputMinutes = EditText(context).apply {
+            hint = "Tempo em Minutos (0 para permanente)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(inputReason)
+        layout.addView(inputMinutes)
+
+        AlertDialog.Builder(context)
+            .setTitle("Banir Usuário: $userName")
+            .setView(layout)
+            .setPositiveButton("Banir") { _, _ ->
+                val reason = inputReason.text.toString().trim()
+                val minutesStr = inputMinutes.text.toString().trim()
+                val minutes = minutesStr.toIntOrNull() ?: 0
+                HallaCore.sendBan(userId, reason, minutes)
+                Toast.makeText(context, "Ban enviado", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     private fun appendChatText(from: String, text: String) {

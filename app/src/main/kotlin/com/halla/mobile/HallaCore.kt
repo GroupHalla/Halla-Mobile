@@ -21,6 +21,33 @@ object HallaCore {
     @JvmStatic
     external fun sendVoiceFrame(pcmData: ByteArray)
 
+    @JvmStatic
+    external fun sendRawJson(json: String)
+
+    @JvmStatic
+    external fun sendStatus(mic: Boolean, spk: Boolean, away: Boolean, rec: Boolean, cc: Boolean)
+
+    @JvmStatic
+    external fun sendRename(newName: String)
+
+    @JvmStatic
+    external fun sendPoke(toUserId: Int, msg: String)
+
+    @JvmStatic
+    external fun sendKick(userId: Int, fromServer: Boolean, reason: String)
+
+    @JvmStatic
+    external fun sendBan(userId: Int, reason: String, minutes: Int)
+
+    @JvmStatic
+    external fun sendMoveOther(userId: Int, channelId: Int)
+
+    @JvmStatic
+    external fun sendUsePrivilegeKey(key: String)
+
+    @JvmStatic
+    external fun sendEditChannel(channelId: Int, name: String, desc: String, pass: String)
+
     // Interface para escutar eventos vindos do C++ Core
     interface Callbacks {
         fun onConnected(serverName: String, motd: String)
@@ -31,6 +58,7 @@ object HallaCore {
         fun onChatMessageReceived(fromName: String, text: String)
         fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray)
         fun onConnectionFailed(reason: String)
+        fun onPokeReceived(fromName: String, msg: String)
     }
 
     private var callbacks: Callbacks? = null
@@ -78,5 +106,10 @@ object HallaCore {
     @JvmStatic
     fun triggerOnConnectionFailed(reason: String) {
         callbacks?.onConnectionFailed(reason)
+    }
+
+    @JvmStatic
+    fun triggerOnPoke(fromName: String, msg: String) {
+        callbacks?.onPokeReceived(fromName, msg)
     }
 }
