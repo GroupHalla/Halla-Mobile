@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.7"
+    private val currentVersionName = "v1.0.6"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -364,6 +364,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnSettingsCheckUpdates.setOnClickListener {
             checkUpdatesFromSettings()
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        HallaCore.setCallbacks(null)
+        audioManager.stop()
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
     }
 
     // ============================================================================
@@ -874,6 +881,164 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
+    private fun connectToSavedServer(srv: JSONObject) {
+        val host = srv.getString("host")
+        val port = srv.getInt("port")
+        val nick = srv.getString("nick")
+        val pass = srv.optString("pass", "")
+
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("last_srv_host", host)
+            .putInt("last_srv_port", port)
+            .putString("last_srv_nick", nick)
+            .putString("last_srv_pass", pass).apply()
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        val uid = getOrCreateClientUid()
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        connectionTimeoutRunnable = Runnable {
+            if (layoutConnect.visibility == View.VISIBLE) {
+                btnConnectStatusNormal()
+                val logContent = readLocalDiagnosticsLog()
+                txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
+                txtError.visibility = View.VISIBLE
+            }
+        }
+        handler.postDelayed(connectionTimeoutRunnable!!, 6000)
+    }
+
+    private fun connectToQuickServer() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        val host = prefs.getString("last_srv_host", "") ?: ""
+        val port = prefs.getInt("last_srv_port", 0)
+        val nick = prefs.getString("last_srv_nick", "") ?: ""
+        val pass = prefs.getString("last_srv_pass", "") ?: ""
+
+        if (host.isEmpty() || port == 0 || nick.isEmpty()) {
+            Toast.makeText(this, "Nenhum servidor conectado recentemente!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        val uid = getOrCreateClientUid()
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+    }
+
+    private fun btnConnectStatusNormal() {
+        btnAddServer.isEnabled = true
+        btnQuickConnect.isEnabled = true
+        btnQuickConnect.text = "➦"
+    }
+
+    private fun btnConnectStatusConnecting() {
+        btnAddServer.isEnabled = false
+        btnQuickConnect.isEnabled = false
+        btnQuickConnect.text = "⏳"
+    }
+
+    // Varredura de ping de fundo
+    private fun pingServersInBackground() {
+        for (i in 0 until savedServers.length()) {
+            val srv = savedServers.getJSONObject(i)
+            val host = srv.getString("host")
+            val port = srv.getInt("port")
+            
+            thread {
+                val startTime = System.currentTimeMillis()
+                try {
+                    val socket = java.net.Socket()
+                    socket.connect(java.net.InetSocketAddress(host, port), 1500)
+                    val elapsed = System.currentTimeMillis() - startTime
+                    socket.close()
+                    
+                    runOnUiThread {
+                        updateServerPingOnUI(i, "${elapsed}ms", true)
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        updateServerPingOnUI(i, "Offline", false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateServerPingOnUI(index: Int, pingText: String, online: Boolean) {
+        val txtPing = containerServers.findViewWithTag<TextView>("ping_text_$index")
+        if (txtPing != null) {
+            txtPing.text = pingText
+            txtPing.setTextColor(Color.parseColor(if (online) "#4CAF50" else "#D9534F"))
+        }
+    }
+
+    private fun updateActiveServerSlots(clientsCount: Int, maxClients: Int) {
+        val host = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getString("last_srv_host", "") ?: ""
+        val port = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getInt("last_srv_port", 0)
+        
+        if (host.isEmpty() || port == 0) return
+
+        var modified = false
+        for (i in 0 until savedServers.length()) {
+            val srv = savedServers.getJSONObject(i)
+            if (srv.getString("host") == host && srv.getInt("port") == port) {
+                srv.put("slots", "$clientsCount/$maxClients")
+                modified = true
+                break
+            }
+        }
+        if (modified) {
+            val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            prefs.edit().putString("saved_servers", savedServers.toString()).apply()
+        }
+    }
+
+    private fun readLocalDiagnosticsLog(): String {
+        return try {
+            val logFile = File(cacheDir, "halla_log.txt")
+            if (logFile.exists()) {
+                val lines = logFile.readLines()
+                lines.takeLast(8).joinToString("\n")
+            } else {
+                "Arquivo de log nao encontrado."
+            }
+        } catch (e: Exception) {
+            "Erro ao ler logs: ${e.message}"
+        }
+    }
+
+    // ============================================================================
+    // Diálogos de Opções Laterais (Settings, Help, About)
+    // ============================================================================
+
+    private fun showSettingsDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("⚙️ Configurações")
+            .setMessage("• Sensibilidade de VAD (MIC): Ativação de fala definida em 150 RMS.\n• Dispositivos de Áudio: Sistema padrão ativo.\n• Codec: Compressão e descompressão Opus em tempo real ativa.")
+            .setPositiveButton("OK") { d, _ -> d.dismiss() }
+            .show()
+    }
+
+    private fun showHelpDialog() {
+        val context = this
+        val options = arrayOf("Sobre o Halla", "Verificar atualizações")
+        AlertDialog.Builder(context)
+            .setTitle("❓ Ajuda")
+            .setItems(options) { _, which ->
+                if (which == 0) {
+                    showAboutDialog()
+                } else if (which == 1) {
+                    checkUpdatesFromSettings()
+                }
+            }
+            .show()
+    }
+
     // ============================================================================
     // JNI Callbacks (Chamados em Threads em Segundo Plano pelo C++ Core)
     // ============================================================================
@@ -1152,6 +1317,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     setMargins(0, 0, 0, 16)
                 }
                 
+                // Card background (#151322)
                 val cardShape = GradientDrawable().apply {
                     setColor(Color.parseColor("#151322"))
                     cornerRadius = 16f
