@@ -61,18 +61,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Voz Opus e Canais Sincronizados
+          name: Halla Mobile ${{ github.ref_name }} — Painel Hierárquico e Keep-Alive NAT
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## 🚀 Lançamento Oficial do Halla Mobile ${{ github.ref_name }}
+            ## 🚀 Novidades do Halla Mobile ${{ github.ref_name }}
 
-            Esta versão traz uma reestruturação profunda nas camadas de rede e áudio, garantindo compatibilidade e qualidade profissional!
+            Esta versão traz melhorias críticas de infraestrutura de rede VoIP e uma navegação de configurações totalmente reformulada:
 
-            ### 📱 Recursos Integrados nesta Versão
-            * **Codec Opus Nativo:** Suporte completo à compressão e descompressão do codec Opus oficial diretamente no NDK, oferecendo áudio límpido e com zero distorção!
-            * **Sincronia Nativa de Árvore de Canais:** Resolvedor unificado que mapeia instantaneamente as salas e os usuários de forma perfeita ao conectar!
-            * **Atualizações de Canais Live:** Suporte à escuta e redesenho de tela instantâneo para edições, criações e deleções de salas em tempo real.
+            ### ⚙️ Painel de Configurações Hierárquico
+            * **Navegação por Submenus:** As configurações agora são divididas em 4 submenus independentes (Geral, Áudio, Aparência e Sobre). Cada tela exibe exclusivamente os seus respectivos ajustes, evitando poluição visual e permitindo navegar de forma extremamente limpa e organizada!
+
+            ### 📡 Keep-Alive Contínuo UDP para Furo de NAT
+            * **Fim do Atraso de Voz:** Implementado um loop contínuo de sinalização keep-alive UDP em segundo plano no C++ nativo que dispara pings leves de 5 segundos. Isso mantém as portas de CGNAT/NAT de redes móveis ou Wi-Fi permanentemente ativas. A transmissão da sua voz agora funciona instantaneamente no primeiro segundo, sem depender de nenhuma fala prévia do PC!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
