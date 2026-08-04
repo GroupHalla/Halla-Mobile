@@ -182,7 +182,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.11"
+    private val currentVersionName = "v1.0.12"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -309,6 +309,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelAudio.addView(btnTransmissionMode)
 
+        val btnWhisperLists = Button(this).apply {
+            text = "🟠 LISTA DE SUSSURRO"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setOnClickListener { showWhisperListsDialog() }
+        }
+        panelAudio.addView(btnWhisperLists)
+
         val floatingOptions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 12, 24, 12)
@@ -344,8 +356,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         floatingOptions.addView(floatingSwitch)
-        val positionKeys = listOf("top_start", "top_end", "bottom_start", "bottom_end")
-        val positionNames = listOf("Superior esquerdo", "Superior direito", "Inferior esquerdo", "Inferior direito")
+        val positionKeys = listOf("top_start", "top_end", "bottom_start", "bottom_end", "custom")
+        val positionNames = listOf("Superior esquerdo", "Superior direito", "Inferior esquerdo", "Inferior direito", "Personalizada (arraste)")
         val positionButton = Button(this).apply {
             val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
             val current = prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
@@ -579,13 +591,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         if (HallaService.isRunning()) HallaService.setPtt(this, true)
                         else audioManager.isPttPressed = true
                         txtPttText.text = "FALANDO"
-                        btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
+                        setPttButtonBackground(Color.parseColor("#22C55E"))
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         if (HallaService.isRunning()) HallaService.setPtt(this, false)
                         else audioManager.isPttPressed = false
                         txtPttText.text = "FALAR"
-                        btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6")) // Purple mockup default
+                        setPttButtonBackground(Color.parseColor("#8B5CF6"))
                     }
                 }
                 true
@@ -700,13 +712,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         pttOptionsPanel?.visibility = if (mode == 1) View.VISIBLE else View.GONE
     }
 
+    private fun setPttButtonBackground(color: Int) {
+        btnPttModule.background = GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = 28f
+        }
+    }
+
     private fun updateTalkingUi(talking: Boolean) {
         if (talking) {
             txtPttText.text = "FALANDO"
-            btnPttModule.setBackgroundColor(Color.parseColor("#22C55E"))
+            setPttButtonBackground(Color.parseColor("#22C55E"))
         } else {
             txtPttText.text = "FALAR"
-            btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6"))
+            setPttButtonBackground(Color.parseColor("#8B5CF6"))
         }
     }
 
@@ -2298,6 +2317,161 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 showManageIdentitiesDialog()
             }
             .show()
+    }
+
+    private fun loadWhisperLists(): JSONArray {
+        val raw = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            .getString("whisper_lists", "[]") ?: "[]"
+        return try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
+    }
+
+    private fun saveWhisperLists(lists: JSONArray) {
+        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+            .putString("whisper_lists", lists.toString()).apply()
+        HallaService.refreshWhisperOverlays(this)
+    }
+
+    private fun showWhisperListsDialog() {
+        val lists = loadWhisperLists()
+        val names = Array(lists.length()) { i ->
+            val item = lists.optJSONObject(i)
+            val type = if (item?.optString("type") == "channel") "canais" else "usuários"
+            "${item?.optString("name", "Sussurro ${i + 1}")} · $type"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Lista de Sussurro")
+            .setMessage(if (lists.length() == 0) "Crie uma lista para direcionar sua voz a canais ou usuários." else null)
+            .setItems(names) { _, which -> showWhisperListEditor(which) }
+            .setPositiveButton("Nova lista") { _, _ -> showWhisperListEditor(-1) }
+            .setNegativeButton("Fechar", null)
+            .show()
+    }
+
+    private fun showWhisperListEditor(index: Int) {
+        val lists = loadWhisperLists()
+        val existing = if (index >= 0 && index < lists.length()) lists.optJSONObject(index) else null
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 12, 32, 4)
+        }
+        val nameInput = EditText(this).apply {
+            hint = "Nome da lista"
+            setText(existing?.optString("name", "") ?: "")
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(nameInput)
+
+        val typeSpinner = Spinner(this)
+        val typeNames = arrayOf("Canais", "Usuários")
+        typeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, typeNames)
+        typeSpinner.setSelection(if (existing?.optString("type") == "channel") 0 else 1)
+        layout.addView(typeSpinner)
+
+        val targetsTitle = TextView(this).apply {
+            text = "Selecione os destinos"
+            setTextColor(Color.WHITE)
+            setPadding(0, 16, 0, 4)
+        }
+        layout.addView(targetsTitle)
+        val targetsLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        layout.addView(targetsLayout)
+
+        val floating = Switch(this).apply {
+            text = "Criar botão flutuante para esta lista"
+            setTextColor(Color.WHITE)
+            isChecked = existing?.optBoolean("floating", true) ?: true
+        }
+        layout.addView(floating)
+
+        val selected = hashSetOf<String>()
+        existing?.optJSONArray("targets")?.let { arr ->
+            for (i in 0 until arr.length()) selected.add(arr.optString(i))
+        }
+
+        fun rebuildTargets() {
+            targetsLayout.removeAllViews()
+            val channelsMode = typeSpinner.selectedItemPosition == 0
+            if (channelsMode) {
+                if (channelsData.length() == 0) {
+                    targetsLayout.addView(TextView(this).apply {
+                        text = "Conecte-se a um servidor para selecionar canais."
+                        setTextColor(Color.parseColor("#94A3B8"))
+                    })
+                }
+                for (i in 0 until channelsData.length()) {
+                    val channel = channelsData.optJSONObject(i) ?: continue
+                    val id = channel.optInt("id", 0).toString()
+                    val check = CheckBox(this).apply {
+                        text = channel.optString("name", "Canal $id")
+                        tag = id
+                        setTextColor(Color.WHITE)
+                        isChecked = selected.contains(id)
+                    }
+                    targetsLayout.addView(check)
+                }
+            } else {
+                if (usersData.length() == 0) {
+                    targetsLayout.addView(TextView(this).apply {
+                        text = "Conecte-se a um servidor para selecionar usuários."
+                        setTextColor(Color.parseColor("#94A3B8"))
+                    })
+                }
+                for (i in 0 until usersData.length()) {
+                    val user = usersData.optJSONObject(i) ?: continue
+                    val uid = user.optString("uid", user.optInt("id", 0).toString())
+                    if (user.optInt("id", 0) == selfId) continue
+                    val check = CheckBox(this).apply {
+                        text = user.optString("name", uid)
+                        tag = uid
+                        setTextColor(Color.WHITE)
+                        isChecked = selected.contains(uid)
+                    }
+                    targetsLayout.addView(check)
+                }
+            }
+        }
+        typeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                rebuildTargets()
+            }
+        }
+        rebuildTargets()
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) "Nova lista de sussurro" else "Editar lista de sussurro")
+            .setView(layout)
+            .setPositiveButton("Salvar") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Informe um nome para a lista.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val targets = JSONArray()
+                for (i in 0 until targetsLayout.childCount) {
+                    val child = targetsLayout.getChildAt(i)
+                    if (child is CheckBox && child.isChecked) targets.put(child.tag.toString())
+                }
+                val item = existing ?: JSONObject()
+                item.put("name", name)
+                item.put("type", if (typeSpinner.selectedItemPosition == 0) "channel" else "user")
+                item.put("targets", targets)
+                item.put("floating", floating.isChecked)
+                if (existing == null) lists.put(item) else lists.put(index, item)
+                saveWhisperLists(lists)
+                Toast.makeText(this, "Lista de sussurro salva.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+        if (existing != null) {
+            builder.setNeutralButton("Excluir") { _, _ ->
+                lists.remove(index)
+                saveWhisperLists(lists)
+            }
+        }
+        builder.show()
     }
 
     private fun showPrivilegeKeyDialog() {

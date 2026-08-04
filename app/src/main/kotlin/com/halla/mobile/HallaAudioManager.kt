@@ -27,6 +27,7 @@ class HallaAudioManager(private val cacheDir: File) {
 
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
+    @Volatile var whisperPressed = false
     var vadThreshold = 150.0
 
     // Nível atual de volume do microfone de 0.0 a 100.0 (DSP RMS)
@@ -76,9 +77,10 @@ class HallaAudioManager(private val cacheDir: File) {
                             currentVoiceLevel = Math.min(voiceLevel, 100.0)
 
                             // Limiar VAD / PTT / Contínuo para transmissão
-                            val voiceNow = when (transmissionMode) {
-                                1 -> isPttPressed // PTT
-                                2 -> true // Contínuo
+                            val voiceNow = when {
+                                whisperPressed -> true // sussurro também funciona sobre VAD
+                                transmissionMode == 1 -> isPttPressed // PTT
+                                transmissionMode == 2 -> true // Contínuo
                                 else -> rms > vadThreshold // VAD
                             }
                             if (voiceNow != isTalking) {
@@ -226,6 +228,7 @@ class HallaAudioManager(private val cacheDir: File) {
 
     fun forceStopTalking() {
         isPttPressed = false
+        whisperPressed = false
         if (isTalking) {
             isTalking = false
             HallaCore.sendTalking(false)

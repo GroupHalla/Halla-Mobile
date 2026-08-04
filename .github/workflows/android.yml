@@ -62,24 +62,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — PTT configurável e serviço em segundo plano
+          name: Halla Mobile ${{ github.ref_name }} — Whisper mobile e PTT personalizado
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.11
+            ## Halla Mobile v1.0.12
 
-            ### Push-to-Talk
-            * Corrigido o modo PTT: ao selecionar PTT, o áudio fica bloqueado até o usuário pressionar o botão.
-            * A alteração do modo agora é sincronizada com o Foreground Service, evitando que o serviço continue em VAD.
-            * A aba Configurações > Áudio mostra opções extras somente quando PTT está selecionado.
-            * PTT flutuante opcional sobre jogos e outros aplicativos.
-            * Seleção da posição do botão flutuante: superior/inferior, esquerda/direita.
+            ### Push-to-Talk e sussurro
+            * Corrigido o botão PTT para permanecer redondo durante a transmissão.
+            * A posição do PTT flutuante agora pode ser personalizada arrastando o botão pela tela.
+            * Adicionadas Listas de Sussurro para canais e usuários do servidor.
+            * Cada lista pode ter seu próprio botão flutuante, permitindo vários atalhos de sussurro.
+            * Sussurros funcionam mesmo quando o modo geral de transmissão está em VAD.
 
-            ### Serviço em segundo plano
-            * A notificação fixa mantém os controles de microfone, fones e desconexão.
-            * A sessão continua ativa ao apagar a tela ou minimizar o aplicativo.
-            * Reconexão automática durante a troca de Wi-Fi para 4G/5G.
-            * Ping e perda de pacotes visíveis no cartão do servidor.
+            ### Primeiro áudio UDP
+            * O cliente Desktop também registra seu endpoint com frames não vazios, corrigindo o caso em que o Mobile só era ouvido depois da primeira fala do PC.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

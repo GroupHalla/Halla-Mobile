@@ -24,6 +24,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -42,6 +43,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_SET_TRANSMISSION_MODE = "com.halla.mobile.action.SET_TRANSMISSION_MODE"
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
         const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
+        const val ACTION_REFRESH_WHISPER_OVERLAYS = "com.halla.mobile.action.REFRESH_WHISPER_OVERLAYS"
         const val ACTION_STATE_CHANGED = "com.halla.mobile.action.STATE_CHANGED"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
@@ -134,6 +136,12 @@ class HallaService : Service(), HallaCore.Callbacks {
             })
         }
 
+        fun refreshWhisperOverlays(context: Context) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_REFRESH_WHISPER_OVERLAYS
+            })
+        }
+
         fun setTransmissionMode(context: Context, mode: Int) {
             context.startService(Intent(context, HallaService::class.java).apply {
                 action = ACTION_SET_TRANSMISSION_MODE
@@ -171,6 +179,8 @@ class HallaService : Service(), HallaCore.Callbacks {
     private var overlayView: TextView? = null
     private var overlayWindow: WindowManager? = null
     private var overlayPttDown = false
+    private val whisperViews = linkedMapOf<String, TextView>()
+    private val activeWhispers = linkedMapOf<String, List<Int>>()
 
     override fun onCreate() {
         super.onCreate()
@@ -185,7 +195,10 @@ class HallaService : Service(), HallaCore.Callbacks {
                 updateNotification()
                 overlayView?.let {
                     it.text = if (talking) "FALANDO" else "FALAR"
-                    it.setBackgroundColor(if (talking) 0xFF22C55E.toInt() else 0xFF8B5CF6.toInt())
+                    it.background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(if (talking) 0xFF22C55E.toInt() else 0xFF8B5CF6.toInt())
+                    }
                 }
             }
         }
@@ -239,6 +252,18 @@ class HallaService : Service(), HallaCore.Callbacks {
                     showPttOverlay()
                 }
             }
+            ACTION_REFRESH_WHISPER_OVERLAYS -> {
+                for (view in whisperViews.values) {
+                    try { overlayWindow?.removeView(view) } catch (_: Exception) { }
+                }
+                whisperViews.clear()
+                activeWhispers.clear()
+                if (overlayView != null) {
+                    showWhisperOverlays()
+                } else if (hasFloatingWhisperLists()) {
+                    showWhisperOverlays()
+                }
+            }
         }
         return START_STICKY
     }
@@ -267,6 +292,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         if (mode == 1 && getSharedPreferences("HallaPrefs", MODE_PRIVATE)
                 .getBoolean(PREF_OVERLAY, false)) {
             showPttOverlay()
+        } else if (hasFloatingWhisperLists()) {
+            showWhisperOverlays()
         }
         if (!connecting && !sessionActive && host.isNotEmpty()) {
             connecting = true
@@ -505,6 +532,13 @@ class HallaService : Service(), HallaCore.Callbacks {
                         gravity = Gravity.TOP or Gravity.END
                         x = margin; y = topOffset
                     }
+                    "custom" -> {
+                        gravity = Gravity.TOP or Gravity.START
+                        x = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+                            .getInt("overlay_custom_x", margin)
+                        y = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+                            .getInt("overlay_custom_y", topOffset)
+                    }
                     "bottom_start" -> {
                         gravity = Gravity.BOTTOM or Gravity.START
                         x = margin; y = bottomOffset
@@ -515,8 +549,12 @@ class HallaService : Service(), HallaCore.Callbacks {
                     }
                 }
             }
+            var downRawX = 0f
+            var downRawY = 0f
+            var startX = params.x
+            var startY = params.y
             val view = TextView(this).apply {
-                text = "PTT"
+                text = "FALAR"
                 textSize = 11f
                 gravity = Gravity.CENTER
                 setTextColor(0xFFFFFFFF.toInt())
@@ -524,18 +562,35 @@ class HallaService : Service(), HallaCore.Callbacks {
                     shape = GradientDrawable.OVAL
                     setColor(0xFF8B5CF6.toInt())
                 }
-                setOnTouchListener { _, event ->
+                setOnTouchListener { touchedView, event ->
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            downRawX = event.rawX
+                            downRawY = event.rawY
+                            startX = params.x
+                            startY = params.y
                             overlayPttDown = true
                             audio.isPttPressed = true
                             text = "FALANDO"
                             true
                         }
+                        MotionEvent.ACTION_MOVE -> {
+                            if (position == "custom") {
+                                params.x = (startX + event.rawX - downRawX).toInt().coerceAtLeast(0)
+                                params.y = (startY + event.rawY - downRawY).toInt().coerceAtLeast(0)
+                                try { wm.updateViewLayout(touchedView, params) } catch (_: Exception) { }
+                            }
+                            true
+                        }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             overlayPttDown = false
                             audio.isPttPressed = false
-                            text = "PTT"
+                            text = "FALAR"
+                            if (position == "custom") {
+                                getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
+                                    .putInt("overlay_custom_x", params.x)
+                                    .putInt("overlay_custom_y", params.y).apply()
+                            }
                             true
                         }
                         else -> true
@@ -545,18 +600,155 @@ class HallaService : Service(), HallaCore.Callbacks {
             wm.addView(view, params)
             overlayWindow = wm
             overlayView = view
+            showWhisperOverlays()
         } catch (_: Exception) {
             overlayView = null
         }
     }
 
+    private fun loadWhisperLists(): JSONArray {
+        val raw = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+            .getString("whisper_lists", "[]") ?: "[]"
+        return try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
+    }
+
+    private fun resolveWhisperTargets(list: JSONObject): List<Int> {
+        val welcome = try { JSONObject(lastWelcomeJson) } catch (_: Exception) { return emptyList() }
+        val users = welcome.optJSONArray("users") ?: JSONArray()
+        val channels = welcome.optJSONArray("channels") ?: JSONArray()
+        val targets = list.optJSONArray("targets") ?: JSONArray()
+        val out = linkedSetOf<Int>()
+        val type = list.optString("type", "user")
+        if (type == "user") {
+            val wanted = (0 until targets.length()).map { targets.optString(it) }.toSet()
+            for (i in 0 until users.length()) {
+                val user = users.optJSONObject(i) ?: continue
+                val id = user.optInt("id", 0)
+                val uid = user.optString("uid", "")
+                if (wanted.contains(uid) || wanted.contains(id.toString())) out.add(id)
+            }
+        } else {
+            val wantedChannels = (0 until targets.length()).mapNotNull { targets.optString(it).toIntOrNull() }.toMutableSet()
+            var changed = true
+            while (changed) {
+                changed = false
+                for (i in 0 until channels.length()) {
+                    val channel = channels.optJSONObject(i) ?: continue
+                    if (wantedChannels.contains(channel.optInt("parent", 0)) &&
+                        wantedChannels.add(channel.optInt("id", 0))) changed = true
+                }
+            }
+            for (i in 0 until channels.length()) {
+                val channel = channels.optJSONObject(i) ?: continue
+                if (!wantedChannels.contains(channel.optInt("id", 0))) continue
+                val channelUsers = channel.optJSONArray("users") ?: continue
+                for (j in 0 until channelUsers.length()) out.add(channelUsers.optInt(j))
+            }
+        }
+        return out.filter { it > 0 }
+    }
+
+    private fun updateWhisperUnion() {
+        val ids = activeWhispers.values.flatten().toSet().toList()
+        audio.whisperPressed = activeWhispers.isNotEmpty()
+        val json = JSONObject().apply {
+            put("t", "whisper")
+            put("ids", JSONArray(ids))
+        }
+        HallaCore.sendRawJson(json.toString())
+    }
+
+    private fun hasFloatingWhisperLists(): Boolean {
+        val lists = loadWhisperLists()
+        for (i in 0 until lists.length()) {
+            if (lists.optJSONObject(i)?.optBoolean("floating", false) == true) return true
+        }
+        return false
+    }
+
+    private fun ensureOverlayWindow(): Boolean {
+        if (overlayWindow != null) return true
+        if (!Settings.canDrawOverlays(this)) return false
+        overlayWindow = getSystemService(WINDOW_SERVICE) as WindowManager
+        return true
+    }
+
+    private fun showWhisperOverlays() {
+        if (!ensureOverlayWindow()) return
+        val wm = overlayWindow ?: return
+        if (!Settings.canDrawOverlays(this)) return
+        val lists = loadWhisperLists()
+        var index = 0
+        for (i in 0 until lists.length()) {
+            val list = lists.optJSONObject(i) ?: continue
+            if (!list.optBoolean("floating", false)) continue
+            val key = list.optString("name", "Sussurro ${i + 1}")
+            if (whisperViews.containsKey(key)) continue
+            val size = (54 * resources.displayMetrics.density).toInt()
+            val params = WindowManager.LayoutParams(
+                size, size,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                x = (16 * resources.displayMetrics.density).toInt()
+                y = ((150 + 70 * (index + 1)) * resources.displayMetrics.density).toInt()
+            }
+            val view = TextView(this).apply {
+                text = list.optString("label", key).take(5)
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(0xFFFFFFFF.toInt())
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xFFF59E0B.toInt())
+                }
+                setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            activeWhispers[key] = resolveWhisperTargets(list)
+                            background = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(0xFF22C55E.toInt())
+                            }
+                            updateWhisperUnion()
+                            true
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            activeWhispers.remove(key)
+                            background = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(0xFFF59E0B.toInt())
+                            }
+                            updateWhisperUnion()
+                            true
+                        }
+                        else -> true
+                    }
+                }
+            }
+            try {
+                wm.addView(view, params)
+                whisperViews[key] = view
+                index++
+            } catch (_: Exception) { }
+        }
+    }
+
     private fun hidePttOverlay() {
-        val view = overlayView ?: return
         try {
-            overlayWindow?.removeView(view)
+            overlayView?.let { overlayWindow?.removeView(it) }
+            for (view in whisperViews.values) overlayWindow?.removeView(view)
         } catch (_: Exception) {
         }
         overlayView = null
+        whisperViews.clear()
+        activeWhispers.clear()
+        audio.whisperPressed = false
+        if (overlayWindow != null) updateWhisperUnion()
         overlayWindow = null
         overlayPttDown = false
     }
