@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var btnNavSettings: TextView
     private lateinit var btnNavHelp: TextView
 
-    // Controles do Servidor Ativo Redesenhado Premium (Tema Azul)
+    // Controles do Servidor Ativo Redesenhado Premium (Tema Roxo/Violeta do Mockup)
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
     private lateinit var containerChannels: LinearLayout
@@ -162,27 +162,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         editChatMsg = findViewById(R.id.editChatMsg)
         btnSendChat = findViewById(R.id.btnSendChat)
 
-        // Estiliza o Card de Destaque do Servidor com Gradiente Azul Metálico
+        // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
         val bannerGradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            intArrayOf(Color.parseColor("#1E3A8A"), Color.parseColor("#0F172A"))
+            intArrayOf(Color.parseColor("#221245"), Color.parseColor("#0D0821"))
         ).apply {
             cornerRadius = 32f
         }
         layoutServerBanner.background = bannerGradient
 
+        // Estiliza a Logo Redonda do Card
+        val bannerLogoLayout = findViewById<RelativeLayout>(R.id.bannerLogoLayout)
+        val logoCircle = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#0D0821"))
+        }
+        bannerLogoLayout.background = logoCircle
+
         // Estiliza o Dock Flutuante de Controles Inferiores (Bordas Arredondadas)
         val layoutBottomBar = findViewById<LinearLayout>(R.id.layoutBottomBar)
         val dockShape = GradientDrawable().apply {
-            setColor(Color.parseColor("#1E293B"))
+            setColor(Color.parseColor("#141322"))
             cornerRadius = 36f
         }
         layoutBottomBar.background = dockShape
 
-        // Estiliza o botão de PTT central com cantos arredondados Azul Brilhante
+        // Estiliza o botão de PTT central com cantos arredondados Roxo TS3/Mumble
         val pttShape = GradientDrawable().apply {
-            setColor(Color.parseColor("#3B82F6"))
+            setColor(Color.parseColor("#8B5CF6"))
             cornerRadius = 28f
         }
         btnPttModule.background = pttShape
@@ -201,7 +209,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     btnPttModule.setBackgroundColor(Color.parseColor("#22C55E")) // Neon green when speaking
                 } else {
                     txtPttText.text = "FALANDO"
-                    btnPttModule.setBackgroundColor(Color.parseColor("#3B82F6")) // Electric blue default
+                    btnPttModule.setBackgroundColor(Color.parseColor("#8B5CF6")) // Purple mockup default
                 }
             }
         }
@@ -254,7 +262,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManager.setTransmitEnabled(!isMuted)
             txtMicIcon.text = if (isMuted) "🔇" else "🎙️"
             txtMicText.text = if (isMuted) "Ativar" else "Desativar"
-            btnMuteMicModule.setBackgroundColor(Color.parseColor(if (isMuted) "#D9534F" else "#1E293B"))
+            btnMuteMicModule.setBackgroundColor(Color.parseColor(if (isMuted) "#EF4444" else "#141322"))
         }
 
         btnDeafenModule.setOnClickListener {
@@ -262,7 +270,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManager.setSpeakersEnabled(!isDeaf)
             txtDeafenIcon.text = if (isDeaf) "🔇" else "🎧"
             txtDeafenText.text = if (isDeaf) "Ativar" else "Fones"
-            btnDeafenModule.setBackgroundColor(Color.parseColor(if (isDeaf) "#D9534F" else "#1E293B"))
+            btnDeafenModule.setBackgroundColor(Color.parseColor(if (isDeaf) "#EF4444" else "#141322"))
         }
 
         btnPttModule.setOnClickListener {
@@ -282,14 +290,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val path = audioManager.stopLocalRecording()
                 txtRecordIcon.text = "🔴"
                 txtRecordText.text = "Gravar"
-                btnRecordModule.setBackgroundColor(Color.parseColor("#1E293B"))
+                btnRecordModule.setBackgroundColor(Color.parseColor("#141322"))
                 appendChatText("Sistema", "Gravação salva localmente em: $path")
             } else {
                 val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
                 if (started) {
                     txtRecordIcon.text = "⏹️"
                     txtRecordText.text = "Gravando"
-                    btnRecordModule.setBackgroundColor(Color.parseColor("#D9534F"))
+                    btnRecordModule.setBackgroundColor(Color.parseColor("#EF4444"))
                     appendChatText("Sistema", "Gravação de áudio iniciada...")
                 }
             }
@@ -429,7 +437,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(32, 32, 32, 32)
             
             val shape = GradientDrawable().apply {
-                setColor(Color.parseColor("#1E293B")) // Design cinza azulado escuro Premium
+                setColor(Color.parseColor("#151322")) // Fundo escuro idêntico do mockup
                 cornerRadius = 16f
             }
             background = shape
@@ -596,7 +604,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val dialogView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
-            setBackgroundColor(Color.parseColor("#1E293B"))
+            setBackgroundColor(Color.parseColor("#151322"))
         }
 
         val txtTitle = TextView(context).apply {
@@ -657,7 +665,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnSave = Button(context).apply {
             text = "SALVAR"
-            setBackgroundColor(Color.parseColor("#3B82F6"))
+            setBackgroundColor(Color.parseColor("#8B5CF6"))
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
                 val name = inputName.text.toString().trim()
@@ -959,7 +967,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
                 txtActiveUsersCountBadge.text = "👤 $clientsCount/$maxClients membros"
-                txtCategoryChannelsCount.text = "[${channelsData.length()}]"
+                txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 updateActiveServerSlots(clientsCount, maxClients)
                 rebuildChannelTree()
@@ -1008,7 +1016,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 
                 // Atualiza contadores dinâmicos no banner
                 txtActiveUsersCountBadge.text = "👤 ${usersData.length()} membros"
-                txtCategoryChannelsCount.text = "[${channelsData.length()}]"
+                txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 rebuildChannelTree()
             } catch (e: Exception) {
@@ -1176,19 +1184,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     setMargins(0, 0, 0, 16)
                 }
                 
-                // Card background (#1E293B)
+                // Card background (#151322)
                 val cardShape = GradientDrawable().apply {
-                    setColor(Color.parseColor("#1E293B"))
+                    setColor(Color.parseColor("#151322"))
                     cornerRadius = 16f
                 }
                 background = cardShape
             }
 
-            // Borda Lateral Esquerda em Azul Elétrico
+            // Borda Lateral Esquerda em Roxo/Violeta Brilhante (ı|ı - exato do mockup)
             val leftBlueBorder = View(this).apply {
-                setBackgroundColor(Color.parseColor("#3B82F6"))
+                setBackgroundColor(Color.parseColor("#8B5CF6"))
                 val borderParams = LinearLayout.LayoutParams(
-                    12, // ~4dp width
+                    12, // Borda lateral esquerda de alta visibilidade
                     LinearLayout.LayoutParams.MATCH_PARENT
                 )
                 layoutParams = borderParams
@@ -1215,10 +1223,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
 
-            // Ícone Minimalista de Alto-falante em Azul Elétrico (🔊)
+            // Ícone Minimalista de Alto-falante em Roxo (🔊)
             val txtIcon = TextView(this).apply {
                 text = "🔊  "
-                setTextColor(Color.parseColor("#3B82F6"))
+                setTextColor(Color.parseColor("#8B5CF6"))
                 textSize = 14f
             }
 
@@ -1235,16 +1243,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 )
             }
 
-            // Badge de Membros (ex: 👥 2)
+            // Badge de Membros (ex: 👤 2)
             val txtBadge = TextView(this).apply {
-                text = "👥 $count"
+                text = "👤 $count"
                 setTextColor(Color.parseColor("#94A3B8"))
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(12, 4, 12, 4)
                 
                 val badgeShape = GradientDrawable().apply {
-                    setColor(Color.parseColor("#0B0F17"))
+                    setColor(Color.parseColor("#0D0E15"))
                     cornerRadius = 12f
                 }
                 background = badgeShape
@@ -1261,7 +1269,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (count > 0) {
                 // Divisor sutil interno
                 val divider = View(this).apply {
-                    setBackgroundColor(Color.parseColor("#0B0F17"))
+                    setBackgroundColor(Color.parseColor("#0D0E15"))
                     val dParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         2
@@ -1312,8 +1320,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             gravity = android.view.Gravity.CENTER
                             val d = GradientDrawable().apply {
                                 shape = GradientDrawable.OVAL
-                                setColor(Color.parseColor("#0B0F17"))
-                                setStroke(2, Color.parseColor("#3B82F6")) // Borda azul do avatar
+                                setColor(Color.parseColor("#0D0E15"))
+                                setStroke(2, Color.parseColor("#8B5CF6")) // Borda roxa do avatar
                             }
                             background = d
                             layoutParams = FrameLayout.LayoutParams(48, 48) // 24dp diameter
