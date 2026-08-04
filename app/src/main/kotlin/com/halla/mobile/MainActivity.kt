@@ -9,6 +9,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -27,6 +28,8 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.PowerManager
 import android.media.AudioManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.RingtoneManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -94,6 +97,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var txtChatBox: TextView
     private lateinit var editChatMsg: EditText
     private lateinit var btnSendChat: Button
+    private lateinit var containerChatTabs: LinearLayout
+    private val chatHistories = linkedMapOf(
+        "server" to StringBuilder(),
+        "channel" to StringBuilder()
+    )
+    private val chatTabLabels = linkedMapOf(
+        "server" to "Servidor",
+        "channel" to "Canal"
+    )
+    private var activeChatKey = "channel"
 
     // TELA DE CONFIGURAÇÕES EM TELA CHEIA (Hierárquica por submenus!)
     private lateinit var layoutSettings: RelativeLayout
@@ -139,6 +152,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var sensorManager: SensorManager? = null
     private var proximitySensor: Sensor? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            routeBluetoothIfAvailable()
+        }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            routeBluetoothIfAvailable()
+        }
+    }
     private val collapsedChannels = HashSet<Int>()
     private var selfId = 0
     private var isChannelCommander = false
@@ -155,7 +176,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.7"
+    private val currentVersionName = "v1.0.8"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -219,6 +240,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtChatBox = findViewById(R.id.txtChatBox)
         editChatMsg = findViewById(R.id.editChatMsg)
         btnSendChat = findViewById(R.id.btnSendChat)
+        containerChatTabs = findViewById(R.id.containerChatTabs)
+        rebuildChatTabs()
 
         // Inicializa Tela de Configurações em Tela Cheia
         layoutSettings = findViewById(R.id.layoutSettings)
@@ -293,6 +316,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelGeral.addView(btnManageIds)
 
+        val btnUsePrivilegeKey = Button(this).apply {
+            text = "🔑 USAR CHAVE DE PRIVILÉGIO"
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setOnClickListener { showPrivilegeKeyDialog() }
+        }
+        panelGeral.addView(btnUsePrivilegeKey)
+
         // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
         val bannerGradient = GradientDrawable(
@@ -342,6 +377,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 101)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 102)
+        }
 
         // Inicializa AudioManager
         audioManager = HallaAudioManager(cacheDir)
@@ -370,6 +409,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         proximitySensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
         registerReceiver(bluetoothReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
+        (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+            .registerAudioDeviceCallback(audioDeviceCallback, handler)
+        routeBluetoothIfAvailable()
 
         // Verifica atualizações de forma automática na inicialização direto do GitHub
         checkForUpdatesSilently()
@@ -388,13 +430,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnDisconnect.setOnClickListener {
+            audioManager.stop()
             HallaCore.disconnectFromServer()
         }
 
         btnSendChat.setOnClickListener {
             val text = editChatMsg.text.toString().trim()
             if (text.isNotEmpty()) {
-                HallaCore.sendChatMessage(text)
+                when {
+                    activeChatKey == "server" ->
+                        HallaCore.sendChatMessageScoped("server", 0, text)
+                    activeChatKey.startsWith("private:") -> {
+                        val targetId = activeChatKey.removePrefix("private:").toIntOrNull() ?: 0
+                        HallaCore.sendChatMessageScoped("private", targetId, text)
+                    }
+                    else -> HallaCore.sendChatMessageScoped("channel", 0, text)
+                }
                 editChatMsg.setText("")
             }
         }
@@ -414,6 +465,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             imgMicIcon.setImageResource(if (isMuted) R.drawable.ic_mic_mute else R.drawable.ic_mic)
             txtMicText.text = if (isMuted) "Ativar" else "Desativar"
             btnMuteMicModule.background = bubbleShape() // Mantém o fundo da bolha idêntico e sem ficar vermelho!
+            HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
         }
 
         btnDeafenModule.setOnClickListener {
@@ -654,7 +706,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         thread {
             try {
-                val url = URL("https://api.github.com/repos/farleybarbosa320-oss/Halla-Mobile/releases/latest")
+                val url = URL("https://api.github.com/repos/GroupHalla/Halla-Mobile/releases/latest")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 3000
@@ -690,7 +742,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         Toast.makeText(this, "Buscando atualizações...", Toast.LENGTH_SHORT).show()
         thread {
             try {
-                val url = URL("https://api.github.com/repos/farleybarbosa320-oss/Halla-Mobile/releases/latest")
+                val url = URL("https://api.github.com/repos/GroupHalla/Halla-Mobile/releases/latest")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.connectTimeout = 3000
@@ -733,7 +785,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setMessage("Uma nova versão ($newTag) do Halla Mobile foi publicada no GitHub com melhorias de sincronia e áudio.\n\nNotas da versão:\n$notes\n\nDeseja baixar a atualização agora?")
             .setPositiveButton("Baixar Agora") { dialog, _ ->
                 dialog.dismiss()
-                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/farleybarbosa320-oss/Halla-Mobile/releases/latest"))
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/GroupHalla/Halla-Mobile/releases/latest"))
                 startActivity(browserIntent)
             }
             .setNegativeButton("Depois") { dialog, _ -> dialog.dismiss() }
@@ -1310,6 +1362,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             txtActiveServerName.text = serverName
             txtActiveMotd.text = motd
+            chatHistories.values.forEach { it.clear() }
+            chatHistories.keys.filter { it.startsWith("private:") }.toList()
+                .forEach { chatHistories.remove(it) }
+            chatTabLabels.keys.retainAll(setOf("server", "channel"))
+            activeChatKey = "channel"
+            rebuildChatTabs()
             txtChatBox.text = ""
 
             // Alterna visibilidade dos botões do Header Superior
@@ -1319,10 +1377,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnAddServer.visibility = View.GONE
             btnQuickConnect.visibility = View.GONE
 
+            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            systemAudio.isSpeakerphoneOn = true
+            routeBluetoothIfAvailable()
             audioManager.startCapture()
             audioManager.startPlayback()
 
-            appendChatText("Sistema", "Conectado ao servidor: $serverName")
+            appendChatText("Sistema", "Conectado ao servidor: $serverName", "server")
             appendChatText("MOTD", motd)
         }
     }
@@ -1331,6 +1394,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
             audioManager.stop()
+            // Libera sockets/threads nativos também quando o servidor fecha
+            // a conexão sozinho; antes eles ficavam vivos até o próximo login.
+            HallaCore.disconnectFromServer()
             showScreen(R.id.layoutConnect)
             btnConnectStatusNormal()
 
@@ -1394,8 +1460,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         removeUser(obj.getInt("id"))
                     } else if (t == "user_moved") {
                         moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
-                    } else if (t == "user_state") {
+                    } else if (t == "user_state" || t == "user_nick" ||
+                               t == "user_desc" || t == "user_group") {
                         updateUserState(obj)
+                    } else if (t == "server_edit") {
+                        obj.optString("name").takeIf { it.isNotEmpty() }?.let {
+                            txtActiveServerName.text = it
+                        }
+                        if (obj.has("motd")) txtActiveMotd.text = obj.optString("motd")
                     } else if (t == "chan_update") {
                         val chanObj = obj.getJSONObject("chan")
                         updateOrAddChannel(chanObj)
@@ -1417,9 +1489,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    override fun onChatMessageReceived(fromName: String, text: String) {
+    override fun onChatMessageReceived(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
         runOnUiThread {
-            appendChatText(fromName, text)
+            val key = when {
+                scope == "server" -> "server"
+                scope == "private" -> {
+                    val peerId = if (fromUserId == selfId) toUserId else fromUserId
+                    ensurePrivateChatTab(peerId, if (fromName.isNotEmpty()) fromName else "Privado")
+                    "private:$peerId"
+                }
+                else -> "channel"
+            }
+            appendChatText(fromName, text, key)
         }
     }
 
@@ -1430,9 +1511,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onConnectionFailed(reason: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         runOnUiThread {
+            audioManager.stop()
+            HallaCore.disconnectFromServer()
             btnConnectStatusNormal()
             txtError.text = "Erro: $reason"
             txtError.visibility = View.VISIBLE
+        }
+    }
+
+    override fun onError(code: String, msg: String) {
+        runOnUiThread {
+            txtError.text = if (msg.isNotEmpty()) "[$code] $msg" else code
+            txtError.visibility = View.VISIBLE
+            if (code == "no_talk_power") audioManager.forceStopTalking()
+            Toast.makeText(this, msg.ifEmpty { code }, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1565,6 +1657,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val u = usersData.getJSONObject(i)
             if (u.getInt("id") == uid) {
                 if (stateObj.has("talking")) u.put("talking", stateObj.getBoolean("talking"))
+                if (stateObj.has("whispering")) u.put("whispering", stateObj.getBoolean("whispering"))
+                if (stateObj.has("mic")) u.put("mic", stateObj.getBoolean("mic"))
+                if (stateObj.has("spk")) u.put("spk", stateObj.getBoolean("spk"))
+                if (stateObj.has("away")) u.put("away", stateObj.getBoolean("away"))
+                if (stateObj.has("rec")) u.put("rec", stateObj.getBoolean("rec"))
+                if (stateObj.has("cc")) u.put("cc", stateObj.getBoolean("cc"))
+                if (stateObj.has("name")) u.put("name", stateObj.getString("name"))
+                if (stateObj.has("text")) u.put("desc", stateObj.getString("text"))
+                if (stateObj.has("group")) u.put("group", stateObj.getString("group"))
+                if (stateObj.has("sigla")) u.put("sigla", stateObj.getString("sigla"))
+                if (stateObj.has("icon")) u.put("icon", stateObj.getString("icon"))
+                if (stateObj.has("order")) u.put("order", stateObj.getInt("order"))
                 break
             }
         }
@@ -1590,13 +1694,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val settingsPrefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
         val showBadges = settingsPrefs.getBoolean("show_badges", true)
 
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
+        lateinit var renderChannel: (JSONObject, Int) -> Unit
+        renderChannel = renderChannel@{ chan: JSONObject, depth: Int ->
             val chanId = chan.getInt("id")
             val chanName = chan.getString("name")
 
             if (isChannelCollapsed(chanId)) {
-                continue
+                return@renderChannel
             }
 
             val channelUsers = chan.optJSONArray("users")
@@ -1609,7 +1713,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    setMargins(0, 0, 0, 16)
+                    setMargins(depth * 12, 0, 0, 16)
                 }
                 
                 // Card background (#151322)
@@ -1819,6 +1923,23 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             cardContainer.addView(contentLayout)
             containerChannels.addView(cardContainer)
+
+            // Renderiza subcanais dentro da árvore, em vez de deixar todos os
+            // canais no mesmo nível visual. O estado collapsed do pai oculta
+            // recursivamente toda a sua descendência.
+            for (j in 0 until channelsData.length()) {
+                val child = channelsData.getJSONObject(j)
+                if (child.optInt("parent", 0) == chanId) {
+                    renderChannel(child, depth + 1)
+                }
+            }
+        }
+
+        // Começa pelos canais raiz; a ordem dos objetos recebidos pelo
+        // servidor deixa de importar para a visualização hierárquica.
+        for (i in 0 until channelsData.length()) {
+            val root = channelsData.getJSONObject(i)
+            if (root.optInt("parent", 0) == 0) renderChannel(root, 0)
         }
     }
 
@@ -1866,6 +1987,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setPositiveButton("Nova") { _, _ ->
                 showNewIdentityDialog()
             }
+            .setNeutralButton("Importar") { _, _ ->
+                showImportIdentityDialog()
+            }
             .setNegativeButton("Fechar", null)
             .show()
     }
@@ -1878,11 +2002,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         AlertDialog.Builder(context)
             .setTitle("ID: $name")
             .setMessage("UID Completa:\n$uid")
-            .setPositiveButton("Copiar UID") { _, _ ->
+            .setPositiveButton("Exportar UID") { _, _ ->
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 val clip = android.content.ClipData.newPlainText("Halla UID", uid)
                 clipboard.setPrimaryClip(clip)
-                Toast.makeText(context, "UID Copiada!", Toast.LENGTH_SHORT).show()
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Identidade Halla - $name")
+                    putExtra(Intent.EXTRA_TEXT, uid)
+                }
+                startActivity(Intent.createChooser(share, "Exportar identidade Halla"))
             }
             .setNeutralButton("Excluir") { _, _ ->
                 if (index == 0) {
@@ -1897,6 +2026,76 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setNegativeButton("Voltar") { _, _ ->
                 showManageIdentitiesDialog()
             }
+            .show()
+    }
+
+    private fun showPrivilegeKeyDialog() {
+        val input = EditText(this).apply {
+            hint = "HL3-XXXX-XXXX-XXXX-XXXX"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Chave de privilégio")
+            .setMessage("Cole a chave fornecida pelo administrador do servidor.")
+            .setView(input)
+            .setPositiveButton("Usar") { _, _ ->
+                val key = input.text.toString().trim()
+                if (key.isNotEmpty()) HallaCore.sendUsePrivilegeKey(key)
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showImportIdentityDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 8)
+        }
+        val inputName = EditText(this).apply {
+            hint = "Nome da identidade"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val inputUid = EditText(this).apply {
+            hint = "Cole a UID exportada do Halla Desktop"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            setSingleLine(false)
+        }
+        layout.addView(inputName)
+        layout.addView(inputUid)
+
+        AlertDialog.Builder(this)
+            .setTitle("Importar identidade")
+            .setMessage("Cole aqui a UID copiada na janela Identidades do Halla Desktop.")
+            .setView(layout)
+            .setPositiveButton("Importar") { _, _ ->
+                val name = inputName.text.toString().trim()
+                val uid = inputUid.text.toString().trim()
+                if (name.isEmpty() || uid.isEmpty()) {
+                    Toast.makeText(this, "Nome e UID são obrigatórios.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val list = getSavedIdentities()
+                var replaced = false
+                for (i in 0 until list.length()) {
+                    if (list.getJSONObject(i).optString("uid") == uid) {
+                        list.getJSONObject(i).put("name", name)
+                        replaced = true
+                        break
+                    }
+                }
+                if (!replaced) {
+                    list.put(JSONObject().apply {
+                        put("name", name)
+                        put("uid", uid)
+                    })
+                }
+                saveIdentities(list)
+                Toast.makeText(this, "Identidade importada com sucesso.", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
             .show()
     }
 
@@ -1953,12 +2152,44 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Roteamento de Áudio, Proximidade e Bluetooth
     // ============================================================================
 
+    private fun routeBluetoothIfAvailable() {
+        try {
+            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val devices = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                systemAudio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+            } else emptyList()
+            val bluetooth = devices.firstOrNull {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+            }
+            if (bluetooth != null) {
+                systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
+                if (bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    bluetooth.type == AudioDeviceInfo.TYPE_BLE_HEADSET) {
+                    @Suppress("DEPRECATION")
+                    systemAudio.startBluetoothSco()
+                    @Suppress("DEPRECATION")
+                    systemAudio.isBluetoothScoOn = true
+                }
+                @Suppress("DEPRECATION")
+                systemAudio.isSpeakerphoneOn = false
+                btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
+            }
+        } catch (_: SecurityException) {
+            // O headset continua sendo opcional quando a permissão Bluetooth
+            // ainda não foi concedida pelo Android.
+        }
+    }
+
     private fun toggleAudioRoute() {
         isSpeakerPhone = !isSpeakerPhone
         val audioManagerSystem = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         if (isSpeakerPhone) {
             audioManagerSystem.isSpeakerphoneOn = true
             audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
+            btnAudioRoute.setBackgroundResource(R.drawable.ic_speaker)
             Toast.makeText(this, "Áudio: Viva-Voz (Speaker)", Toast.LENGTH_SHORT).show()
             
             // Desativa sensor de proximidade no viva-voz
@@ -1967,10 +2198,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         } else {
             audioManagerSystem.isSpeakerphoneOn = false
             audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
+            btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
             Toast.makeText(this, "Áudio: Alto-falante de Ouvido (Earpiece)", Toast.LENGTH_SHORT).show()
 
             // Ativa sensor de proximidade no modo auricular
-            sensorManager?.registerListener(proximityListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL)
+            proximitySensor?.let {
+                sensorManager?.registerListener(proximityListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+            }
         }
     }
 
@@ -2016,12 +2250,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
+        audioManager.stop()
+        HallaCore.disconnectFromServer()
         try {
             unregisterReceiver(bluetoothReceiver)
         } catch (e: Exception) {}
+        (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+            .unregisterAudioDeviceCallback(audioDeviceCallback)
         sensorManager?.unregisterListener(proximityListener)
         if (wakeLock?.isHeld == true) wakeLock?.release()
+        super.onDestroy()
     }
 
     // ============================================================================
@@ -2068,7 +2306,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setItems(options.toTypedArray()) { _, which ->
                 val choice = options[which]
                 if (choice.contains("Entrar")) {
-                    HallaCore.joinChannel(chanId)
+                    joinChannelWithPassword(chanId, chanName)
                 } else if (choice.contains("Expandir") || choice.contains("Recolher")) {
                     if (isCollapsed) collapsedChannels.remove(chanId)
                     else collapsedChannels.add(chanId)
@@ -2079,6 +2317,39 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     showCreateSubchannelDialog(chanId)
                 }
             }
+            .show()
+    }
+
+    private fun joinChannelWithPassword(chanId: Int, chanName: String) {
+        var protected = false
+        for (i in 0 until channelsData.length()) {
+            val channel = channelsData.getJSONObject(i)
+            if (channel.optInt("id", -1) == chanId) {
+                protected = channel.optBoolean("pw", false)
+                break
+            }
+        }
+
+        if (!protected) {
+            HallaCore.joinChannel(chanId, "")
+            return
+        }
+
+        val input = EditText(this).apply {
+            hint = "Senha do canal"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                    android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(Color.parseColor("#FFFFFF"))
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Entrar em $chanName")
+            .setMessage("Este canal é protegido por senha.")
+            .setView(input)
+            .setPositiveButton("Entrar") { _, _ ->
+                HallaCore.joinChannel(chanId, input.text.toString())
+            }
+            .setNegativeButton("Cancelar", null)
             .show()
     }
 
@@ -2143,7 +2414,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setPositiveButton("Criar") { _, _ ->
                 val name = inputName.text.toString().trim()
                 if (name.isNotEmpty()) {
-                    val msg = "{\"t\":\"chan_create\",\"parent\":$parentChanId,\"name\":\"$name\"}"
+                    val msg = JSONObject().apply {
+                        put("t", "chan_create")
+                        put("parent", parentChanId)
+                        put("name", name)
+                        put("type", 0)
+                        put("codec", 4)
+                        put("quality", 6)
+                        put("max", -1)
+                    }.toString()
                     HallaCore.sendRawJson(msg)
                     Toast.makeText(context, "Solicitação de criação de subcanal enviada", Toast.LENGTH_SHORT).show()
                 }
@@ -2164,6 +2443,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             options.add("✏️ Alterar Apelido (Nickname)")
         } else {
             options.add("👉 Cutucar (Poke)")
+            options.add("💬 Mensagem privada")
             options.add("ℹ️ Informações do Cliente")
             options.add("➦ Mover para Canal")
             options.add("🚫 Expulsar do Canal")
@@ -2191,6 +2471,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     showChangeNicknameDialog()
                 } else if (choice.contains("Cutucar")) {
                     showSendPokeDialog(userId, name)
+                } else if (choice.contains("Mensagem privada")) {
+                    showPrivateMessageDialog(userId, name)
                 } else if (choice.contains("Informações")) {
                     showClientInfoDialog(usr)
                 } else if (choice.contains("Mover")) {
@@ -2363,9 +2645,66 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    private fun appendChatText(from: String, text: String) {
+    private fun rebuildChatTabs() {
+        if (!::containerChatTabs.isInitialized) return
+        containerChatTabs.removeAllViews()
+        for ((key, label) in chatTabLabels) {
+            val button = TextView(this).apply {
+                text = label
+                setTextColor(if (key == activeChatKey) Color.WHITE else Color.parseColor("#94A3B8"))
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setPadding(24, 10, 24, 10)
+                setBackgroundColor(if (key == activeChatKey) Color.parseColor("#8B5CF6")
+                                  else Color.parseColor("#1C1B2B"))
+                setOnClickListener { selectChatTab(key) }
+            }
+            containerChatTabs.addView(button)
+        }
+    }
+
+    private fun ensurePrivateChatTab(userId: Int, name: String): String {
+        if (userId <= 0) return "channel"
+        val key = "private:$userId"
+        chatTabLabels[key] = if (name.isBlank()) "Privado" else name
+        chatHistories.getOrPut(key) { StringBuilder() }
+        rebuildChatTabs()
+        return key
+    }
+
+    private fun selectChatTab(key: String) {
+        if (!chatHistories.containsKey(key)) return
+        activeChatKey = key
+        txtChatBox.text = chatHistories[key].toString()
+        rebuildChatTabs()
+    }
+
+    private fun appendChatText(from: String, text: String, key: String = "server") {
+        val history = chatHistories.getOrPut(key) { StringBuilder() }
         val coloredFrom = if (from == "Sistema") "[Sistema]" else "[$from]"
-        txtChatBox.append("$coloredFrom: $text\n")
+        history.append("$coloredFrom: $text\n")
+        if (key == activeChatKey) txtChatBox.text = history.toString()
+    }
+
+    private fun showPrivateMessageDialog(userId: Int, targetName: String) {
+        ensurePrivateChatTab(userId, targetName)
+        selectChatTab("private:$userId")
+        val input = EditText(this).apply {
+            hint = "Mensagem para $targetName"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Mensagem privada")
+            .setView(input)
+            .setPositiveButton("Enviar") { _, _ ->
+                val text = input.text.toString().trim()
+                if (text.isNotEmpty()) {
+                    HallaCore.sendChatMessageScoped("private", userId, text)
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     companion object {

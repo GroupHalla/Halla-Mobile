@@ -49,6 +49,7 @@ jobs:
 
   release:
     name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
     needs: build-android
     runs-on: ubuntu-latest
     steps:
@@ -61,7 +62,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Áudio Inteligente, Multi-Identidades, Árvore Sanfona e Moderação
+          name: Halla Mobile ${{ github.ref_name }} — Voz UDP, Identidades e Favoritos Persistentes
           draft: false
           prerelease: false
           files: HallaMobile.apk

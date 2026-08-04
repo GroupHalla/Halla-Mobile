@@ -13,10 +13,16 @@ object HallaCore {
     external fun disconnectFromServer()
 
     @JvmStatic
-    external fun joinChannel(channelId: Int)
+    external fun joinChannel(channelId: Int, pass: String)
 
     @JvmStatic
     external fun sendChatMessage(text: String)
+
+    @JvmStatic
+    external fun sendChatMessageScoped(scope: String, toUserId: Int, text: String)
+
+    @JvmStatic
+    external fun sendTalking(on: Boolean)
 
     @JvmStatic
     external fun sendVoiceFrame(pcmData: ByteArray)
@@ -55,9 +61,10 @@ object HallaCore {
         fun onWelcomeReceived(welcomeJson: String)
         fun onChannelListReceived(channelsJson: String)
         fun onUserListReceived(usersJson: String)
-        fun onChatMessageReceived(fromName: String, text: String)
+        fun onChatMessageReceived(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String)
         fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray)
         fun onConnectionFailed(reason: String)
+        fun onError(code: String, msg: String)
         fun onPokeReceived(fromName: String, msg: String)
     }
 
@@ -94,8 +101,8 @@ object HallaCore {
     }
 
     @JvmStatic
-    fun triggerOnChatMessage(fromName: String, text: String) {
-        callbacks?.onChatMessageReceived(fromName, text)
+    fun triggerOnChatMessage(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
+        callbacks?.onChatMessageReceived(scope, fromUserId, toUserId, fromName, text)
     }
 
     @JvmStatic
@@ -106,6 +113,11 @@ object HallaCore {
     @JvmStatic
     fun triggerOnConnectionFailed(reason: String) {
         callbacks?.onConnectionFailed(reason)
+    }
+
+    @JvmStatic
+    fun triggerOnError(code: String, msg: String) {
+        callbacks?.onError(code, msg)
     }
 
     @JvmStatic

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- Mantém favoritos e identidades no backup da conta/dispositivo. -->
+    <cloud-backup>
+        <include domain="sharedpref" path="HallaPrefs.xml" />
+        <include domain="sharedpref" path="HallaSettings.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="HallaPrefs.xml" />
+        <include domain="sharedpref" path="HallaSettings.xml" />
+    </device-transfer>
+</data-extraction-rules>

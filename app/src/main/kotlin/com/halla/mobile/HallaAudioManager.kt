@@ -12,20 +12,21 @@ import kotlin.concurrent.thread
 import kotlin.math.sqrt
 
 class HallaAudioManager(private val cacheDir: File) {
-    private var isRecordingMic = false
-    private var isPlayingAudio = false
-    private var isLocalRecording = false
+    @Volatile private var isRecordingMic = false
+    @Volatile private var isPlayingAudio = false
+    @Volatile private var isLocalRecording = false
     
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var localRecordFile: FileOutputStream? = null
+    private var localRecordPath: File? = null
     private var localRecordBytes = 0L
 
-    private var transmitEnabled = true
-    private var speakerEnabled = true
+    @Volatile private var transmitEnabled = true
+    @Volatile private var speakerEnabled = true
 
-    var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
-    var isPttPressed = false
+    @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
+    @Volatile var isPttPressed = false
     var vadThreshold = 150.0
 
     // Nível atual de volume do microfone de 0.0 a 100.0 (DSP RMS)
@@ -82,12 +83,21 @@ class HallaAudioManager(private val cacheDir: File) {
                             }
                             if (voiceNow != isTalking) {
                                 isTalking = voiceNow
+                                // O servidor usa este sinal para atualizar o
+                                // estado dos clientes e para validar canais
+                                // moderados. Antes o Mobile só enviava UDP,
+                                // ficando invisível e sem feedback de talk power.
+                                HallaCore.sendTalking(isTalking)
                                 onTalkingStateChanged?.invoke(isTalking)
                             }
 
-                            // Envia para o core nativo C++
+                            // Envia somente os bytes realmente capturados para
+                            // o core nativo C++ (o buffer pode conter sobra de
+                            // uma leitura anterior).
                             if (voiceNow) {
-                                HallaCore.sendVoiceFrame(audioBuffer)
+                                val frame = if (readBytes == audioBuffer.size) audioBuffer
+                                            else audioBuffer.copyOf(readBytes)
+                                HallaCore.sendVoiceFrame(frame)
                             }
 
                             // Grava áudio localmente (WAV) se ativo
@@ -99,6 +109,7 @@ class HallaAudioManager(private val cacheDir: File) {
                             currentVoiceLevel = 0.0
                             if (isTalking) {
                                 isTalking = false
+                                HallaCore.sendTalking(false)
                                 onTalkingStateChanged?.invoke(isTalking)
                             }
                         }
@@ -107,6 +118,7 @@ class HallaAudioManager(private val cacheDir: File) {
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
+                forceStopTalking()
                 stopCaptureInternal()
             }
         }
@@ -154,6 +166,7 @@ class HallaAudioManager(private val cacheDir: File) {
         if (isLocalRecording) return false
         try {
             val file = File(cacheDir, filename)
+            localRecordPath = file
             localRecordFile = FileOutputStream(file)
             localRecordBytes = 0L
             // Escreve cabeçalho vazio temporário
@@ -173,8 +186,9 @@ class HallaAudioManager(private val cacheDir: File) {
             localRecordFile?.close()
             localRecordFile = null
 
-            // Corrige o cabeçalho WAV com os tamanhos reais
-            val file = File(cacheDir, "HallaVoiceRec.wav")
+            // Corrige o cabeçalho WAV com os tamanhos reais no mesmo arquivo
+            // escolhido em startLocalRecording().
+            val file = localRecordPath ?: File(cacheDir, "HallaVoiceRec.wav")
             val randomAccessFile = java.io.RandomAccessFile(file, "rw")
             
             randomAccessFile.seek(0)
@@ -192,7 +206,9 @@ class HallaAudioManager(private val cacheDir: File) {
             randomAccessFile.writeInt(Integer.reverseBytes(localRecordBytes.toInt()))
             randomAccessFile.close()
 
-            return file.absolutePath
+            val path = file.absolutePath
+            localRecordPath = null
+            return path
         } catch (e: Exception) {
             e.printStackTrace()
             return null
@@ -201,15 +217,26 @@ class HallaAudioManager(private val cacheDir: File) {
 
     fun setTransmitEnabled(on: Boolean) {
         transmitEnabled = on
+        if (!on) forceStopTalking()
     }
 
     fun setSpeakersEnabled(on: Boolean) {
         speakerEnabled = on
     }
 
+    fun forceStopTalking() {
+        isPttPressed = false
+        if (isTalking) {
+            isTalking = false
+            HallaCore.sendTalking(false)
+            onTalkingStateChanged?.invoke(false)
+        }
+    }
+
     fun isLocalRecording(): Boolean = isLocalRecording
 
     fun stop() {
+        forceStopTalking()
         isRecordingMic = false
         isPlayingAudio = false
         stopCaptureInternal()

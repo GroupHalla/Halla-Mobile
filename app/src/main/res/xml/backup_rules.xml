@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Favoritos, senhas salvas, identidades e preferências do áudio. -->
+    <include domain="sharedpref" path="HallaPrefs.xml" />
+    <include domain="sharedpref" path="HallaSettings.xml" />
+</full-backup-content>
