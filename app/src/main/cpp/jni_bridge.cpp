@@ -576,6 +576,26 @@ public:
         sendto(m_udpSocket, packet.data(), packet.size(), 0, (struct sockaddr*)&m_serverUdpAddr, sizeof(m_serverUdpAddr));
     }
 
+    // Envia um frame Opus de silêncio válido para registrar o endpoint UDP.
+    // Alguns servidores/relays antigos ignoram o datagrama HALL de 10 bytes
+    // usado apenas como keep-alive; nesse caso o destinatário só passa a ser
+    // conhecido depois que alguém fala. Um frame Opus não vazio resolve o
+    // handshake sem produzir áudio audível.
+    void sendVoiceRegistration(uint16_t seq) {
+        int16_t silence[960] = {};
+        unsigned char opusBuf[512];
+        int encoded = 0;
+        {
+            std::lock_guard<std::mutex> codecLock(m_codecMutex);
+            if (m_encoder)
+                encoded = opus_encode(m_encoder, silence, 960, opusBuf, sizeof(opusBuf));
+        }
+        if (encoded > 0)
+            sendVoiceFrame(reinterpret_cast<const char*>(opusBuf), encoded, seq);
+        else
+            sendVoiceFrame(nullptr, 0, seq);
+    }
+
     // Codifica PCM bruto de 16-bit Mono @ 48kHz em frames Opus VoIP e transmite
     void encodeAndSendVoice(const int16_t* pcm, int samples) {
         if (!pcm || samples <= 0 || m_udpSocket == -1 || m_udpPort == 0 || m_voiceToken == 0) return;
@@ -891,7 +911,7 @@ private:
         // descartam o primeiro datagrama UDP e para garantir que o servidor já
         // conheça a porta local antes de a captura começar.
         for (int i = 0; i < 3; ++i) {
-            sendVoiceFrame(nullptr, 0, static_cast<uint16_t>(i + 1));
+            sendVoiceRegistration(static_cast<uint16_t>(i + 1));
             usleep(50000);
         }
         writeLog("Socket UDP configurado na porta " + std::to_string(m_udpPort) +
@@ -906,7 +926,7 @@ private:
             for (int i = 0; i < 50 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!m_connected || m_udpSocket == -1) break;
-            sendVoiceFrame(nullptr, 0, 1);
+            sendVoiceRegistration(1);
         }
         writeLog("[NAT] Loop de keep-alive UDP finalizado.");
     }

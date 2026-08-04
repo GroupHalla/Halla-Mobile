@@ -62,32 +62,21 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Voz UDP, Identidades e Favoritos Persistentes
+          name: Halla Mobile ${{ github.ref_name }} — Handshake UDP e seta de retorno
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.8
+            ## Halla Mobile v1.0.9
 
-            ### Correções de voz e conexão
-            * Corrigido o início da captura antes da preparação do UDP, evitando que a voz do celular só funcionasse depois de alguém falar pelo PC.
-            * Registro de NAT/endpoint UDP repetido e keep-alive controlado por threads gerenciadas.
-            * Sinalização `talking` enviada ao servidor e encerrada corretamente ao mutar, parar ou desconectar.
-            * Erros de permissão e senha de canal não derrubam mais a sessão inteira.
-            * Entrada em canais protegidos por senha com diálogo no celular.
-            * Encerramento seguro de sockets, threads e codecs Opus.
+            ### Correção definitiva do primeiro áudio UDP
+            * Ao conectar, o Mobile agora prepara o socket UDP antes de iniciar a captura.
+            * O cliente envia frames Opus de silêncio válidos para registrar o endpoint UDP no servidor, em vez de depender apenas de datagramas vazios.
+            * O registro é repetido no início e durante o keep-alive, corrigindo o cenário em que o áudio só funcionava depois de alguém falar pelo PC.
 
-            ### Identidades e favoritos
-            * UID escolhida no favorito agora é enviada de fato ao servidor.
-            * Importação de UID do Halla Desktop e exportação por copiar/compartilhar.
-            * Favoritos e identidades incluídos no Auto Backup/Device Transfer do Android.
+            ### Interface
+            * O botão de voltar das configurações voltou a usar uma seta clara.
 
-            ### Interface e recursos
-            * Abas de chat para servidor, canal e conversas privadas.
-            * Mensagens privadas pelo menu do usuário.
-            * Árvore de canais com subcanais hierárquicos e recolhimento recursivo.
-            * Chave de privilégio disponível nas configurações gerais.
-            * Melhorias no mute/deafen, PTT/VAD, roteamento Bluetooth e indicador de voz.
-            * JSON de saída com escape correto para apelidos, senhas e mensagens.
+            O APK continua incluindo as correções de identidade, favoritos, canais protegidos, chat privado, PTT/VAD, mute/deafen e encerramento seguro da versão anterior.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

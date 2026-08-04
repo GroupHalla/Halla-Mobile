@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.8"
+    private val currentVersionName = "v1.0.9"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
