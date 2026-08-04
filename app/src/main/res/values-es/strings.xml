@@ -312,4 +312,16 @@ Notas de la versión:
     <string name="notification_server_title">Halla — %1$s</string>
     <string name="description_format_hint">Admite líneas en blanco, [br], [img]URL[/img], [url=URL]texto[/url] y enlaces Markdown.</string>
     <string name="bitrate_hint">Bitrate del canal (16–384 kbps, predeterminado 96)</string>
+    <string name="speech_cue_group">Varios</string>
+    <string name="speech_cue_enabled">Emitir señal sonora al hablar</string>
+    <string name="speech_cue_emit_at">Emitir al:</string>
+    <string name="speech_cue_ptt">Pulsar para hablar</string>
+    <string name="speech_cue_vad">Actividad de voz</string>
+    <string name="speech_cue_active">Activo</string>
+    <string name="speech_cue_inactive">Inactivo</string>
+    <string name="speech_cue_whisper">Susurro</string>
+    <string name="speech_cue_search">Buscar archivo</string>
+    <string name="speech_cue_other_users">Otros usuarios</string>
+    <string name="speech_cue_no_file">Ningún archivo seleccionado</string>
+    <string name="speech_cue_hint">Selecciona los archivos de audio. “Otros usuarios” también reproduce la señal cuando otra persona habla.</string>
 </resources>

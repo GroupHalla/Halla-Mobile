@@ -148,6 +148,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var pttOptionsPanel: LinearLayout? = null
     private var switchOverlayPtt: Switch? = null
     private var btnOverlayPosition: Button? = null
+    private val speechCueButtons = linkedMapOf<String, Button>()
+    private var pendingSpeechCueKey: String? = null
 
     // Gerenciador de Áudio Nativo
     private lateinit var audioManager: HallaAudioManager
@@ -188,7 +190,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.18"
+    private val currentVersionName = "v1.0.19"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -410,6 +412,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         switchOverlayPtt = floatingSwitch
         btnOverlayPosition = positionButton
         panelAudio.addView(floatingOptions)
+        panelAudio.addView(buildSpeechCueOptions())
         updatePttOptionsVisibility()
 
         val btnManageIds = Button(this).apply {
@@ -740,6 +743,132 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 onWelcomeReceived(welcome)
             }
         }
+    }
+
+    private fun speechCueLabel(uri: String): String {
+        if (uri.isBlank()) return getString(R.string.speech_cue_no_file)
+        return uri.substringAfterLast('/').ifBlank { uri }
+    }
+
+    private fun buildSpeechCueOptions(): LinearLayout {
+        val prefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 14, 24, 14)
+            setBackgroundColor(Color.parseColor("#151322"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+        }
+        val title = TextView(this).apply {
+            text = getString(R.string.speech_cue_group)
+            setTextColor(Color.parseColor("#8B5CF6"))
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+        }
+        box.addView(title)
+
+        val enabled = CheckBox(this).apply {
+            text = getString(R.string.speech_cue_enabled)
+            setTextColor(Color.WHITE)
+            isChecked = prefs.getBoolean("speech_cue_enabled", false)
+            setOnCheckedChangeListener { _, value ->
+                prefs.edit().putBoolean("speech_cue_enabled", value).apply()
+            }
+        }
+        box.addView(enabled)
+
+        val modeLabel = TextView(this).apply {
+            text = getString(R.string.speech_cue_emit_at)
+            setTextColor(Color.WHITE)
+            setPadding(0, 6, 0, 2)
+        }
+        box.addView(modeLabel)
+        val modes = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
+        val ptt = RadioButton(this).apply {
+            id = View.generateViewId()
+            text = getString(R.string.speech_cue_ptt)
+            setTextColor(Color.WHITE)
+        }
+        val vad = RadioButton(this).apply {
+            id = View.generateViewId()
+            text = getString(R.string.speech_cue_vad)
+            setTextColor(Color.WHITE)
+        }
+        modes.addView(ptt)
+        modes.addView(vad)
+        if (prefs.getInt("speech_cue_mode", 1) == 0) ptt.isChecked = true else vad.isChecked = true
+        modes.setOnCheckedChangeListener { _, checkedId ->
+            prefs.edit().putInt("speech_cue_mode", if (checkedId == ptt.id) 0 else 1).apply()
+        }
+        box.addView(modes)
+
+        fun addCueRow(labelId: Int, key: String, remoteKey: String) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 6, 0, 0)
+            }
+            val label = TextView(this).apply {
+                text = getString(labelId)
+                setTextColor(Color.WHITE)
+                minWidth = 76
+            }
+            val fileButton = Button(this).apply {
+                text = speechCueLabel(prefs.getString(key, "") ?: "")
+                setTextColor(Color.WHITE)
+                setBackgroundColor(Color.parseColor("#1C1B2B"))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setOnClickListener { pickSpeechCueFile(key) }
+            }
+            val remote = CheckBox(this).apply {
+                text = getString(R.string.speech_cue_other_users)
+                setTextColor(Color.WHITE)
+                isChecked = prefs.getBoolean(remoteKey, false)
+                setOnCheckedChangeListener { _, value -> prefs.edit().putBoolean(remoteKey, value).apply() }
+            }
+            speechCueButtons[key] = fileButton
+            row.addView(label)
+            row.addView(fileButton)
+            row.addView(remote)
+            box.addView(row)
+        }
+        addCueRow(R.string.speech_cue_active, "speech_cue_active_uri", "speech_cue_remote_active")
+        addCueRow(R.string.speech_cue_inactive, "speech_cue_inactive_uri", "speech_cue_remote_inactive")
+        addCueRow(R.string.speech_cue_whisper, "speech_cue_whisper_uri", "speech_cue_remote_whisper")
+
+        val hint = TextView(this).apply {
+            text = getString(R.string.speech_cue_hint)
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 12f
+            setPadding(0, 8, 0, 0)
+        }
+        box.addView(hint)
+        return box
+    }
+
+    private fun pickSpeechCueFile(key: String) {
+        pendingSpeechCueKey = key
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            type = "audio/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }, SPEECH_CUE_REQUEST)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != SPEECH_CUE_REQUEST || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) { }
+        val key = pendingSpeechCueKey ?: return
+        getSharedPreferences("HallaSettings", Context.MODE_PRIVATE).edit()
+            .putString(key, uri.toString()).apply()
+        speechCueButtons[key]?.text = speechCueLabel(uri.toString())
+        pendingSpeechCueKey = null
     }
 
     private fun updatePttOptionsVisibility() {
@@ -3394,5 +3523,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     companion object {
         private const val HelperIntSize = 48
+        private const val SPEECH_CUE_REQUEST = 7401
     }
 }

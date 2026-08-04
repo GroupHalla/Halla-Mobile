@@ -4,6 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,6 +14,7 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Handler
@@ -179,6 +182,10 @@ class HallaService : Service(), HallaCore.Callbacks {
     private var overlayView: TextView? = null
     private var overlayWindow: WindowManager? = null
     private var overlayPttDown = false
+    private var speechCuePlayer: MediaPlayer? = null
+    private val remoteTalking = hashMapOf<Int, Boolean>()
+    private val remoteWhispering = hashMapOf<Int, Boolean>()
+    private var selfId = 0
     private fun t(id: Int, vararg args: Any): String = LocaleManager.wrap(this).getString(id, *args)
 
     private val whisperViews = linkedMapOf<String, TextView>()
@@ -194,6 +201,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         audio.onTalkingStateChanged = { talking ->
             handler.post {
                 broadcastState(talking)
+                playLocalSpeechCue(talking)
                 updateNotification()
                 overlayView?.let {
                     it.text = if (talking) t(R.string.talking) else t(R.string.talk)
@@ -311,10 +319,83 @@ class HallaService : Service(), HallaCore.Callbacks {
         connecting = false
         sessionActive = false
         audio.stop()
+        speechCuePlayer?.release()
+        speechCuePlayer = null
+        remoteTalking.clear()
+        remoteWhispering.clear()
         hidePttOverlay()
         HallaCore.disconnectFromServer()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    private fun playSpeechCue(fileKey: String, remoteKey: String? = null) {
+        val prefs = getSharedPreferences("HallaSettings", MODE_PRIVATE)
+        if (remoteKey != null && !prefs.getBoolean(remoteKey, false)) return
+        val uriText = prefs.getString(fileKey, "").orEmpty()
+        if (uriText.isBlank()) return
+        try {
+            speechCuePlayer?.release()
+            val player = MediaPlayer()
+            speechCuePlayer = player
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            player.setDataSource(this, Uri.parse(uriText))
+            player.setOnPreparedListener { if (speechCuePlayer === it) it.start() }
+            player.setOnCompletionListener {
+                if (speechCuePlayer === it) speechCuePlayer = null
+                it.release()
+            }
+            player.setOnErrorListener { mp, _, _ ->
+                if (speechCuePlayer === mp) speechCuePlayer = null
+                mp.release()
+                true
+            }
+            player.prepareAsync()
+        } catch (_: Exception) {
+            speechCuePlayer?.release()
+            speechCuePlayer = null
+        }
+    }
+
+    private fun playLocalSpeechCue(talking: Boolean) {
+        val prefs = getSharedPreferences("HallaSettings", MODE_PRIVATE)
+        if (!prefs.getBoolean("speech_cue_enabled", false)) return
+        val selected = prefs.getInt("speech_cue_mode", 1)
+        val actual = prefs.getInt("transmission_mode", 0)
+        // Mobile: 0 = VAD, 1 = PTT, 2 = contínuo. A configuração oferece
+        // apenas os dois modos solicitados.
+        if (actual == 2 || selected != if (actual == 1) 0 else 1) return
+        playSpeechCue(if (talking) "speech_cue_active_uri" else "speech_cue_inactive_uri")
+    }
+
+    private fun playRemoteSpeechCue(whisper: Boolean, active: Boolean) {
+        val suffix = when {
+            !active -> "inactive"
+            whisper -> "whisper"
+            else -> "active"
+        }
+        playSpeechCue("speech_cue_${suffix}_uri", "speech_cue_remote_${suffix}")
+    }
+
+    private fun updateRemoteUserState(obj: JSONObject) {
+        val id = obj.optInt("id", 0)
+        if (id == 0 || id == selfId) return
+        val talking = obj.optBoolean("talking", remoteTalking[id] ?: false)
+        val whispering = obj.optBoolean("whispering", remoteWhispering[id] ?: false)
+        val wasTalking = remoteTalking[id] ?: false
+        val wasWhispering = remoteWhispering[id] ?: false
+        if (talking && (!wasTalking || (whispering && !wasWhispering))) {
+            playRemoteSpeechCue(whispering, true)
+        } else if (!talking && wasTalking) {
+            playRemoteSpeechCue(false, false)
+        }
+        remoteTalking[id] = talking
+        remoteWhispering[id] = whispering
     }
 
     private fun loadAudioSettings() {
@@ -843,7 +924,22 @@ class HallaService : Service(), HallaCore.Callbacks {
     override fun onWelcomeReceived(welcomeJson: String) {
         lastWelcomeJson = welcomeJson
         try {
-            val server = JSONObject(welcomeJson).optJSONObject("server")
+            val welcome = JSONObject(welcomeJson)
+            selfId = welcome.optInt("selfId", 0)
+            remoteTalking.clear()
+            remoteWhispering.clear()
+            val users = welcome.optJSONArray("users")
+            if (users != null) {
+                for (i in 0 until users.length()) {
+                    val user = users.optJSONObject(i) ?: continue
+                    val id = user.optInt("id", 0)
+                    if (id != selfId && id != 0) {
+                        remoteTalking[id] = user.optBoolean("talking", false)
+                        remoteWhispering[id] = user.optBoolean("whispering", false)
+                    }
+                }
+            }
+            val server = welcome.optJSONObject("server")
             lastServerName = server?.optString("name", lastServerName).orEmpty()
             lastMotd = server?.optString("motd", lastMotd).orEmpty()
         } catch (_: Exception) { }
@@ -852,7 +948,20 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     override fun onChannelListReceived(channelsJson: String) = Unit
-    override fun onUserListReceived(usersJson: String) = Unit
+
+    override fun onUserListReceived(usersJson: String) {
+        try {
+            if (usersJson.trimStart().startsWith("[")) {
+                val users = JSONArray(usersJson)
+                for (i in 0 until users.length()) {
+                    users.optJSONObject(i)?.let { updateRemoteUserState(it) }
+                }
+            } else if (usersJson.trimStart().startsWith("{")) {
+                val obj = JSONObject(usersJson)
+                if (obj.optString("t") == "user_state") updateRemoteUserState(obj)
+            }
+        } catch (_: Exception) { }
+    }
 
     override fun onChatMessageReceived(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
         if (scope == "private") notifySocial(t(R.string.social_private), "$fromName: $text")
@@ -901,6 +1010,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         }
         hidePttOverlay()
         audio.stop()
+        speechCuePlayer?.release()
+        speechCuePlayer = null
         HallaCore.removeCallbacks(this)
         instance = null
         sessionActive = false

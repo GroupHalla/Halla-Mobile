@@ -312,4 +312,16 @@ Download and install now?</string>
     <string name="notification_server_title">Halla — %1$s</string>
     <string name="description_format_hint">Supports blank lines, [br], [img]URL[/img], [url=URL]text[/url] and Markdown links.</string>
     <string name="bitrate_hint">Channel bitrate (16–384 kbps, default 96)</string>
+    <string name="speech_cue_group">Miscellaneous</string>
+    <string name="speech_cue_enabled">Play a sound cue when speaking</string>
+    <string name="speech_cue_emit_at">Play on:</string>
+    <string name="speech_cue_ptt">Push-to-Talk</string>
+    <string name="speech_cue_vad">Voice Activity</string>
+    <string name="speech_cue_active">Active</string>
+    <string name="speech_cue_inactive">Inactive</string>
+    <string name="speech_cue_whisper">Whisper</string>
+    <string name="speech_cue_search">Browse file</string>
+    <string name="speech_cue_other_users">Other users</string>
+    <string name="speech_cue_no_file">No file selected</string>
+    <string name="speech_cue_hint">Choose the audio files. “Other users” also plays the cue when someone else speaks.</string>
 </resources>
