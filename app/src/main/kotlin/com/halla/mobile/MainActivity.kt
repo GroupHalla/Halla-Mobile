@@ -949,13 +949,65 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialog.show()
     }
 
-    // Diálogo Sobre (mote do ajuda realocado para cá)
-    private fun showAboutDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("ℹ️ Sobre o Halla")
-            .setMessage("Halla Mobile $currentVersionName\n\nUm ecossistema completo de comunicação por voz de alta fidelidade e baixíssima latência inspirado nas mecânicas clássicas do TeamSpeak 3 e Mumble sob uma marca 100% autônoma.")
-            .setPositiveButton("OK", null)
-            .show()
+    private fun connectToSavedServer(srv: JSONObject) {
+        val host = srv.getString("host")
+        val port = srv.getInt("port")
+        val nick = srv.getString("nick")
+        val pass = srv.optString("pass", "")
+
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("last_srv_host", host)
+            .putInt("last_srv_port", port)
+            .putString("last_srv_nick", nick)
+            .putString("last_srv_pass", pass).apply()
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        val uid = getOrCreateClientUid()
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+
+        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        connectionTimeoutRunnable = Runnable {
+            if (layoutConnect.visibility == View.VISIBLE) {
+                btnConnectStatusNormal()
+                val logContent = readLocalDiagnosticsLog()
+                txtError.text = "Tempo esgotado. Detalhes do Core:\n$logContent"
+                txtError.visibility = View.VISIBLE
+            }
+        }
+        handler.postDelayed(connectionTimeoutRunnable!!, 6000)
+    }
+
+    private fun connectToQuickServer() {
+        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+        val host = prefs.getString("last_srv_host", "") ?: ""
+        val port = prefs.getInt("last_srv_port", 0)
+        val nick = prefs.getString("last_srv_nick", "") ?: ""
+        val pass = prefs.getString("last_srv_pass", "") ?: ""
+
+        if (host.isEmpty() || port == 0 || nick.isEmpty()) {
+            Toast.makeText(this, "Nenhum servidor conectado recentemente!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        txtError.visibility = View.GONE
+        btnConnectStatusConnecting()
+
+        val uid = getOrCreateClientUid()
+        HallaCore.connectToServer(host, port, nick, pass, cacheDir.absolutePath, uid)
+    }
+
+    private fun btnConnectStatusNormal() {
+        btnAddServer.isEnabled = true
+        btnQuickConnect.isEnabled = true
+        btnQuickConnect.text = "➦"
+    }
+
+    private fun btnConnectStatusConnecting() {
+        btnAddServer.isEnabled = false
+        btnQuickConnect.isEnabled = false
+        btnQuickConnect.text = "⏳"
     }
 
     // Varredura de ping de fundo
