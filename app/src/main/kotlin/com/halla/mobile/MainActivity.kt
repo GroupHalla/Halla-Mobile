@@ -152,6 +152,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var isDeaf = false
     private var channelsData = JSONArray()
     private var usersData = JSONArray()
+    private var myPermissions = JSONObject()
 
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
@@ -183,7 +184,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.14"
+    private val currentVersionName = "v1.0.15"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -1725,7 +1726,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 selfId = obj.optInt("selfId", 0)
                 channelsData = obj.getJSONArray("channels")
                 usersData = obj.getJSONArray("users")
-                
+                myPermissions = obj.optJSONObject("myPerms") ?: JSONObject()
+                for (i in 0 until usersData.length()) {
+                    val user = usersData.optJSONObject(i) ?: continue
+                    if (user.optInt("id", 0) == selfId) {
+                        isChannelCommander = user.optBoolean("cc", false)
+                        break
+                    }
+                }
+
                 val serverObj = obj.optJSONObject("server")
                 val maxClients = serverObj?.optInt("maxClients") ?: serverObj?.optInt("max") ?: 500
                 val clientsCount = usersData.length()
@@ -1741,6 +1750,21 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
     }
+
+    private fun hasPermission(vararg keys: String): Boolean {
+        if (myPermissions.optBoolean("*", false)) return true
+        return keys.any { key ->
+            myPermissions.optBoolean(key, false) || myPermissions.optInt(key, 0) > 0
+        }
+    }
+
+    private fun canSetSelfCommander(): Boolean = hasPermission(
+        "selfCommander", "b_client_is_channel_commander", "setCommander", "b_client_set_channel_commander"
+    )
+
+    private fun canSetOtherCommander(): Boolean = hasPermission(
+        "setCommander", "b_client_set_channel_commander"
+    )
 
     override fun onChannelListReceived(channelsJson: String) {
         runOnUiThread {
@@ -2000,7 +2024,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (stateObj.has("spk")) u.put("spk", stateObj.getBoolean("spk"))
                 if (stateObj.has("away")) u.put("away", stateObj.getBoolean("away"))
                 if (stateObj.has("rec")) u.put("rec", stateObj.getBoolean("rec"))
-                if (stateObj.has("cc")) u.put("cc", stateObj.getBoolean("cc"))
+                if (stateObj.has("cc")) {
+                    u.put("cc", stateObj.getBoolean("cc"))
+                    if (uid == selfId) {
+                        isChannelCommander = stateObj.getBoolean("cc")
+                        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+                            .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
+                    }
+                }
                 if (stateObj.has("name")) u.put("name", stateObj.getString("name"))
                 if (stateObj.has("text")) u.put("desc", stateObj.getString("text"))
                 if (stateObj.has("group")) u.put("group", stateObj.getString("group"))
@@ -3002,16 +3033,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val name = usr.getString("name")
 
         val awayLabel = if (isAway) getString(R.string.away_unmark) else getString(R.string.away_mark)
-        val commanderLabel = if (isChannelCommander) getString(R.string.commander_disable) else getString(R.string.commander_enable)
+        val ownCommanderLabel = if (isChannelCommander) getString(R.string.commander_disable) else getString(R.string.commander_enable)
+        val targetCommanderLabel = if (usr.optBoolean("cc", false)) getString(R.string.commander_disable) else getString(R.string.commander_enable)
         val options = ArrayList<String>()
         if (userId == selfId) {
             options.add("💤 $awayLabel")
-            options.add("👑 $commanderLabel")
+            if (canSetSelfCommander()) options.add("👑 $ownCommanderLabel")
             options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
             options.add("👉 ${getString(R.string.poke)}")
             options.add("💬 ${getString(R.string.private_message)}")
             options.add("ℹ️ ${getString(R.string.client_info)}")
+            if (canSetOtherCommander()) options.add("👑 $targetCommanderLabel")
             options.add("➦ ${getString(R.string.move_to_channel)}")
             options.add("🚫 ${getString(R.string.kick_channel)}")
             options.add("🚫 ${getString(R.string.kick_server)}")
@@ -3032,13 +3065,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         HallaCore.sendStatus(isMuted, isDeaf, false, false, isChannelCommander)
                         Toast.makeText(context, getString(R.string.not_away), Toast.LENGTH_SHORT).show()
                     }
-                } else if (choice.contains(commanderLabel)) {
-                    isChannelCommander = !isChannelCommander
-                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-                        .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
-                    HallaCore.sendStatus(isMuted, isDeaf, isAway, false, isChannelCommander)
+                } else if (choice.contains(ownCommanderLabel) || choice.contains(targetCommanderLabel)) {
+                    val next = if (userId == selfId) !isChannelCommander else !usr.optBoolean("cc", false)
+                    if (userId == selfId) {
+                        isChannelCommander = next
+                        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+                            .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
+                    }
+                    HallaCore.sendSetCommander(userId, next)
                     Toast.makeText(context, getString(R.string.commander_status,
-                        if (isChannelCommander) getString(R.string.yes) else getString(R.string.no)), Toast.LENGTH_SHORT).show()
+                        if (next) getString(R.string.yes) else getString(R.string.no)), Toast.LENGTH_SHORT).show()
                 } else if (choice.contains(getString(R.string.change_nickname))) {
                     showChangeNicknameDialog()
                 } else if (choice.contains(getString(R.string.poke))) {
@@ -3129,7 +3165,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val uptime = usr.optInt("uptime", 0)
         val group = usr.optString("group", getString(R.string.member_default))
 
+        val uid = usr.optString("uid", getString(R.string.unknown_value))
         val info = getString(R.string.user_info_name, name) +
+                   getString(R.string.user_info_uid, uid) +
                    getString(R.string.user_info_ip, ip) +
                    getString(R.string.user_info_ping, ping) +
                    getString(R.string.user_info_version, version) +

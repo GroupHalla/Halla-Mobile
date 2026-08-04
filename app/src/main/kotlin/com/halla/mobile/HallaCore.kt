@@ -36,6 +36,9 @@ object HallaCore {
     external fun sendStatus(mic: Boolean, spk: Boolean, away: Boolean, rec: Boolean, cc: Boolean)
 
     @JvmStatic
+    external fun sendSetCommander(userId: Int, on: Boolean)
+
+    @JvmStatic
     external fun sendRename(newName: String)
 
     @JvmStatic

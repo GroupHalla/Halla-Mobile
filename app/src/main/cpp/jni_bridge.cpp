@@ -555,6 +555,12 @@ public:
         sendTcp(msg);
     }
 
+    void sendSetCommander(int userId, bool on) {
+        std::string msg = "{\"t\":\"commander\",\"id\":" + std::to_string(userId) +
+                          ",\"on\":" + std::string(on ? "true" : "false") + "}\n";
+        sendTcp(msg);
+    }
+
     void sendRename(const std::string& newName) {
         std::string msg = "{\"t\":\"nick\",\"name\":\"" + jsonEscape(newName) + "\"}\n";
         sendTcp(msg);
@@ -1165,6 +1171,11 @@ Java_com_halla_mobile_HallaCore_sendRawJson(JNIEnv* env, jclass clazz, jstring j
 JNIEXPORT void JNICALL
 Java_com_halla_mobile_HallaCore_sendStatus(JNIEnv* env, jclass clazz, jboolean mic, jboolean spk, jboolean away, jboolean rec, jboolean cc) {
     HallaClientCore::getInstance().sendStatus(mic, spk, away, rec, cc);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendSetCommander(JNIEnv* env, jclass clazz, jint userId, jboolean on) {
+    HallaClientCore::getInstance().sendSetCommander(userId, on);
 }
 
 JNIEXPORT void JNICALL
