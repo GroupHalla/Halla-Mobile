@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Halla</string>
     <string name="empty_servers">No saved servers.
-Tap '+' to add one.</string>
+Tap + to add one.</string>
     <string name="server_default">Halla Server</string>
     <string name="server_motd">Welcome to the Halla server!</string>
     <string name="online">🟢 Online</string>

@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Halla</string>
     <string name="empty_servers">Nenhum servidor salvo.
-Clique no '+' para adicionar.</string>
+Toque em + para adicionar.</string>
     <string name="server_default">Servidor Halla</string>
     <string name="server_motd">Bem-vindo ao servidor Halla!</string>
     <string name="online">🟢 Online</string>
