@@ -62,27 +62,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — idiomas, logo oficial e interface localizada
+          name: Halla Mobile ${{ github.ref_name }} — sinais sonoros de fala
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
             ## Halla Mobile v1.0.19
 
-            ### Idiomas e interface
-            * Detecção automática do idioma do Android, com opção de escolher Português, Inglês ou Espanhol nas configurações.
-            * Interface, diálogos, notificações, menus, mensagens de erro, árvore de canais e controles traduzidos.
-            * Referências a produtos e aplicativos externos removidas do código e dos textos do projeto.
-            * ID único continua sendo usado internamente para sincronização, mas não é exibido na interface.
-            * Permissões de comandante respeitadas no menu de usuários.
-            * Descrições de canais preservam espaçamento e aceitam imagens e links clicáveis.
-            * Edição de canal envia e preserva bitrate entre 16 e 384 kbps, com padrão de 96 kbps.
-            * Registro UDP força um frame Opus válido para que o áudio não dependa da fala inicial do PC.
-            * Configuração móvel de sinais sonoros: Ativo, Inativo e Sussurro, com arquivos escolhidos pelo usuário.
-            * Clientes autorizados podem definir ou remover comandantes pelo menu do usuário.
-
-            ### Identidade visual
-            * Logo oficial do Halla aplicada à barra superior, ao banner do servidor e ao botão central de transmissão.
-            * Mantidos os controles de áudio, PTT, listas de sussurro e atualização automática.
+            ### Sinais sonoros de fala
+            * Nova configuração em **Configurações → Áudio → Diversos**.
+            * Escolha entre **Pressione para Falar** e **Atividade de Voz**.
+            * Selecione arquivos de áudio separados para **Ativo**, **Inativo** e **Sussurro** pelo seletor de arquivos do Android.
+            * Cada sinal possui a opção **Outros usuários** para reproduzir o áudio quando outra pessoa falar.
+            * A reprodução funciona também com o serviço de áudio em segundo plano.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
