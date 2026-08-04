@@ -39,7 +39,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_MUTE_MIC = "com.halla.mobile.action.MUTE_MIC"
         const val ACTION_MUTE_SPEAKERS = "com.halla.mobile.action.MUTE_SPEAKERS"
         const val ACTION_SET_PTT = "com.halla.mobile.action.SET_PTT"
+        const val ACTION_SET_TRANSMISSION_MODE = "com.halla.mobile.action.SET_TRANSMISSION_MODE"
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
+        const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
         const val ACTION_STATE_CHANGED = "com.halla.mobile.action.STATE_CHANGED"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
@@ -48,13 +50,16 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_UID = "uid"
         const val EXTRA_CACHE = "cache"
         const val EXTRA_PRESSED = "pressed"
+        const val EXTRA_MODE = "mode"
         const val EXTRA_ENABLED = "enabled"
+        const val EXTRA_POSITION = "position"
 
         const val PREF_MIC_MUTED = "service_mic_muted"
         const val PREF_SPK_MUTED = "service_spk_muted"
         const val PREF_AWAY = "service_away"
         const val PREF_COMMANDER = "service_commander"
         const val PREF_OVERLAY = "overlay_ptt"
+        const val PREF_OVERLAY_POSITION = "overlay_ptt_position"
 
         private const val NOTIFICATION_ID = 2401
         private const val CHANNEL_ID = "halla_voice_session"
@@ -119,6 +124,20 @@ class HallaService : Service(), HallaCore.Callbacks {
             context.startService(Intent(context, HallaService::class.java).apply {
                 action = ACTION_SET_OVERLAY
                 putExtra(EXTRA_ENABLED, enabled)
+            })
+        }
+
+        fun setOverlayPosition(context: Context, position: String) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_OVERLAY_POSITION
+                putExtra(EXTRA_POSITION, position)
+            })
+        }
+
+        fun setTransmissionMode(context: Context, mode: Int) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_TRANSMISSION_MODE
+                putExtra(EXTRA_MODE, mode)
             })
         }
 
@@ -191,11 +210,34 @@ class HallaService : Service(), HallaCore.Callbacks {
                 applySpeakersMuted(value)
             }
             ACTION_SET_PTT -> audio.isPttPressed = intent.getBooleanExtra(EXTRA_PRESSED, false)
+            ACTION_SET_TRANSMISSION_MODE -> {
+                val mode = intent.getIntExtra(EXTRA_MODE, 0).coerceIn(0, 2)
+                audio.transmissionMode = mode
+                if (mode != 1) {
+                    audio.isPttPressed = false
+                    audio.forceStopTalking()
+                    hidePttOverlay()
+                } else if (getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+                        .getBoolean(PREF_OVERLAY, false)) {
+                    showPttOverlay()
+                }
+            }
             ACTION_SET_OVERLAY -> {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
                 getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
                     .putBoolean(PREF_OVERLAY, enabled).apply()
-                if (enabled) showPttOverlay() else hidePttOverlay()
+                val mode = getSharedPreferences("HallaSettings", MODE_PRIVATE)
+                    .getInt("transmission_mode", 0)
+                if (enabled && mode == 1) showPttOverlay() else hidePttOverlay()
+            }
+            ACTION_SET_OVERLAY_POSITION -> {
+                val position = intent.getStringExtra(EXTRA_POSITION).orEmpty()
+                getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
+                    .putString(PREF_OVERLAY_POSITION, position).apply()
+                if (overlayView != null) {
+                    hidePttOverlay()
+                    showPttOverlay()
+                }
             }
         }
         return START_STICKY
@@ -220,7 +262,10 @@ class HallaService : Service(), HallaCore.Callbacks {
         reconnectAttempt = 0
 
         startForegroundCompat(buildNotification("Conectando…"))
-        if (getSharedPreferences("HallaPrefs", MODE_PRIVATE).getBoolean(PREF_OVERLAY, false)) {
+        val mode = getSharedPreferences("HallaSettings", MODE_PRIVATE)
+            .getInt("transmission_mode", 0)
+        if (mode == 1 && getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+                .getBoolean(PREF_OVERLAY, false)) {
             showPttOverlay()
         }
         if (!connecting && !sessionActive && host.isNotEmpty()) {
@@ -438,6 +483,11 @@ class HallaService : Service(), HallaCore.Callbacks {
         try {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             val size = (64 * resources.displayMetrics.density).toInt()
+            val margin = (16 * resources.displayMetrics.density).toInt()
+            val topOffset = (100 * resources.displayMetrics.density).toInt()
+            val bottomOffset = (150 * resources.displayMetrics.density).toInt()
+            val position = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+                .getString(PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
             val params = WindowManager.LayoutParams(
                 size, size,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -446,9 +496,24 @@ class HallaService : Service(), HallaCore.Callbacks {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.BOTTOM or Gravity.END
-                x = (16 * resources.displayMetrics.density).toInt()
-                y = (150 * resources.displayMetrics.density).toInt()
+                when (position) {
+                    "top_start" -> {
+                        gravity = Gravity.TOP or Gravity.START
+                        x = margin; y = topOffset
+                    }
+                    "top_end" -> {
+                        gravity = Gravity.TOP or Gravity.END
+                        x = margin; y = topOffset
+                    }
+                    "bottom_start" -> {
+                        gravity = Gravity.BOTTOM or Gravity.START
+                        x = margin; y = bottomOffset
+                    }
+                    else -> {
+                        gravity = Gravity.BOTTOM or Gravity.END
+                        x = margin; y = bottomOffset
+                    }
+                }
             }
             val view = TextView(this).apply {
                 text = "PTT"

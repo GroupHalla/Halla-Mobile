@@ -140,6 +140,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var switchShowChannelBadges: Switch
     private lateinit var btnSettingsCheckUpdates: Button
     private lateinit var btnTransmissionMode: Button
+    private var pttOptionsPanel: LinearLayout? = null
+    private var switchOverlayPtt: Switch? = null
+    private var btnOverlayPosition: Button? = null
 
     // Gerenciador de Áudio Nativo
     private lateinit var audioManager: HallaAudioManager
@@ -179,7 +182,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.10"
+    private val currentVersionName = "v1.0.11"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -292,6 +295,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         val prefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
                         prefs.edit().putInt("transmission_mode", which).apply()
                         audioManager.transmissionMode = which
+                        if (HallaService.isRunning()) HallaService.setTransmissionMode(this@MainActivity, which)
+                        updatePttOptionsVisibility()
                         text = "🎙️ Modo de Transmissão: " + when(which) {
                             1 -> "PTT"
                             2 -> "Contínuo"
@@ -303,6 +308,72 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         panelAudio.addView(btnTransmissionMode)
+
+        val floatingOptions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 12)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setBackgroundColor(Color.parseColor("#151322"))
+        }
+        val overlayHint = TextView(this).apply {
+            text = "Opções do Push-to-Talk"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+        }
+        floatingOptions.addView(overlayHint)
+        val floatingSwitch = Switch(this).apply {
+            text = "Botão PTT flutuante sobre outros apps/jogos"
+            setTextColor(Color.WHITE)
+            isChecked = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+                .getBoolean(HallaService.PREF_OVERLAY, false)
+            setOnCheckedChangeListener { _, enabled ->
+                if (enabled && !Settings.canDrawOverlays(this@MainActivity)) {
+                    isChecked = false
+                    Toast.makeText(this@MainActivity,
+                        "Permita 'aparecer sobre outros apps' para ativar o PTT flutuante.",
+                        Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } else {
+                    HallaService.setOverlayEnabled(this@MainActivity, enabled)
+                }
+            }
+        }
+        floatingOptions.addView(floatingSwitch)
+        val positionKeys = listOf("top_start", "top_end", "bottom_start", "bottom_end")
+        val positionNames = listOf("Superior esquerdo", "Superior direito", "Inferior esquerdo", "Inferior direito")
+        val positionButton = Button(this).apply {
+            val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            val current = prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
+            text = "Posição do botão: ${positionNames[positionKeys.indexOf(current).coerceAtLeast(0)]}"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            setOnClickListener {
+                val selected = positionKeys.indexOf(
+                    prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
+                ).coerceAtLeast(0)
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Posição do PTT flutuante")
+                    .setSingleChoiceItems(positionNames.toTypedArray(), selected) { dialog, which ->
+                        prefs.edit().putString(HallaService.PREF_OVERLAY_POSITION, positionKeys[which]).apply()
+                        text = "Posição do botão: ${positionNames[which]}"
+                        HallaService.setOverlayPosition(this@MainActivity, positionKeys[which])
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        }
+        floatingOptions.addView(positionButton)
+        pttOptionsPanel = floatingOptions
+        switchOverlayPtt = floatingSwitch
+        btnOverlayPosition = positionButton
+        panelAudio.addView(floatingOptions)
+        updatePttOptionsVisibility()
 
         val btnManageIds = Button(this).apply {
             text = "👥 GERENCIAR IDENTIDADES"
@@ -331,30 +402,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setOnClickListener { showPrivilegeKeyDialog() }
         }
         panelGeral.addView(btnUsePrivilegeKey)
-
-        val switchOverlayPtt = Switch(this).apply {
-            text = "PTT flutuante sobre outros apps"
-            setTextColor(Color.WHITE)
-            isChecked = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-                .getBoolean(HallaService.PREF_OVERLAY, false)
-            setOnCheckedChangeListener { _, enabled ->
-                if (enabled && !Settings.canDrawOverlays(this@MainActivity)) {
-                    isChecked = false
-                    Toast.makeText(this@MainActivity,
-                        "Permita 'aparecer sobre outros apps' para usar o PTT flutuante.",
-                        Toast.LENGTH_LONG).show()
-                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")))
-                } else {
-                    HallaService.setOverlayEnabled(this@MainActivity, enabled)
-                }
-            }
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 16, 0, 0) }
-        }
-        panelGeral.addView(switchOverlayPtt)
 
         // Estiliza o Card de Destaque do Servidor com Gradiente Metálico Roxo (Exato do Mockup)
         val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
@@ -647,6 +694,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
+    private fun updatePttOptionsVisibility() {
+        val mode = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+            .getInt("transmission_mode", 0)
+        pttOptionsPanel?.visibility = if (mode == 1) View.VISIBLE else View.GONE
+    }
+
     private fun updateTalkingUi(talking: Boolean) {
         if (talking) {
             txtPttText.text = "FALANDO"
@@ -735,6 +788,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             else -> "VAD"
         }
         audioManager.vadThreshold = vadSens * 3.0
+        txtPttText.text = "FALAR"
+        updatePttOptionsVisibility()
 
         // Configura ouvintes de alteração para salvar instantaneamente
         switchAutoConnect.setOnCheckedChangeListener { _, isChecked ->

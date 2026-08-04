@@ -62,27 +62,24 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Foreground Service, PTT flutuante e reconexão
+          name: Halla Mobile ${{ github.ref_name }} — PTT configurável e serviço em segundo plano
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.10
+            ## Halla Mobile v1.0.11
 
-            ### Sessão em segundo plano
-            * Foreground Service com notificação fixa e ações rápidas para mutar o microfone, mutar os fones e desconectar.
-            * A conexão não é encerrada quando a Activity é minimizada, destruída ou a tela é apagada.
-            * Reconexão silenciosa durante a troca de Wi-Fi para 4G/5G, mantendo a mesma identidade e servidor.
+            ### Push-to-Talk
+            * Corrigido o modo PTT: ao selecionar PTT, o áudio fica bloqueado até o usuário pressionar o botão.
+            * A alteração do modo agora é sincronizada com o Foreground Service, evitando que o serviço continue em VAD.
+            * A aba Configurações > Áudio mostra opções extras somente quando PTT está selecionado.
+            * PTT flutuante opcional sobre jogos e outros aplicativos.
+            * Seleção da posição do botão flutuante: superior/inferior, esquerda/direita.
 
-            ### Áudio e conectividade
-            * PTT flutuante opcional sobre outros aplicativos mediante a permissão do Android.
-            * Ping e perda de pacotes exibidos no cartão do servidor com indicação verde/amarela/vermelha.
-            * Mensagens privadas e cutucões geram notificação/vibração mesmo com o app em segundo plano.
-            * Atualizador baixa o APK da release e abre o instalador do Android, sem redirecionar o usuário para o navegador.
-
-            ### Interface
-            * O botão inferior mostra **FALAR** quando parado e **FALANDO** durante a transmissão.
-            * Pressionar um canal exibe a descrição e o tópico.
-            * A seta de retorno das configurações voltou ao símbolo de seta.
+            ### Serviço em segundo plano
+            * A notificação fixa mantém os controles de microfone, fones e desconexão.
+            * A sessão continua ativa ao apagar a tela ou minimizar o aplicativo.
+            * Reconexão automática durante a troca de Wi-Fi para 4G/5G.
+            * Ping e perda de pacotes visíveis no cartão do servidor.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
