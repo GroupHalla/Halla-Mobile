@@ -73,8 +73,8 @@ Deseja baixar e instalar agora?</string>
     <string name="push_to_talk">Pressionar para falar (PTT)</string>
     <string name="continuous_transmission">Transmissão contínua</string>
     <string name="mode_changed">Modo alterado para %1$s</string>
-    <string name="ptt_options">Opções do Push-to-Talk</string>
-    <string name="floating_ptt">Botão PTT flutuante sobre outros apps e jogos</string>
+    <string name="ptt_options">Opções de pressionar para falar (PTT)</string>
+    <string name="floating_ptt">Botão PTT flutuante sobre outros aplicativos e jogos</string>
     <string name="overlay_permission_message">Permita que o Halla apareça sobre outros aplicativos para usar o PTT flutuante.</string>
     <string name="floating_position">Posição do botão: %1$s</string>
     <string name="floating_position_title">Posição do PTT flutuante</string>
@@ -221,7 +221,7 @@ Deseja baixar e instalar agora?</string>
     <string name="add_server">Adicionar servidor</string>
     <string name="audio_earpiece">Áudio: alto-falante de ouvido</string>
     <string name="audio_speaker">Áudio: viva-voz</string>
-    <string name="available_slots">%1$s slots disponíveis</string>
+    <string name="available_slots">%1$s vagas disponíveis</string>
     <string name="away_hint">Mensagem de ausência (ex.: Almoçando)</string>
     <string name="away_title">Mensagem de ausência</string>
     <string name="ban_reason">Motivo do banimento</string>
@@ -261,7 +261,7 @@ Deseja baixar e instalar agora?</string>
     <string name="no_recent_server">Nenhum servidor conectado recentemente.</string>
     <string name="no_users">Conecte-se a um servidor para selecionar usuários.</string>
     <string name="not_away">Você não está mais ausente.</string>
-    <string name="open_release">Abrir página da release</string>
+    <string name="open_release">Abrir página da versão</string>
     <string name="poke_hint">Mensagem do cutucão</string>
     <string name="port_label">Porta</string>
     <string name="privilege_message">Cole a chave fornecida pelo administrador do servidor.</string>
