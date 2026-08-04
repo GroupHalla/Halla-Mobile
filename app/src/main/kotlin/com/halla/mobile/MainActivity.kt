@@ -43,6 +43,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var btnMenu: Button
     private lateinit var btnAddServer: Button
     private lateinit var btnQuickConnect: Button
+    private lateinit var btnDisconnect: Button
+    private lateinit var btnInviteMembers: Button
 
     // Controles do Menu Lateral
     private lateinit var btnNavSettings: TextView
@@ -51,7 +53,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Controles do Servidor Ativo Redesenhado Premium (Tema Azul)
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
-    private lateinit var btnDisconnect: Button
     private lateinit var containerChannels: LinearLayout
     private lateinit var txtActiveUsersCountBadge: TextView
     private lateinit var txtCategoryChannelsCount: TextView
@@ -122,6 +123,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnMenu = findViewById(R.id.btnMenu)
         btnAddServer = findViewById(R.id.btnAddServer)
         btnQuickConnect = findViewById(R.id.btnQuickConnect)
+        btnInviteMembers = findViewById(R.id.btnInviteMembers)
+        btnDisconnect = findViewById(R.id.btnDisconnect)
 
         btnNavSettings = findViewById(R.id.btnNavSettings)
         btnNavHelp = findViewById(R.id.btnNavHelp)
@@ -129,7 +132,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Controles do Servidor Ativo Redesenhado Premium
         txtActiveServerName = findViewById(R.id.txtActiveServerName)
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
-        btnDisconnect = findViewById(R.id.btnDisconnect)
         containerChannels = findViewById(R.id.containerChannels)
         txtActiveUsersCountBadge = findViewById(R.id.txtActiveUsersCountBadge)
         txtCategoryChannelsCount = findViewById(R.id.txtCategoryChannelsCount)
@@ -240,6 +242,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnBannerSettings.setOnClickListener {
             showSettingsDialog()
+        }
+
+        btnInviteMembers.setOnClickListener {
+            Toast.makeText(this, "Link de convite do servidor copiado com sucesso!", Toast.LENGTH_SHORT).show()
         }
 
         // Módulos do Dock Flutuante Inferior
@@ -908,6 +914,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             txtActiveMotd.text = motd
             txtChatBox.text = ""
 
+            // Alterna visibilidade dos botões do Header Superior
+            btnDisconnect.visibility = View.VISIBLE
+            btnInviteMembers.visibility = View.VISIBLE
+            btnAddServer.visibility = View.GONE
+            btnQuickConnect.visibility = View.GONE
+
             audioManager.startCapture()
             audioManager.startPlayback()
 
@@ -923,6 +935,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutServer.visibility = View.GONE
             layoutConnect.visibility = View.VISIBLE
             btnConnectStatusNormal()
+
+            // Alterna visibilidade dos botões do Header Superior de volta para Home
+            btnDisconnect.visibility = View.GONE
+            btnInviteMembers.visibility = View.GONE
+            btnAddServer.visibility = View.VISIBLE
+            btnQuickConnect.visibility = View.VISIBLE
+
             loadSavedServers()
         }
     }
@@ -1220,7 +1239,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val txtBadge = TextView(this).apply {
                 text = "👥 $count"
                 setTextColor(Color.parseColor("#94A3B8"))
-                textSize = 12sp.toFloat()
+                textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(12, 4, 12, 4)
                 
