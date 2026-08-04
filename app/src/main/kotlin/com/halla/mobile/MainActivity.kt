@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -182,7 +183,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.12"
+    private val currentVersionName = "v1.0.13"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -2353,18 +2354,37 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 12, 32, 4)
+            setBackgroundColor(Color.parseColor("#151322"))
         }
         val nameInput = EditText(this).apply {
             hint = "Nome da lista"
             setText(existing?.optString("name", "") ?: "")
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
+            setBackgroundColor(Color.parseColor("#0D0E15"))
+            setPadding(16, 12, 16, 12)
         }
         layout.addView(nameInput)
 
         val typeSpinner = Spinner(this)
         val typeNames = arrayOf("Canais", "Usuários")
-        typeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, typeNames)
+        val typeAdapter = object : ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_dropdown_item, typeNames
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#0D0E15"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getDropDownView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#151322"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
+        }
+        typeSpinner.adapter = typeAdapter
         typeSpinner.setSelection(if (existing?.optString("type") == "channel") 0 else 1)
         layout.addView(typeSpinner)
 
@@ -2376,12 +2396,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layout.addView(targetsTitle)
         val targetsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(8, 4, 8, 4)
+            setBackgroundColor(Color.parseColor("#0D0E15"))
         }
         layout.addView(targetsLayout)
 
         val floating = Switch(this).apply {
             text = "Criar botão flutuante para esta lista"
             setTextColor(Color.WHITE)
+            buttonTintList = ColorStateList.valueOf(Color.WHITE)
             isChecked = existing?.optBoolean("floating", true) ?: true
         }
         layout.addView(floating)
@@ -2408,6 +2431,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         text = channel.optString("name", "Canal $id")
                         tag = id
                         setTextColor(Color.WHITE)
+                        buttonTintList = ColorStateList.valueOf(Color.WHITE)
                         isChecked = selected.contains(id)
                     }
                     targetsLayout.addView(check)
@@ -2427,6 +2451,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         text = user.optString("name", uid)
                         tag = uid
                         setTextColor(Color.WHITE)
+                        buttonTintList = ColorStateList.valueOf(Color.WHITE)
                         isChecked = selected.contains(uid)
                     }
                     targetsLayout.addView(check)

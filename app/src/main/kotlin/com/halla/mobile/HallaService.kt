@@ -673,6 +673,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         return true
     }
 
+    private fun whisperPositionKey(name: String, axis: String): String =
+        "whisper_overlay_${name.hashCode()}_$axis"
+
     private fun showWhisperOverlays() {
         if (!ensureOverlayWindow()) return
         val wm = overlayWindow ?: return
@@ -685,6 +688,14 @@ class HallaService : Service(), HallaCore.Callbacks {
             val key = list.optString("name", "Sussurro ${i + 1}")
             if (whisperViews.containsKey(key)) continue
             val size = (54 * resources.displayMetrics.density).toInt()
+            val density = resources.displayMetrics.density
+            val margin = (16 * density).toInt()
+            val defaultX = (resources.displayMetrics.widthPixels - size - margin).coerceAtLeast(0)
+            val defaultY = (resources.displayMetrics.heightPixels -
+                    ((150 + 70 * (index + 1)) * density).toInt() - size).coerceAtLeast(0)
+            val prefs = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+            val xKey = whisperPositionKey(key, "x")
+            val yKey = whisperPositionKey(key, "y")
             val params = WindowManager.LayoutParams(
                 size, size,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
@@ -693,10 +704,14 @@ class HallaService : Service(), HallaCore.Callbacks {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
             ).apply {
-                gravity = Gravity.BOTTOM or Gravity.END
-                x = (16 * resources.displayMetrics.density).toInt()
-                y = ((150 + 70 * (index + 1)) * resources.displayMetrics.density).toInt()
+                gravity = Gravity.TOP or Gravity.START
+                x = prefs.getInt(xKey, defaultX)
+                y = prefs.getInt(yKey, defaultY)
             }
+            var downRawX = 0f
+            var downRawY = 0f
+            var startX = params.x
+            var startY = params.y
             val view = TextView(this).apply {
                 text = list.optString("label", key).take(5)
                 textSize = 10f
@@ -706,9 +721,13 @@ class HallaService : Service(), HallaCore.Callbacks {
                     shape = GradientDrawable.OVAL
                     setColor(0xFFF59E0B.toInt())
                 }
-                setOnTouchListener { _, event ->
+                setOnTouchListener { touchedView, event ->
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            downRawX = event.rawX
+                            downRawY = event.rawY
+                            startX = params.x
+                            startY = params.y
                             activeWhispers[key] = resolveWhisperTargets(list)
                             background = GradientDrawable().apply {
                                 shape = GradientDrawable.OVAL
@@ -717,12 +736,19 @@ class HallaService : Service(), HallaCore.Callbacks {
                             updateWhisperUnion()
                             true
                         }
+                        MotionEvent.ACTION_MOVE -> {
+                            params.x = (startX + event.rawX - downRawX).toInt().coerceAtLeast(0)
+                            params.y = (startY + event.rawY - downRawY).toInt().coerceAtLeast(0)
+                            try { wm.updateViewLayout(touchedView, params) } catch (_: Exception) { }
+                            true
+                        }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             activeWhispers.remove(key)
                             background = GradientDrawable().apply {
                                 shape = GradientDrawable.OVAL
                                 setColor(0xFFF59E0B.toInt())
                             }
+                            prefs.edit().putInt(xKey, params.x).putInt(yKey, params.y).apply()
                             updateWhisperUnion()
                             true
                         }

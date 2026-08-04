@@ -62,21 +62,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — Whisper mobile e PTT personalizado
+          name: Halla Mobile ${{ github.ref_name }} — cores e arraste dos botões de sussurro
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.12
+            ## Halla Mobile v1.0.13
 
-            ### Push-to-Talk e sussurro
-            * Corrigido o botão PTT para permanecer redondo durante a transmissão.
-            * A posição do PTT flutuante agora pode ser personalizada arrastando o botão pela tela.
-            * Adicionadas Listas de Sussurro para canais e usuários do servidor.
-            * Cada lista pode ter seu próprio botão flutuante, permitindo vários atalhos de sussurro.
-            * Sussurros funcionam mesmo quando o modo geral de transmissão está em VAD.
+            ### Lista de Sussurro
+            * Corrigida a visibilidade do texto do nome da lista, canais e usuários no editor.
+            * Campos, spinner e caixas de seleção agora usam cores legíveis no tema escuro.
+            * Botões de sussurro flutuantes também podem ser arrastados pela tela.
+            * A posição de cada botão é salva individualmente.
 
-            ### Primeiro áudio UDP
-            * O cliente Desktop também registra seu endpoint com frames não vazios, corrigindo o caso em que o Mobile só era ouvido depois da primeira fala do PC.
+            ### PTT
+            * O botão PTT permanece redondo durante toda a interação.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
