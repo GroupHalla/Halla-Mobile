@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.29"
+    private val currentVersionName = "v1.0.30"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -2995,6 +2995,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     
                     if (userChanId == chanId) {
                         val name = usr.getString("name")
+                        val sigla = usr.optString("sigla", "").trim()
+                        val displayName = if (sigla.isEmpty()) name else "$sigla $name"
                         val isTalking = usr.optBoolean("talking", false)
 
                         // Linha do Usuário
@@ -3057,7 +3059,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
                         val txtUser = TextView(this).apply {
                             val registrationText = if (usr.optBoolean("registered", true)) "" else " ${getString(R.string.unregistered_suffix)}"
-                            text = "$name$registrationText$awayText"
+                            text = "$displayName$registrationText$awayText"
                             setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
                             textSize = 14f
                             layoutParams = LinearLayout.LayoutParams(

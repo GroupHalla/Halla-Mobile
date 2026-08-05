@@ -67,11 +67,10 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.29
+            ## Halla Mobile v1.0.30
 
-            ### Grupos e registro
-            * A tela de grupos agora exibe os usuários associados e permite adicionar ou remover membros.
-            * Usuários novos podem se registrar pelo próprio nome; usuários com `registerUsers` podem registrar outros clientes.
-            * A permissão `selfRegister` controla o auto-registro.
+            ### Exibição de cargos
+            * A sigla/prefixo do grupo agora aparece imediatamente antes do nome do usuário no Mobile.
+            * A atualização ocorre quando o servidor envia a troca de grupo, sem precisar reconectar.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
