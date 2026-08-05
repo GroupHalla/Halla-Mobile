@@ -234,7 +234,7 @@ class HallaAudioManager(private val cacheDir: File) {
 
         noiseSuppressor?.let { effect ->
             try {
-                effect.enabled = noiseSuppressionEnabled
+                effect.setEnabled(noiseSuppressionEnabled)
             } catch (_: Throwable) {
                 // O efeito pode existir no aparelho, mas não aceitar esta
                 // sessão específica; nesse caso não interrompemos a chamada.
@@ -242,7 +242,7 @@ class HallaAudioManager(private val cacheDir: File) {
         }
         echoCanceler?.let { effect ->
             try {
-                effect.enabled = echoCancellationEnabled
+                effect.setEnabled(echoCancellationEnabled)
             } catch (_: Throwable) {
                 // Ver comentário acima.
             }
