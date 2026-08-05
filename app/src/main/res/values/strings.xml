@@ -31,8 +31,14 @@ Toque em + para adicionar.</string>
     <string name="auto_connect">Autoconectar ao iniciar</string>
     <string name="check_updates_start">Verificar atualizações no início</string>
     <string name="microphone_sensitivity">Sensibilidade do microfone (VAD)</string>
-    <string name="noise_reduction">Redução de ruído (DSP)</string>
-    <string name="echo_cancellation">Cancelamento de eco</string>
+    <string name="noise_reduction">Redução de ruído do microfone</string>
+    <string name="noise_reduction_hint">Reduz ruídos contínuos, como ventilador e ar-condicionado, antes da transmissão.</string>
+    <string name="echo_cancellation">Cancelamento de eco acústico</string>
+    <string name="echo_cancellation_hint">Evita que o áudio dos fones ou do alto-falante retorne pelo microfone.</string>
+    <string name="audio_processing_note">Aplicado em tempo real pela captura de voz do Android. A eficácia depende do aparelho e da rota de áudio.</string>
+    <string name="audio_processing_status">Efeitos disponíveis neste aparelho: redução de ruído: %1$s · cancelamento de eco: %2$s</string>
+    <string name="audio_filter_available">disponível</string>
+    <string name="audio_filter_unavailable">não disponível</string>
     <string name="premium_dark_theme">Tema escuro premium</string>
     <string name="show_room_badges">Exibir contadores de salas</string>
     <string name="about_description">Aplicativo de comunicação por voz de alta fidelidade e baixa latência, desenvolvido pela equipe Halla.</string>

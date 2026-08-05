@@ -1,23 +1,35 @@
 package com.halla.mobile
 
 import android.annotation.SuppressLint
+import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
-import java.io.FileOutputStream
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
 import java.io.File
+import java.io.FileOutputStream
 import kotlin.concurrent.thread
 import kotlin.math.sqrt
 
+/**
+ * Captura e reprodução de voz do Mobile.
+ *
+ * Os filtros de ruído e eco precisam estar ligados ao AudioRecord real que
+ * captura o microfone. Antes eles eram apenas preferências gravadas no
+ * SharedPreferences: nenhum filtro era criado e, por isso, os switches não
+ * alteravam o áudio. Aqui usamos os efeitos de voz nativos do Android, presos
+ * à sessão de áudio da captura, e os mantemos sincronizados enquanto a sessão
+ * está ativa.
+ */
 class HallaAudioManager(private val cacheDir: File) {
     @Volatile private var isRecordingMic = false
     @Volatile private var isPlayingAudio = false
     @Volatile private var isLocalRecording = false
-    
-    private var audioRecord: AudioRecord? = null
-    private var audioTrack: AudioTrack? = null
+
+    @Volatile private var audioRecord: AudioRecord? = null
+    @Volatile private var audioTrack: AudioTrack? = null
     private var localRecordFile: FileOutputStream? = null
     private var localRecordPath: File? = null
     private var localRecordBytes = 0L
@@ -28,7 +40,13 @@ class HallaAudioManager(private val cacheDir: File) {
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
     @Volatile var whisperPressed = false
+    @Volatile var noiseSuppressionEnabled = true
+    @Volatile var echoCancellationEnabled = true
     var vadThreshold = 150.0
+
+    private val effectsLock = Any()
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
 
     // Nível atual de volume do microfone de 0.0 a 100.0 (DSP RMS)
     var currentVoiceLevel: Double = 0.0
@@ -37,92 +55,206 @@ class HallaAudioManager(private val cacheDir: File) {
     var onTalkingStateChanged: ((Boolean) -> Unit)? = null
     private var isTalking = false
 
+    companion object {
+        /** Os efeitos são opcionais no Android e variam conforme o fabricante. */
+        fun isNoiseSuppressionAvailable(): Boolean = try {
+            NoiseSuppressor.isAvailable()
+        } catch (_: Throwable) {
+            false
+        }
+
+        fun isEchoCancellationAvailable(): Boolean = try {
+            AcousticEchoCanceler.isAvailable()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun setNoiseSuppressionEnabled(enabled: Boolean) {
+        noiseSuppressionEnabled = enabled
+        synchronized(effectsLock) {
+            configureAudioEffectsLocked(audioRecord)
+        }
+    }
+
+    fun setEchoCancellationEnabled(enabled: Boolean) {
+        echoCancellationEnabled = enabled
+        synchronized(effectsLock) {
+            configureAudioEffectsLocked(audioRecord)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun startCapture() {
         if (isRecordingMic) return
         isRecordingMic = true
 
-        thread {
+        thread(name = "HallaAudioCapture") {
             val sampleRate = 48000
             val channelConfig = AudioFormat.CHANNEL_IN_MONO
             val audioFormat = AudioFormat.ENCODING_PCM_16BIT
             val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-            val frameSize = 1920 // 20ms of audio @ 48kHz
-            val bufferSize = Math.max(minBufSize, frameSize * 4)
+            val frameSize = 1920 // 20 ms de áudio a 48 kHz, PCM mono 16-bit
+            val bufferSize = maxOf(frameSize * 4, minBufSize)
 
             try {
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormat,
-                    bufferSize
+                // VOICE_COMMUNICATION permite que o Android selecione a cadeia
+                // de voz apropriada e fornece a referência de reprodução para
+                // o AcousticEchoCanceler quando o aparelho a disponibiliza.
+                val preferredSource = if (noiseSuppressionEnabled || echoCancellationEnabled) {
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION
+                } else {
+                    MediaRecorder.AudioSource.MIC
+                }
+                val record = createAudioRecord(
+                    preferredSource, sampleRate, channelConfig, audioFormat, bufferSize
                 )
+                audioRecord = record
 
-                audioRecord?.startRecording()
+                synchronized(effectsLock) {
+                    configureAudioEffectsLocked(record)
+                }
+                record.startRecording()
                 val audioBuffer = ByteArray(frameSize)
 
                 while (isRecordingMic) {
-                    val readBytes = audioRecord?.read(audioBuffer, 0, frameSize) ?: 0
-                    if (readBytes > 0) {
-                        if (transmitEnabled) {
-                            // Cálculo de DSP / RMS para detecção de voz e volume visual
-                            var sum = 0.0
-                            for (i in 0 until readBytes step 2) {
-                                val sample = ((audioBuffer[i + 1].toInt() shl 8) or (audioBuffer[i].toInt() and 0xFF)).toShort()
-                                sum += sample * sample
-                            }
-                            val rms = sqrt(sum / (readBytes / 2))
-                            val voiceLevel = (rms / 32768.0) * 100.0
-                            currentVoiceLevel = Math.min(voiceLevel, 100.0)
+                    val readBytes = record.read(audioBuffer, 0, frameSize)
+                    if (readBytes <= 0) continue
 
-                            // Limiar VAD / PTT / Contínuo para transmissão
-                            val voiceNow = when {
-                                whisperPressed -> true // sussurro também funciona sobre VAD
-                                transmissionMode == 1 -> isPttPressed // PTT
-                                transmissionMode == 2 -> true // Contínuo
-                                else -> rms > vadThreshold // VAD
-                            }
-                            if (voiceNow != isTalking) {
-                                isTalking = voiceNow
-                                // O servidor usa este sinal para atualizar o
-                                // estado dos clientes e para validar canais
-                                // moderados. Antes o Mobile só enviava UDP,
-                                // ficando invisível e sem feedback de talk power.
-                                HallaCore.sendTalking(isTalking)
-                                onTalkingStateChanged?.invoke(isTalking)
-                            }
+                    if (transmitEnabled) {
+                        // O PCM pode chegar em leituras parciais; considera
+                        // somente amostras completas para não ler fora do buffer.
+                        val sampleCount = readBytes / 2
+                        var sum = 0.0
+                        for (sampleIndex in 0 until sampleCount) {
+                            val offset = sampleIndex * 2
+                            val sample = ((audioBuffer[offset + 1].toInt() shl 8) or
+                                    (audioBuffer[offset].toInt() and 0xFF)).toShort()
+                            sum += sample * sample
+                        }
+                        val rms = if (sampleCount > 0) sqrt(sum / sampleCount) else 0.0
+                        val voiceLevel = (rms / 32768.0) * 100.0
+                        currentVoiceLevel = minOf(voiceLevel, 100.0)
 
-                            // Envia somente os bytes realmente capturados para
-                            // o core nativo C++ (o buffer pode conter sobra de
-                            // uma leitura anterior).
-                            if (voiceNow) {
-                                val frame = if (readBytes == audioBuffer.size) audioBuffer
-                                            else audioBuffer.copyOf(readBytes)
-                                HallaCore.sendVoiceFrame(frame)
-                            }
+                        // Limiar VAD / PTT / Contínuo para transmissão.
+                        val voiceNow = when {
+                            whisperPressed -> true // sussurro também funciona sobre VAD
+                            transmissionMode == 1 -> isPttPressed // PTT
+                            transmissionMode == 2 -> true // Contínuo
+                            else -> rms > vadThreshold // VAD
+                        }
+                        if (voiceNow != isTalking) {
+                            isTalking = voiceNow
+                            // O servidor usa este sinal para atualizar o
+                            // estado dos clientes e para validar canais
+                            // moderados.
+                            HallaCore.sendTalking(isTalking)
+                            onTalkingStateChanged?.invoke(isTalking)
+                        }
 
-                            // Grava áudio localmente (WAV) se ativo
-                            if (isLocalRecording) {
-                                localRecordFile?.write(audioBuffer, 0, readBytes)
-                                localRecordBytes += readBytes
-                            }
-                        } else {
-                            currentVoiceLevel = 0.0
-                            if (isTalking) {
-                                isTalking = false
-                                HallaCore.sendTalking(false)
-                                onTalkingStateChanged?.invoke(isTalking)
-                            }
+                        // Envia somente os bytes realmente capturados para o
+                        // core nativo C++.
+                        if (voiceNow && readBytes >= 2) {
+                            val frame = if (readBytes == audioBuffer.size) audioBuffer
+                                        else audioBuffer.copyOf(readBytes - (readBytes % 2))
+                            HallaCore.sendVoiceFrame(frame)
+                        }
+
+                        // Grava áudio localmente (WAV) se ativo.
+                        if (isLocalRecording) {
+                            localRecordFile?.write(audioBuffer, 0, readBytes)
+                            localRecordBytes += readBytes
+                        }
+                    } else {
+                        currentVoiceLevel = 0.0
+                        if (isTalking) {
+                            isTalking = false
+                            HallaCore.sendTalking(false)
+                            onTalkingStateChanged?.invoke(false)
                         }
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
+                isRecordingMic = false
                 forceStopTalking()
                 stopCaptureInternal()
             }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun createAudioRecord(
+        source: Int,
+        sampleRate: Int,
+        channelConfig: Int,
+        audioFormat: Int,
+        bufferSize: Int
+    ): AudioRecord {
+        val preferred = AudioRecord(source, sampleRate, channelConfig, audioFormat, bufferSize)
+        if (preferred.state == AudioRecord.STATE_INITIALIZED) return preferred
+        preferred.release()
+
+        // Alguns aparelhos não aceitam VOICE_COMMUNICATION em 48 kHz. O
+        // fallback conserva a captura, e os efeitos continuam sendo tentados
+        // na sessão que o aparelho conseguir abrir.
+        if (source != MediaRecorder.AudioSource.MIC) {
+            val fallback = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+            if (fallback.state == AudioRecord.STATE_INITIALIZED) return fallback
+            fallback.release()
+        }
+        throw IllegalStateException("Não foi possível inicializar a captura de áudio")
+    }
+
+    /** Deve ser chamado com effectsLock segurado. */
+    private fun configureAudioEffectsLocked(record: AudioRecord?) {
+        if (record == null || record.state != AudioRecord.STATE_INITIALIZED) return
+
+        if (noiseSuppressor == null && isNoiseSuppressionAvailable()) {
+            noiseSuppressor = try {
+                NoiseSuppressor.create(record.audioSessionId)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+        if (echoCanceler == null && isEchoCancellationAvailable()) {
+            echoCanceler = try {
+                AcousticEchoCanceler.create(record.audioSessionId)
+            } catch (_: Throwable) {
+                null
+            }
+        }
+
+        noiseSuppressor?.let { effect ->
+            try {
+                effect.enabled = noiseSuppressionEnabled
+            } catch (_: Throwable) {
+                // O efeito pode existir no aparelho, mas não aceitar esta
+                // sessão específica; nesse caso não interrompemos a chamada.
+            }
+        }
+        echoCanceler?.let { effect ->
+            try {
+                effect.enabled = echoCancellationEnabled
+            } catch (_: Throwable) {
+                // Ver comentário acima.
+            }
+        }
+    }
+
+    private fun releaseAudioEffects() {
+        synchronized(effectsLock) {
+            try { noiseSuppressor?.release() } catch (_: Throwable) {}
+            try { echoCanceler?.release() } catch (_: Throwable) {}
+            noiseSuppressor = null
+            echoCanceler = null
         }
     }
 
@@ -136,17 +268,30 @@ class HallaAudioManager(private val cacheDir: File) {
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
         try {
-            audioTrack = AudioTrack(
-                AudioManager.STREAM_MUSIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                Math.max(minBufSize, 1920 * 4),
-                AudioTrack.MODE_STREAM
-            )
+            // A saída de voz, em vez do STREAM_MUSIC genérico, permite que o
+            // AEC nativo reconheça com precisão o áudio que deve ser removido
+            // da captura e segue a rota de comunicação escolhida pelo usuário.
+            audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(channelConfig)
+                        .setEncoding(audioFormat)
+                        .build()
+                )
+                .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 4))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
             audioTrack?.play()
         } catch (e: Exception) {
             e.printStackTrace()
+            isPlayingAudio = false
         }
     }
 
@@ -171,7 +316,7 @@ class HallaAudioManager(private val cacheDir: File) {
             localRecordPath = file
             localRecordFile = FileOutputStream(file)
             localRecordBytes = 0L
-            // Escreve cabeçalho vazio temporário
+            // Escreve cabeçalho vazio temporário.
             localRecordFile?.write(ByteArray(44))
             isLocalRecording = true
             return true
@@ -192,7 +337,7 @@ class HallaAudioManager(private val cacheDir: File) {
             // escolhido em startLocalRecording().
             val file = localRecordPath ?: File(cacheDir, "HallaVoiceRec.wav")
             val randomAccessFile = java.io.RandomAccessFile(file, "rw")
-            
+
             randomAccessFile.seek(0)
             randomAccessFile.writeBytes("RIFF")
             randomAccessFile.writeInt(Integer.reverseBytes((36 + localRecordBytes).toInt()))
@@ -251,15 +396,16 @@ class HallaAudioManager(private val cacheDir: File) {
         try {
             audioRecord?.stop()
             audioRecord?.release()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         audioRecord = null
+        releaseAudioEffects()
     }
 
     private fun stopPlaybackInternal() {
         try {
             audioTrack?.stop()
             audioTrack?.release()
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
         audioTrack = null
     }
 }

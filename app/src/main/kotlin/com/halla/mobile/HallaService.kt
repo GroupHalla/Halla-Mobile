@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.app.Service
 import android.content.Context
@@ -44,6 +45,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_MUTE_SPEAKERS = "com.halla.mobile.action.MUTE_SPEAKERS"
         const val ACTION_SET_PTT = "com.halla.mobile.action.SET_PTT"
         const val ACTION_SET_TRANSMISSION_MODE = "com.halla.mobile.action.SET_TRANSMISSION_MODE"
+        const val ACTION_SET_AUDIO_PROCESSING = "com.halla.mobile.action.SET_AUDIO_PROCESSING"
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
         const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
         const val ACTION_REFRESH_WHISPER_OVERLAYS = "com.halla.mobile.action.REFRESH_WHISPER_OVERLAYS"
@@ -56,6 +58,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_CACHE = "cache"
         const val EXTRA_PRESSED = "pressed"
         const val EXTRA_MODE = "mode"
+        const val EXTRA_NOISE_SUPPRESSION = "noise_suppression"
+        const val EXTRA_ECHO_CANCELLATION = "echo_cancellation"
         const val EXTRA_ENABLED = "enabled"
         const val EXTRA_POSITION = "position"
 
@@ -152,6 +156,14 @@ class HallaService : Service(), HallaCore.Callbacks {
             })
         }
 
+        fun setAudioProcessing(context: Context, noiseSuppression: Boolean, echoCancellation: Boolean) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_AUDIO_PROCESSING
+                putExtra(EXTRA_NOISE_SUPPRESSION, noiseSuppression)
+                putExtra(EXTRA_ECHO_CANCELLATION, echoCancellation)
+            })
+        }
+
         fun isRunning(): Boolean = instance != null
         fun isSessionActive(): Boolean = sessionActive
         fun isReconnecting(): Boolean = reconnecting
@@ -245,6 +257,23 @@ class HallaService : Service(), HallaCore.Callbacks {
                     showPttOverlay()
                 }
             }
+            ACTION_SET_AUDIO_PROCESSING -> {
+                val settings = getSharedPreferences("HallaSettings", MODE_PRIVATE)
+                val noise = intent.getBooleanExtra(
+                    EXTRA_NOISE_SUPPRESSION,
+                    settings.getBoolean("noise_suppression", true)
+                )
+                val echo = intent.getBooleanExtra(
+                    EXTRA_ECHO_CANCELLATION,
+                    settings.getBoolean("echo_cancellation", true)
+                )
+                settings.edit()
+                    .putBoolean("noise_suppression", noise)
+                    .putBoolean("echo_cancellation", echo)
+                    .apply()
+                audio.setNoiseSuppressionEnabled(noise)
+                audio.setEchoCancellationEnabled(echo)
+            }
             ACTION_SET_OVERLAY -> {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
                 getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
@@ -309,6 +338,13 @@ class HallaService : Service(), HallaCore.Callbacks {
             connecting = true
             HallaCore.connectToServer(host, port, nick, pass, cachePath, uid)
         }
+    }
+
+    private fun stopAudio() {
+        audio.stop()
+        try {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_NORMAL
+        } catch (_: Exception) { }
     }
 
     private fun stopSession() {
@@ -402,14 +438,24 @@ class HallaService : Service(), HallaCore.Callbacks {
         val settings = getSharedPreferences("HallaSettings", MODE_PRIVATE)
         audio.transmissionMode = settings.getInt("transmission_mode", 0)
         audio.vadThreshold = settings.getInt("vad_sensitivity", 50) * 3.0
+        audio.setNoiseSuppressionEnabled(settings.getBoolean("noise_suppression", true))
+        audio.setEchoCancellationEnabled(settings.getBoolean("echo_cancellation", true))
     }
 
     private fun startAudio() {
         loadAudioSettings()
+        // O modo de comunicação faz o Android usar a rota de voz e torna a
+        // referência de reprodução disponível para o cancelador acústico.
+        try {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode =
+                AudioManager.MODE_IN_COMMUNICATION
+        } catch (_: Exception) { }
         audio.setSpeakersEnabled(!isSpeakersMuted())
         audio.setTransmitEnabled(!isMicMuted())
-        audio.startCapture()
+        // Cria a saída antes da captura para que o AEC possa observar a
+        // referência de reprodução desde o primeiro frame do microfone.
         audio.startPlayback()
+        audio.startCapture()
     }
 
     private fun isMicMuted(): Boolean = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
@@ -1009,7 +1055,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             try { connectivity.unregisterNetworkCallback(it) } catch (_: Exception) { }
         }
         hidePttOverlay()
-        audio.stop()
+        stopAudio()
         speechCuePlayer?.release()
         speechCuePlayer = null
         HallaCore.removeCallbacks(this)

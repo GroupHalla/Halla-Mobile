@@ -67,10 +67,11 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.25
+            ## Halla Mobile v1.0.26
 
-            ### Banner do servidor
-            * O Mobile agora exibe a imagem personalizada enviada pelo administrador no banner do servidor.
-            * O banner padrão do Halla aparece automaticamente quando o servidor não possui uma imagem personalizada.
+            ### Áudio
+            * A redução de ruído agora é aplicada pelo NoiseSuppressor nativo do Android na sessão real do microfone.
+            * O cancelamento de eco agora usa o AcousticEchoCanceler nativo e a rota de comunicação de voz.
+            * Os filtros podem ser ativados ou desativados em tempo real e a tela informa se o aparelho oferece cada efeito.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -997,11 +997,10 @@
                                     android:layout_marginStart="8dp" />
                             </LinearLayout>
 
-                            <!-- Switch Redução de Ruído -->
+                            <!-- Redução de ruído do microfone -->
                             <RelativeLayout
                                 android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginBottom="12dp">
+                                android:layout_height="wrap_content">
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
@@ -1015,8 +1014,16 @@
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentEnd="true" />
                             </RelativeLayout>
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="-4dp"
+                                android:layout_marginBottom="12dp"
+                                android:text="@string/noise_reduction_hint"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
 
-                            <!-- Switch Echo Cancellation -->
+                            <!-- Cancelamento de eco acústico -->
                             <RelativeLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content">
@@ -1033,6 +1040,28 @@
                                     android:layout_height="wrap_content"
                                     android:layout_alignParentEnd="true" />
                             </RelativeLayout>
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="-4dp"
+                                android:text="@string/echo_cancellation_hint"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:text="@string/audio_processing_note"
+                                android:textColor="#64748B"
+                                android:textSize="12sp" />
+                            <TextView
+                                android:id="@+id/txtAudioProcessingStatus"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:textColor="#64748B"
+                                android:textSize="12sp" />
 
                         </LinearLayout>
 

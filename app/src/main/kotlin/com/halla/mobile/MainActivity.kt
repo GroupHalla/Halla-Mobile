@@ -145,6 +145,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var txtVadSensitivityVal: TextView
     private lateinit var switchNoiseSuppression: Switch
     private lateinit var switchEchoCancellation: Switch
+    private lateinit var txtAudioProcessingStatus: TextView
     private lateinit var switchDarkTheme: Switch
     private lateinit var switchShowChannelBadges: Switch
     private lateinit var btnSettingsCheckUpdates: Button
@@ -198,7 +199,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.25"
+    private val currentVersionName = "v1.0.26"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -304,6 +305,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtVadSensitivityVal = findViewById(R.id.txtVadSensitivityVal)
         switchNoiseSuppression = findViewById(R.id.switchNoiseSuppression)
         switchEchoCancellation = findViewById(R.id.switchEchoCancellation)
+        txtAudioProcessingStatus = findViewById(R.id.txtAudioProcessingStatus)
         switchDarkTheme = findViewById(R.id.switchDarkTheme)
         switchShowChannelBadges = findViewById(R.id.switchShowChannelBadges)
         btnSettingsCheckUpdates = findViewById(R.id.btnSettingsCheckUpdates)
@@ -965,6 +967,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Persistência das Opções de Configurações (Ajustes Internos Interativos)
     // ============================================================================
 
+    private fun updateAudioProcessingStatus() {
+        val available = getString(R.string.audio_filter_available)
+        val unavailable = getString(R.string.audio_filter_unavailable)
+        txtAudioProcessingStatus.text = getString(
+            R.string.audio_processing_status,
+            if (HallaAudioManager.isNoiseSuppressionAvailable()) available else unavailable,
+            if (HallaAudioManager.isEchoCancellationAvailable()) available else unavailable
+        )
+    }
+
+    private fun pushAudioProcessingSettings() {
+        val settings = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+        val noise = settings.getBoolean("noise_suppression", true)
+        val echo = settings.getBoolean("echo_cancellation", true)
+        audioManager.setNoiseSuppressionEnabled(noise)
+        audioManager.setEchoCancellationEnabled(echo)
+        // A captura pertence ao foreground service quando há uma conexão.
+        // Enviar a alteração para ele evita que os switches alterem apenas o
+        // AudioManager da Activity, que não é o microfone em uso.
+        if (HallaService.isRunning()) {
+            HallaService.setAudioProcessing(this, noise, echo)
+        }
+    }
+
     private fun loadHallaSettings() {
         val settingsPrefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
 
@@ -975,6 +1001,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtVadSensitivityVal.text = "$vadSens%"
         switchNoiseSuppression.isChecked = settingsPrefs.getBoolean("noise_suppression", true)
         switchEchoCancellation.isChecked = settingsPrefs.getBoolean("echo_cancellation", true)
+        pushAudioProcessingSettings()
+        updateAudioProcessingStatus()
         switchDarkTheme.isChecked = settingsPrefs.getBoolean("dark_theme", true)
         switchShowChannelBadges.isChecked = settingsPrefs.getBoolean("show_badges", true)
 
@@ -1007,9 +1035,25 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         })
         switchNoiseSuppression.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("noise_suppression", isChecked).apply()
+            audioManager.setNoiseSuppressionEnabled(isChecked)
+            if (HallaService.isRunning()) {
+                HallaService.setAudioProcessing(
+                    this,
+                    isChecked,
+                    switchEchoCancellation.isChecked
+                )
+            }
         }
         switchEchoCancellation.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("echo_cancellation", isChecked).apply()
+            audioManager.setEchoCancellationEnabled(isChecked)
+            if (HallaService.isRunning()) {
+                HallaService.setAudioProcessing(
+                    this,
+                    switchNoiseSuppression.isChecked,
+                    isChecked
+                )
+            }
         }
         switchDarkTheme.setOnCheckedChangeListener { _, isChecked ->
             settingsPrefs.edit().putBoolean("dark_theme", isChecked).apply()

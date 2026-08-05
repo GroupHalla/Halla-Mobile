@@ -28,8 +28,14 @@ Tap + to add one.</string>
     <string name="auto_connect">Connect automatically on startup</string>
     <string name="check_updates_start">Check for updates on startup</string>
     <string name="microphone_sensitivity">Microphone sensitivity (VAD)</string>
-    <string name="noise_reduction">Noise reduction (DSP)</string>
-    <string name="echo_cancellation">Echo cancellation</string>
+    <string name="noise_reduction">Microphone noise reduction</string>
+    <string name="noise_reduction_hint">Reduces steady noise, such as fans and air conditioning, before transmission.</string>
+    <string name="echo_cancellation">Acoustic echo cancellation</string>
+    <string name="echo_cancellation_hint">Prevents sound from the headphones or speaker from returning through the microphone.</string>
+    <string name="audio_processing_note">Applied in real time by Android voice capture. Effectiveness depends on the device and audio route.</string>
+    <string name="audio_processing_status">Effects available on this device: noise reduction: %1$s · echo cancellation: %2$s</string>
+    <string name="audio_filter_available">available</string>
+    <string name="audio_filter_unavailable">unavailable</string>
     <string name="premium_dark_theme">Premium dark theme</string>
     <string name="show_room_badges">Show room count badges</string>
     <string name="about_description">A high-fidelity, low-latency voice communication app developed by the Halla team.</string>
