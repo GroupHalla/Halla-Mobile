@@ -67,11 +67,11 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.27
+            ## Halla Mobile v1.0.28
 
             ### Captura de voz
-            * Restaurado o caminho de captura compatível do Mobile para que o microfone volte a transmitir em diferentes fabricantes.
+            * A captura agora entra em gravação antes de receber os filtros nativos, evitando microfone sem dados em drivers Android específicos.
+            * Mantido o caminho MIC e a reprodução compatível do Mobile, com fallback para VOICE_COMMUNICATION quando necessário.
             * A redução de ruído e o cancelamento de eco continuam aplicados na sessão real do microfone quando o aparelho oferece os efeitos.
-            * A reprodução mantém a rota original para evitar regressões no envio de voz.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

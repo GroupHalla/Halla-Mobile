@@ -109,12 +109,16 @@ class HallaAudioManager(private val cacheDir: File) {
                 )
                 audioRecord = record
 
-                synchronized(effectsLock) {
-                    configureAudioEffectsLocked(record)
-                }
+                // Primeiro abre a captura. Alguns drivers Android só
+                // entregam PCM depois que o AudioRecord já está gravando;
+                // anexar efeitos antes desse ponto fazia certos aparelhos
+                // permanecerem sem dados.
                 record.startRecording()
                 if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                     throw IllegalStateException("A captura de áudio não entrou em estado de gravação")
+                }
+                synchronized(effectsLock) {
+                    configureAudioEffectsLocked(record)
                 }
                 val audioBuffer = ByteArray(frameSize)
 
