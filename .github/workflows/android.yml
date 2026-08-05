@@ -62,18 +62,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — configurações do servidor e subcanais
+          name: Halla Mobile ${{ github.ref_name }} — hierarquia de subcanais
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.23
-
-            ### Configurações do servidor
-            * A engrenagem do servidor agora reúne edição do servidor, grupos, permissões do usuário, banidos, reclamações e grupos de canais.
-            * Cada ação administrativa só aparece ou é executada quando a permissão correspondente está presente.
+            ## Halla Mobile v1.0.24
 
             ### Canais
-            * Subcanais agora têm indentação, cor, barra hierárquica e etiqueta própria para diferenciá-los dos canais normais.
+            * Subcanais agora possuem espaçamento hierárquico maior, barra lateral própria, seta visual e etiqueta **SUBCANAL**.
+
+            ### Movimentação
+            * A troca de canal não altera a relação pai/filho dos canais; a hierarquia permanece sincronizada com o servidor.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

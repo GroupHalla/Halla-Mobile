@@ -196,7 +196,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.23"
+    private val currentVersionName = "v1.0.24"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -2602,6 +2602,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun moveUserInChannels(userId: Int, newChannelId: Int) {
+        // Um evento de movimento inválido não pode remover o usuário de todos
+        // os canais e deixá-lo visualmente no "nada".
+        var targetExists = false
+        for (i in 0 until channelsData.length()) {
+            if (channelsData.optJSONObject(i)?.optInt("id", 0) == newChannelId) {
+                targetExists = true
+                break
+            }
+        }
+        if (newChannelId <= 0 || !targetExists) return
+
         for (i in 0 until channelsData.length()) {
             val chan = channelsData.getJSONObject(i)
             val usersArr = chan.optJSONArray("users") ?: continue
@@ -2737,7 +2748,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    setMargins(depth * 12, 0, 0, 16)
+                    setMargins(depth * 28, if (isSubchannel) 4 else 0, 0, 16)
                 }
                 
                 // Subcanais recebem uma aparência própria além da
