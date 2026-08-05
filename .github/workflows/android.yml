@@ -62,16 +62,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — banner do servidor
+          name: Halla Mobile ${{ github.ref_name }} — captura de voz corrigida
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.26
+            ## Halla Mobile v1.0.27
 
-            ### Áudio
-            * A redução de ruído agora é aplicada pelo NoiseSuppressor nativo do Android na sessão real do microfone.
-            * O cancelamento de eco agora usa o AcousticEchoCanceler nativo e a rota de comunicação de voz.
-            * Os filtros podem ser ativados ou desativados em tempo real e a tela informa se o aparelho oferece cada efeito.
+            ### Captura de voz
+            * Restaurado o caminho de captura compatível do Mobile para que o microfone volte a transmitir em diferentes fabricantes.
+            * A redução de ruído e o cancelamento de eco continuam aplicados na sessão real do microfone quando o aparelho oferece os efeitos.
+            * A reprodução mantém a rota original para evitar regressões no envio de voz.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

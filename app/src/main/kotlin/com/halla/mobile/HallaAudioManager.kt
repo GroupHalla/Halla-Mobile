@@ -1,8 +1,8 @@
 package com.halla.mobile
 
 import android.annotation.SuppressLint
-import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
@@ -98,16 +98,14 @@ class HallaAudioManager(private val cacheDir: File) {
             val bufferSize = maxOf(frameSize * 4, minBufSize)
 
             try {
-                // VOICE_COMMUNICATION permite que o Android selecione a cadeia
-                // de voz apropriada e fornece a referência de reprodução para
-                // o AcousticEchoCanceler quando o aparelho a disponibiliza.
-                val preferredSource = if (noiseSuppressionOn || echoCancellationOn) {
-                    MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                } else {
-                    MediaRecorder.AudioSource.MIC
-                }
+                // MIC é a fonte mais compatível entre fabricantes e mantém o
+                // caminho de captura que já funcionava no Mobile. Os efeitos
+                // nativos continuam presos à sessão real do AudioRecord; o
+                // VOICE_COMMUNICATION fica como fallback apenas quando MIC não
+                // puder ser inicializado.
                 val record = createAudioRecord(
-                    preferredSource, sampleRate, channelConfig, audioFormat, bufferSize
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate, channelConfig, audioFormat, bufferSize
                 )
                 audioRecord = record
 
@@ -115,11 +113,17 @@ class HallaAudioManager(private val cacheDir: File) {
                     configureAudioEffectsLocked(record)
                 }
                 record.startRecording()
+                if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    throw IllegalStateException("A captura de áudio não entrou em estado de gravação")
+                }
                 val audioBuffer = ByteArray(frameSize)
 
                 while (isRecordingMic) {
                     val readBytes = record.read(audioBuffer, 0, frameSize)
-                    if (readBytes <= 0) continue
+                    if (readBytes < 0) {
+                        throw IllegalStateException("Falha ao ler o microfone: $readBytes")
+                    }
+                    if (readBytes == 0) continue
 
                     if (transmitEnabled) {
                         // O PCM pode chegar em leituras parciais; considera
@@ -192,23 +196,26 @@ class HallaAudioManager(private val cacheDir: File) {
         audioFormat: Int,
         bufferSize: Int
     ): AudioRecord {
-        val preferred = AudioRecord(source, sampleRate, channelConfig, audioFormat, bufferSize)
-        if (preferred.state == AudioRecord.STATE_INITIALIZED) return preferred
-        preferred.release()
-
-        // Alguns aparelhos não aceitam VOICE_COMMUNICATION em 48 kHz. O
-        // fallback conserva a captura, e os efeitos continuam sendo tentados
-        // na sessão que o aparelho conseguir abrir.
-        if (source != MediaRecorder.AudioSource.MIC) {
-            val fallback = AudioRecord(
+        val sources = if (source == MediaRecorder.AudioSource.MIC) {
+            intArrayOf(
                 MediaRecorder.AudioSource.MIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSize
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION
             )
-            if (fallback.state == AudioRecord.STATE_INITIALIZED) return fallback
-            fallback.release()
+        } else {
+            intArrayOf(source, MediaRecorder.AudioSource.MIC)
+        }
+
+        for (candidate in sources.distinct()) {
+            try {
+                val record = AudioRecord(
+                    candidate, sampleRate, channelConfig, audioFormat, bufferSize
+                )
+                if (record.state == AudioRecord.STATE_INITIALIZED) return record
+                record.release()
+            } catch (_: Throwable) {
+                // Tenta a próxima fonte: alguns fabricantes não permitem
+                // VOICE_COMMUNICATION ou recusam 48 kHz para uma delas.
+            }
         }
         throw IllegalStateException("Não foi possível inicializar a captura de áudio")
     }
@@ -268,27 +275,20 @@ class HallaAudioManager(private val cacheDir: File) {
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
         try {
-            // A saída de voz, em vez do STREAM_MUSIC genérico, permite que o
-            // AEC nativo reconheça com precisão o áudio que deve ser removido
-            // da captura e segue a rota de comunicação escolhida pelo usuário.
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(channelConfig)
-                        .setEncoding(audioFormat)
-                        .build()
-                )
-                .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 4))
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
-            audioTrack?.play()
+            // Mantém a mesma rota de reprodução que já funcionava no Mobile.
+            // O AcousticEchoCanceler continua ligado à sessão da captura;
+            // trocar o stream de saída não pode impedir o envio do microfone.
+            @Suppress("DEPRECATION")
+            val track = AudioTrack(
+                AudioManager.STREAM_MUSIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                maxOf(minBufSize, 1920 * 4),
+                AudioTrack.MODE_STREAM
+            )
+            audioTrack = track
+            track.play()
         } catch (e: Exception) {
             e.printStackTrace()
             isPlayingAudio = false

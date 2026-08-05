@@ -444,18 +444,14 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun startAudio() {
         loadAudioSettings()
-        // O modo de comunicação faz o Android usar a rota de voz e torna a
-        // referência de reprodução disponível para o cancelador acústico.
-        try {
-            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode =
-                AudioManager.MODE_IN_COMMUNICATION
-        } catch (_: Exception) { }
+        // Não força um modo/stream especial antes de abrir o microfone: alguns
+        // fabricantes deixam a captura sem dados nessa combinação. A fonte
+        // MIC e a reprodução original do Mobile continuam sendo o caminho
+        // compatível; os efeitos são anexados à sessão real logo depois.
         audio.setSpeakersEnabled(!isSpeakersMuted())
         audio.setTransmitEnabled(!isMicMuted())
-        // Cria a saída antes da captura para que o AEC possa observar a
-        // referência de reprodução desde o primeiro frame do microfone.
-        audio.startPlayback()
         audio.startCapture()
+        audio.startPlayback()
     }
 
     private fun isMicMuted(): Boolean = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
