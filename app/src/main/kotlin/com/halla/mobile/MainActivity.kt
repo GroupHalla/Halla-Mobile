@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -77,6 +78,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Controles do Servidor Ativo Redesenhado Premium (Tema Roxo/Violeta do Mockup)
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
+    private lateinit var imgServerBanner: ImageView
     private lateinit var containerChannels: LinearLayout
     private lateinit var txtActiveUsersCountBadge: TextView
     private lateinit var txtNetworkQuality: TextView
@@ -196,7 +198,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.24"
+    private val currentVersionName = "v1.0.25"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -240,6 +242,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Controles do Servidor Ativo Redesenhado Premium
         txtActiveServerName = findViewById(R.id.txtActiveServerName)
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
+        imgServerBanner = findViewById(R.id.imgServerBanner)
         containerChannels = findViewById(R.id.containerChannels)
         txtActiveUsersCountBadge = findViewById(R.id.txtActiveUsersCountBadge)
         txtNetworkQuality = findViewById(R.id.txtNetworkQuality)
@@ -2365,6 +2368,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
 
                 val serverObj = obj.optJSONObject("server")
+                applyServerBanner(serverObj?.optString("banner", ""))
                 val maxClients = (serverObj?.optInt("maxClients", -1) ?: -1)
                     .takeIf { it > 0 }
                     ?: (serverObj?.optInt("max", -1) ?: -1).takeIf { it > 0 }
@@ -2380,6 +2384,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    private fun applyServerBanner(encoded: String?) {
+        if (encoded.isNullOrBlank()) {
+            imgServerBanner.visibility = View.GONE
+            imgServerBanner.setImageDrawable(null)
+            return
+        }
+        try {
+            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bitmap != null) {
+                imgServerBanner.setImageBitmap(bitmap)
+                imgServerBanner.visibility = View.VISIBLE
+            } else {
+                imgServerBanner.visibility = View.GONE
+            }
+        } catch (_: Exception) {
+            imgServerBanner.visibility = View.GONE
         }
     }
 
@@ -2431,6 +2455,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             txtActiveServerName.text = it
                         }
                         if (obj.has("motd")) txtActiveMotd.text = obj.optString("motd")
+                        if (obj.has("banner")) applyServerBanner(obj.optString("banner", ""))
                     } else if (t == "group_list") {
                         serverGroupsData = obj.optJSONArray("groups") ?: JSONArray()
                         finishServerPanel("groups")

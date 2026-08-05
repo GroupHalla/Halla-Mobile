@@ -62,17 +62,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — hierarquia de subcanais
+          name: Halla Mobile ${{ github.ref_name }} — banner do servidor
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.24
+            ## Halla Mobile v1.0.25
 
-            ### Canais
-            * Subcanais agora possuem espaçamento hierárquico maior, barra lateral própria, seta visual e etiqueta **SUBCANAL**.
-
-            ### Movimentação
-            * A troca de canal não altera a relação pai/filho dos canais; a hierarquia permanece sincronizada com o servidor.
+            ### Banner do servidor
+            * O Mobile agora exibe a imagem personalizada enviada pelo administrador no banner do servidor.
+            * O banner padrão do Halla aparece automaticamente quando o servidor não possui uma imagem personalizada.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -192,8 +192,21 @@
                 android:layout_marginBottom="16dp"
                 android:padding="16dp">
 
-                <!-- Logo oficial no banner do servidor -->
-                <RelativeLayout
+            <!-- Banner personalizado enviado pelo administrador do servidor. -->
+            <ImageView
+                android:id="@+id/imgServerBanner"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_alignParentStart="true"
+                android:layout_alignParentTop="true"
+                android:layout_alignParentEnd="true"
+                android:layout_alignParentBottom="true"
+                android:alpha="0.72"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+
+            <!-- Logo oficial no banner do servidor -->
+            <RelativeLayout
                     android:id="@+id/bannerLogoLayout"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
