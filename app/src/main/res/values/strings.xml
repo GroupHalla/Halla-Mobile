@@ -324,4 +324,5 @@ Deseja baixar e instalar agora?</string>
     <string name="speech_cue_other_users">Outros usuários</string>
     <string name="speech_cue_no_file">Nenhum arquivo selecionado</string>
     <string name="speech_cue_hint">Selecione os arquivos de áudio. As caixas “Outros usuários” também reproduzem o sinal quando outra pessoa falar.</string>
+    <string name="hide_channel_symbol">Ocultar símbolo do canal</string>
 </resources>

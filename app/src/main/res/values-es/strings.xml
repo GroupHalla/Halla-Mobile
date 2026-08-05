@@ -324,4 +324,5 @@ Notas de la versión:
     <string name="speech_cue_other_users">Otros usuarios</string>
     <string name="speech_cue_no_file">Ningún archivo seleccionado</string>
     <string name="speech_cue_hint">Selecciona los archivos de audio. “Otros usuarios” también reproduce la señal cuando otra persona habla.</string>
+    <string name="hide_channel_symbol">Ocultar símbolo del canal</string>
 </resources>

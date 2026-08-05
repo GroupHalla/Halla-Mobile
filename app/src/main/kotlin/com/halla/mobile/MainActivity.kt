@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.19"
+    private val currentVersionName = "v1.0.20"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -2264,9 +2264,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
 
-            // Ícone Minimalista de Alto-falante em Roxo (🔊)
+            // Ícone de canal é opcional: o usuário pode ocultá-lo no editor.
             val txtIcon = TextView(this).apply {
-                text = "🔊  "
+                text = if (chan.optBoolean("noSymbol", false)) "" else "🔊  "
                 setTextColor(Color.parseColor("#8B5CF6"))
                 textSize = 14f
             }
@@ -3131,10 +3131,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showEditChannelDialog(chanId: Int, currentName: String) {
         val context = this
         var initialBitrate = 96
+        var initialNoSymbol = false
         for (i in 0 until channelsData.length()) {
             val channel = channelsData.optJSONObject(i) ?: continue
             if (channel.optInt("id", -1) == chanId) {
                 initialBitrate = channel.optInt("bitrate", 96).coerceIn(16, 384)
+                initialNoSymbol = channel.optBoolean("noSymbol", false)
                 break
             }
         }
@@ -3147,6 +3149,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setText(currentName)
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val hideSymbol = CheckBox(context).apply {
+            text = getString(R.string.hide_channel_symbol)
+            setTextColor(Color.WHITE)
+            isChecked = initialNoSymbol
         }
         val inputDesc = EditText(context).apply {
             hint = getString(R.string.description)
@@ -3174,6 +3181,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(inputName)
+        layout.addView(hideSymbol)
         layout.addView(inputDesc)
         layout.addView(descriptionHint)
         layout.addView(inputBitrate)
@@ -3188,7 +3196,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val pass = inputPass.text.toString().trim()
                 val bitrate = inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96
                 if (name.isNotEmpty()) {
-                    HallaCore.sendEditChannel(chanId, name, desc, pass, bitrate)
+                    HallaCore.sendEditChannel(chanId, name, desc, pass, bitrate, hideSymbol.isChecked)
                     Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
                 }
             }
@@ -3207,7 +3215,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setTextColor(Color.parseColor("#FFFFFF"))
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
+        val hideSymbol = CheckBox(context).apply {
+            text = getString(R.string.hide_channel_symbol)
+            setTextColor(Color.WHITE)
+        }
         layout.addView(inputName)
+        layout.addView(hideSymbol)
 
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.create_subchannel_title))
@@ -3219,6 +3232,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("t", "chan_create")
                         put("parent", parentChanId)
                         put("name", name)
+                        put("noSymbol", hideSymbol.isChecked)
                         put("type", 0)
                         put("codec", 4)
                         put("quality", 6)

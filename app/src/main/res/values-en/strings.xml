@@ -324,4 +324,5 @@ Download and install now?</string>
     <string name="speech_cue_other_users">Other users</string>
     <string name="speech_cue_no_file">No file selected</string>
     <string name="speech_cue_hint">Choose the audio files. “Other users” also plays the cue when someone else speaks.</string>
+    <string name="hide_channel_symbol">Hide channel symbol</string>
 </resources>

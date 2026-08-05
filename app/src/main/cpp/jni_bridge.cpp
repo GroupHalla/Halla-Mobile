@@ -598,12 +598,13 @@ public:
     }
 
     void sendEditChannel(int channelId, const std::string& name, const std::string& desc,
-                         const std::string& pass, int bitrate) {
+                         const std::string& pass, int bitrate, bool noSymbol) {
         std::string msg = "{\"t\":\"chan_edit\",\"id\":" + std::to_string(channelId) +
                           ",\"name\":\"" + jsonEscape(name) +
                           "\",\"desc\":\"" + jsonEscape(desc) +
                           "\",\"pass\":\"" + jsonEscape(pass) +
-                          "\",\"bitrate\":" + std::to_string(bitrate) + "}\n";
+                          "\",\"bitrate\":" + std::to_string(bitrate) +
+                          ",\"noSymbol\":" + std::string(noSymbol ? "true" : "false") + "}\n";
         sendTcp(msg);
     }
 
@@ -1227,12 +1228,13 @@ Java_com_halla_mobile_HallaCore_sendUsePrivilegeKey(JNIEnv* env, jclass clazz, j
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint channelId, jstring name, jstring desc, jstring pass, jint bitrate) {
+Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint channelId, jstring name, jstring desc, jstring pass, jint bitrate, jboolean noSymbol) {
     const char* nativeName = env->GetStringUTFChars(name, nullptr);
     const char* nativeDesc = env->GetStringUTFChars(desc, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
     HallaClientCore::getInstance().sendEditChannel(channelId, nativeName, nativeDesc, nativePass,
-                                                   std::clamp(int(bitrate), 16, 384));
+                                                   std::clamp(int(bitrate), 16, 384),
+                                                   noSymbol == JNI_TRUE);
     env->ReleaseStringUTFChars(name, nativeName);
     env->ReleaseStringUTFChars(desc, nativeDesc);
     env->ReleaseStringUTFChars(pass, nativePass);
