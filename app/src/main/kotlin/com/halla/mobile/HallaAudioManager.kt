@@ -40,8 +40,8 @@ class HallaAudioManager(private val cacheDir: File) {
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
     @Volatile var whisperPressed = false
-    @Volatile var noiseSuppressionEnabled = true
-    @Volatile var echoCancellationEnabled = true
+    @Volatile private var noiseSuppressionOn = true
+    @Volatile private var echoCancellationOn = true
     var vadThreshold = 150.0
 
     private val effectsLock = Any()
@@ -71,14 +71,14 @@ class HallaAudioManager(private val cacheDir: File) {
     }
 
     fun setNoiseSuppressionEnabled(enabled: Boolean) {
-        noiseSuppressionEnabled = enabled
+        noiseSuppressionOn = enabled
         synchronized(effectsLock) {
             configureAudioEffectsLocked(audioRecord)
         }
     }
 
     fun setEchoCancellationEnabled(enabled: Boolean) {
-        echoCancellationEnabled = enabled
+        echoCancellationOn = enabled
         synchronized(effectsLock) {
             configureAudioEffectsLocked(audioRecord)
         }
@@ -101,7 +101,7 @@ class HallaAudioManager(private val cacheDir: File) {
                 // VOICE_COMMUNICATION permite que o Android selecione a cadeia
                 // de voz apropriada e fornece a referência de reprodução para
                 // o AcousticEchoCanceler quando o aparelho a disponibiliza.
-                val preferredSource = if (noiseSuppressionEnabled || echoCancellationEnabled) {
+                val preferredSource = if (noiseSuppressionOn || echoCancellationOn) {
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION
                 } else {
                     MediaRecorder.AudioSource.MIC
@@ -234,7 +234,7 @@ class HallaAudioManager(private val cacheDir: File) {
 
         noiseSuppressor?.let { effect ->
             try {
-                effect.setEnabled(noiseSuppressionEnabled)
+                effect.setEnabled(noiseSuppressionOn)
             } catch (_: Throwable) {
                 // O efeito pode existir no aparelho, mas não aceitar esta
                 // sessão específica; nesse caso não interrompemos a chamada.
@@ -242,7 +242,7 @@ class HallaAudioManager(private val cacheDir: File) {
         }
         echoCanceler?.let { effect ->
             try {
-                effect.setEnabled(echoCancellationEnabled)
+                effect.setEnabled(echoCancellationOn)
             } catch (_: Throwable) {
                 // Ver comentário acima.
             }
