@@ -62,15 +62,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — captura de voz corrigida
+          name: Halla Mobile ${{ github.ref_name }} — correção dos grupos
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.30
+            ## Halla Mobile v1.0.31
 
-            ### Exibição de cargos
-            * A sigla/prefixo do grupo agora aparece imediatamente antes do nome do usuário no Mobile.
-            * A atualização ocorre quando o servidor envia a troca de grupo, sem precisar reconectar.
+            ### Correção dos grupos
+            * Corrigida a atualização da sigla/prefixo do cargo depois de atribuir o usuário a um grupo.
+            * A alteração aparece imediatamente sem precisar reconectar.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
