@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.28"
+    private val currentVersionName = "v1.0.29"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -1601,6 +1601,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 "chanDelete" to getString(R.string.permission_delete_channel),
                 "serverEdit" to getString(R.string.permission_edit_server),
                 "groupEdit" to getString(R.string.permission_edit_groups),
+                "registerUsers" to getString(R.string.permission_register_users),
+                "selfRegister" to getString(R.string.permission_self_register),
                 "ignoreChanPass" to getString(R.string.permission_ignore_password),
                 "ignoreTalkPower" to getString(R.string.permission_ignore_talk_power)
             )
@@ -1636,7 +1638,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             "chanEdit" to getString(R.string.permission_edit_channel),
             "chanDelete" to getString(R.string.permission_delete_channel),
             "serverEdit" to getString(R.string.permission_edit_server),
-            "groupEdit" to getString(R.string.permission_edit_groups)
+            "groupEdit" to getString(R.string.permission_edit_groups),
+            "registerUsers" to getString(R.string.permission_register_users),
+            "selfRegister" to getString(R.string.permission_self_register)
         )
         val active = ArrayList<String>()
         for ((key, label) in labels)
@@ -1670,8 +1674,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showServerGroupDetails(group: JSONObject) {
         val id = group.optInt("id", 0)
         val name = group.optString("name", getString(R.string.member_default))
+        val members = group.optJSONArray("members") ?: JSONArray()
+        val memberLines = ArrayList<String>()
+        for (i in 0 until members.length()) {
+            val member = members.optJSONObject(i) ?: continue
+            val status = if (member.optBoolean("online", false)) getString(R.string.online) else getString(R.string.offline)
+            memberLines.add("• ${member.optString("name", member.optString("uid", ""))} — $status")
+        }
+        val memberText = if (memberLines.isEmpty()) getString(R.string.no_group_members)
+                         else memberLines.joinToString("\n")
         val message = getString(R.string.server_group_details, name, id) +
-            "\n\n" + groupPermissionText(group)
+            "\n\n" + groupPermissionText(group) +
+            "\n\n" + getString(R.string.group_members) + "\n" + memberText
         val builder = AlertDialog.Builder(this)
             .setTitle(name)
             .setMessage(message)
@@ -1679,7 +1693,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (hasPermission("groupEdit")) showServerGroupEditor(group)
             }
         if (hasPermission("groupEdit")) {
-            builder.setNeutralButton(getString(R.string.assign_group)) { _, _ -> showAssignGroupDialog(id) }
+            builder.setNeutralButton(getString(R.string.manage_group_members)) { _, _ -> showGroupMembersDialog(group) }
             if (id >= 100) {
                 builder.setNegativeButton(getString(R.string.delete)) { _, _ ->
                     AlertDialog.Builder(this)
@@ -1750,6 +1764,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             "chanDelete" to getString(R.string.permission_delete_channel),
             "serverEdit" to getString(R.string.permission_edit_server),
             "groupEdit" to getString(R.string.permission_edit_groups),
+            "registerUsers" to getString(R.string.permission_register_users),
+            "selfRegister" to getString(R.string.permission_self_register),
             "ignoreChanPass" to getString(R.string.permission_ignore_password),
             "ignoreTalkPower" to getString(R.string.permission_ignore_talk_power)
         )
@@ -1796,6 +1812,37 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 HallaCore.sendRawJson(out.toString())
             }
             .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showGroupMembersDialog(group: JSONObject) {
+        val groupId = group.optInt("id", 0)
+        val members = group.optJSONArray("members") ?: JSONArray()
+        val names = ArrayList<String>()
+        for (i in 0 until members.length()) {
+            val member = members.optJSONObject(i) ?: continue
+            names.add(member.optString("name", member.optString("uid", "")))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.group_members))
+            .setItems(names.toTypedArray()) { _, which ->
+                val member = members.optJSONObject(which) ?: return@setItems
+                if (groupId == 2) return@setItems
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.remove_group_member))
+                    .setMessage(member.optString("name", member.optString("uid", "")))
+                    .setPositiveButton(getString(R.string.remove)) { _, _ ->
+                        val request = JSONObject().put("t", "client_set_group").put("gid", 2)
+                        if (member.has("id")) request.put("id", member.optInt("id"))
+                        else request.put("uid", member.optString("uid", ""))
+                        HallaCore.sendRawJson(request.toString())
+                        requestServerPanel("groups")
+                    }
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .show()
+            }
+            .setPositiveButton(getString(R.string.assign_group)) { _, _ -> showAssignGroupDialog(groupId) }
+            .setNegativeButton(getString(R.string.close), null)
             .show()
     }
 
@@ -2492,7 +2539,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     } else if (t == "user_moved") {
                         moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
                     } else if (t == "user_state" || t == "user_nick" ||
-                               t == "user_desc" || t == "user_group") {
+                               t == "user_desc" || t == "user_group" ||
+                               t == "registration" || t == "user_registered") {
                         updateUserState(obj)
                     } else if (t == "server_edit") {
                         obj.optString("name").takeIf { it.isNotEmpty() }?.let {
@@ -2746,6 +2794,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (stateObj.has("spk")) u.put("spk", stateObj.getBoolean("spk"))
                 if (stateObj.has("away")) u.put("away", stateObj.getBoolean("away"))
                 if (stateObj.has("rec")) u.put("rec", stateObj.getBoolean("rec"))
+                if (stateObj.has("registered")) u.put("registered", stateObj.getBoolean("registered"))
                 if (stateObj.has("cc")) {
                     u.put("cc", stateObj.getBoolean("cc"))
                     if (uid == selfId) {
@@ -3007,7 +3056,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         val isAwayUsr = usr.optBoolean("away", false)
                         val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
                         val txtUser = TextView(this).apply {
-                            text = "$name$awayText"
+                            val registrationText = if (usr.optBoolean("registered", true)) "" else " ${getString(R.string.unregistered_suffix)}"
+                            text = "$name$registrationText$awayText"
                             setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
                             textSize = 14f
                             layoutParams = LinearLayout.LayoutParams(
@@ -3869,10 +3919,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val targetCommanderLabel = if (usr.optBoolean("cc", false)) getString(R.string.commander_disable) else getString(R.string.commander_enable)
         val options = ArrayList<String>()
         if (userId == selfId) {
+            if (!usr.optBoolean("registered", true) && hasPermission("selfRegister")) {
+                options.add("📝 ${getString(R.string.register_self)}")
+            }
             options.add("💤 $awayLabel")
             if (canSetSelfCommander()) options.add("👑 $ownCommanderLabel")
             options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
+            if (!usr.optBoolean("registered", true) && hasPermission("registerUsers")) {
+                options.add("📝 ${getString(R.string.register_user)}")
+            }
             options.add("👉 ${getString(R.string.poke)}")
             options.add("💬 ${getString(R.string.private_message)}")
             options.add("ℹ️ ${getString(R.string.client_info)}")
@@ -3887,7 +3943,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setTitle(getString(R.string.user_title, name))
             .setItems(options.toTypedArray()) { _, which ->
                 val choice = options[which]
-                if (choice.contains(awayLabel)) {
+                if (choice.contains(getString(R.string.register_self))) {
+                    HallaCore.sendRawJson(JSONObject().put("t", "register").toString())
+                    Toast.makeText(context, getString(R.string.registration_requested), Toast.LENGTH_SHORT).show()
+                } else if (choice.contains(getString(R.string.register_user))) {
+                    HallaCore.sendRawJson(JSONObject().put("t", "register").put("id", userId).toString())
+                    Toast.makeText(context, getString(R.string.registration_requested), Toast.LENGTH_SHORT).show()
+                } else if (choice.contains(awayLabel)) {
                     isAway = !isAway
                     getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
                         .putBoolean(HallaService.PREF_AWAY, isAway).apply()

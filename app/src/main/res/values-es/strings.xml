@@ -301,6 +301,14 @@ Notas de la versión:
     <string name="group_sigla">Prefijo/abreviatura (opcional)</string>
     <string name="group_order">Orden jerárquico</string>
     <string name="group_icon">Icono del grupo (emoji o nombre de archivo)</string>
+    <string name="group_members">Usuarios de este grupo</string>
+    <string name="no_group_members">No hay usuarios en este grupo.</string>
+    <string name="manage_group_members">Gestionar usuarios</string>
+    <string name="remove_group_member">Quitar usuario del grupo</string>
+    <string name="remove">Quitar</string>
+    <string name="register_self">Registrar mi identidad</string>
+    <string name="register_user">Registrar usuario</string>
+    <string name="registration_requested">Solicitud de registro enviada.</string>
     <string name="talk_power">Poder de habla</string>
     <string name="remove_ban">Eliminar baneo</string>
     <string name="no_reason">sin motivo</string>
@@ -318,6 +326,8 @@ Notas de la versión:
     <string name="permission_delete_channel">Eliminar canales</string>
     <string name="permission_edit_server">Editar servidor</string>
     <string name="permission_edit_groups">Editar grupos y asignaciones</string>
+    <string name="permission_register_users">Registrar otros usuarios</string>
+    <string name="permission_self_register">Permitir autorregistro</string>
     <string name="permission_ignore_password">Ignorar contraseña del canal</string>
     <string name="permission_ignore_talk_power">Ignorar poder de habla</string>
     <string name="permission_talk_power">Poder de habla</string>
@@ -352,6 +362,7 @@ Notas de la versión:
     <string name="offline">Sin conexión</string>
     <string name="unknown_value">Desconocido</string>
     <string name="member_default">Miembro</string>
+    <string name="unregistered_suffix">(no registrado)</string>
     <string name="default_channel_name">Canal %1$s</string>
     <string name="identity_list_item">%1$s (%2$s...)</string>
     <string name="identity_clip_label">UID de Halla</string>

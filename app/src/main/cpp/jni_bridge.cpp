@@ -935,6 +935,7 @@ private:
             if (t == "user_joined" || t == "user_left" || t == "user_moved" ||
                 t == "chan_update" || t == "chan_removed" || t == "user_state" ||
                 t == "user_nick" || t == "user_desc" || t == "user_group" ||
+                t == "registration" || t == "user_registered" ||
                 t == "server_edit" || t == "group_list" || t == "banlist" ||
                 t == "ban_removed" || t == "complaint_list" ||
                 t == "complaint_added" || t == "complaint_cleared") {
