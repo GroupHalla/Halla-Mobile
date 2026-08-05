@@ -62,19 +62,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — consulta real de vagas e favoritos
+          name: Halla Mobile ${{ github.ref_name }} — configurações do servidor e subcanais
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.22
+            ## Halla Mobile v1.0.23
 
-            ### Menu inicial
-            * A lista de servidores consulta o limite e o total de clientes diretamente no servidor, mostrando vagas reais antes da conexão.
-            * Arrastar a lista para baixo atualiza ping, nome/status e contador de vagas.
-            * Favoritos, identidades e preferências ficam incluídos nas regras de backup/restauração do Android para sobreviver à reinstalação quando o backup do sistema estiver habilitado.
+            ### Configurações do servidor
+            * A engrenagem do servidor agora reúne edição do servidor, grupos, permissões do usuário, banidos, reclamações e grupos de canais.
+            * Cada ação administrativa só aparece ou é executada quando a permissão correspondente está presente.
 
-            ### Áudio
-            * Registro UDP periódico reforçado e envio de frames Opus com acumulação de leituras parciais, evitando que a primeira fala do Mobile seja descartada.
+            ### Canais
+            * Subcanais agora têm indentação, cor, barra hierárquica e etiqueta própria para diferenciá-los dos canais normais.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -161,6 +161,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var channelsData = JSONArray()
     private var usersData = JSONArray()
     private var myPermissions = JSONObject()
+    private var serverGroupsData = JSONArray()
+    private var banListData = JSONArray()
+    private var complaintsData = JSONArray()
+    private var pendingServerPanel: String? = null
 
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
@@ -192,7 +196,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.22"
+    private val currentVersionName = "v1.0.23"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -591,7 +595,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnBannerSettings.setOnClickListener {
-            showScreen(R.id.layoutSettings) // Abre configurações em tela cheia via ícone engrenagem!
+            showServerSettingsDialog()
         }
 
         btnInviteMembers.setOnClickListener {
@@ -1475,6 +1479,411 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return cardLayout
     }
 
+    // ============================================================================
+    // Configurações do servidor conectado (equivalente ao menu Permissões do PC)
+    // ============================================================================
+
+    private fun requestServerPanel(panel: String) {
+        pendingServerPanel = panel
+        val type = when (panel) {
+            "groups" -> "group_list"
+            "bans" -> "banlist"
+            "complaints" -> "complaint_list"
+            else -> return
+        }
+        HallaCore.sendRawJson(JSONObject().put("t", type).toString())
+    }
+
+    private fun showServerSettingsDialog() {
+        if (layoutServer.visibility != View.VISIBLE) return
+
+        val labels = ArrayList<String>()
+        val actions = ArrayList<() -> Unit>()
+
+        if (hasPermission("serverEdit")) {
+            labels.add(getString(R.string.server_edit_settings))
+            actions.add { showServerEditDialog() }
+        }
+
+        labels.add(getString(R.string.server_groups))
+        actions.add { requestServerPanel("groups") }
+
+        labels.add(getString(R.string.my_permissions))
+        actions.add { showMyPermissionsDialog() }
+
+        if (hasPermission("banList")) {
+            labels.add(getString(R.string.banned_list))
+            actions.add { requestServerPanel("bans") }
+
+            labels.add(getString(R.string.server_complaints))
+            actions.add { requestServerPanel("complaints") }
+        }
+
+        labels.add(getString(R.string.channel_groups))
+        actions.add { showChannelGroupsDialog() }
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.server_settings_title, txtActiveServerName.text))
+            .setItems(labels.toTypedArray()) { _, which -> actions[which].invoke() }
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
+    }
+
+    private fun permissionEnabled(key: String): Boolean =
+        myPermissions.optBoolean(key, false) || myPermissions.optInt(key, 0) > 0
+
+    private fun showMyPermissionsDialog() {
+        val self = usersData.optJSONObject(findUserIndex(selfId))
+        val groupName = self?.optString("group", getString(R.string.member_default))
+            ?: getString(R.string.member_default)
+        val lines = ArrayList<String>()
+        if (permissionEnabled("*")) {
+            lines.add("• ${getString(R.string.permission_all)}")
+        } else {
+            val labels = linkedMapOf(
+                "kick" to getString(R.string.permission_kick),
+                "ban" to getString(R.string.permission_ban),
+                "banList" to getString(R.string.permission_ban_list),
+                "move" to getString(R.string.permission_move),
+                "poke" to getString(R.string.permission_poke),
+                "privmsg" to getString(R.string.permission_private_message),
+                "chanCreateTemp" to getString(R.string.permission_create_temp),
+                "chanCreateSemi" to getString(R.string.permission_create_semi),
+                "chanCreatePerm" to getString(R.string.permission_create_perm),
+                "chanEdit" to getString(R.string.permission_edit_channel),
+                "chanDelete" to getString(R.string.permission_delete_channel),
+                "serverEdit" to getString(R.string.permission_edit_server),
+                "groupEdit" to getString(R.string.permission_edit_groups),
+                "ignoreChanPass" to getString(R.string.permission_ignore_password),
+                "ignoreTalkPower" to getString(R.string.permission_ignore_talk_power)
+            )
+            for ((key, label) in labels) if (permissionEnabled(key)) lines.add("• $label")
+        }
+        lines.add("• ${getString(R.string.permission_talk_power)}: ${myPermissions.optInt("talkPower", 0)}")
+        if (lines.isEmpty()) lines.add(getString(R.string.no_permissions))
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.my_permissions))
+            .setMessage(getString(R.string.permissions_for_group, groupName) + "\n\n" + lines.joinToString("\n"))
+            .setPositiveButton(getString(R.string.close), null)
+            .show()
+    }
+
+    private fun findUserIndex(userId: Int): Int {
+        for (i in 0 until usersData.length()) {
+            if (usersData.optJSONObject(i)?.optInt("id", 0) == userId) return i
+        }
+        return -1
+    }
+
+    private fun groupPermissionText(group: JSONObject): String {
+        val perms = group.optJSONObject("perms") ?: JSONObject()
+        val labels = linkedMapOf(
+            "*" to getString(R.string.permission_all),
+            "kick" to getString(R.string.permission_kick),
+            "ban" to getString(R.string.permission_ban),
+            "banList" to getString(R.string.permission_ban_list),
+            "move" to getString(R.string.permission_move),
+            "poke" to getString(R.string.permission_poke),
+            "privmsg" to getString(R.string.permission_private_message),
+            "chanEdit" to getString(R.string.permission_edit_channel),
+            "chanDelete" to getString(R.string.permission_delete_channel),
+            "serverEdit" to getString(R.string.permission_edit_server),
+            "groupEdit" to getString(R.string.permission_edit_groups)
+        )
+        val active = ArrayList<String>()
+        for ((key, label) in labels)
+            if (perms.optBoolean(key, false) || perms.optInt(key, 0) > 0) active.add(label)
+        active.add("${getString(R.string.permission_talk_power)}: ${perms.optInt("talkPower", 0)}")
+        return if (active.isEmpty()) getString(R.string.no_permissions) else active.joinToString("\n• ", prefix = "• ")
+    }
+
+    private fun showServerGroupsDialog() {
+        val names = ArrayList<String>()
+        for (i in 0 until serverGroupsData.length()) {
+            val group = serverGroupsData.optJSONObject(i) ?: continue
+            names.add("#${group.optInt("id", 0)} — ${group.optString("name", getString(R.string.member_default))}")
+        }
+        val builder = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.server_groups))
+            .setItems(names.toTypedArray()) { _, which ->
+                val group = serverGroupsData.optJSONObject(which) ?: return@setItems
+                showServerGroupDetails(group)
+            }
+            .setNegativeButton(getString(R.string.close), null)
+            .setNeutralButton(getString(R.string.refresh), { _, _ -> requestServerPanel("groups") })
+        if (hasPermission("groupEdit")) {
+            builder.setPositiveButton(getString(R.string.new_server_group)) { _, _ ->
+                showServerGroupEditor(JSONObject().put("id", 0))
+            }
+        }
+        builder.show()
+    }
+
+    private fun showServerGroupDetails(group: JSONObject) {
+        val id = group.optInt("id", 0)
+        val name = group.optString("name", getString(R.string.member_default))
+        val message = getString(R.string.server_group_details, name, id) +
+            "\n\n" + groupPermissionText(group)
+        val builder = AlertDialog.Builder(this)
+            .setTitle(name)
+            .setMessage(message)
+            .setPositiveButton(if (hasPermission("groupEdit")) getString(R.string.edit) else getString(R.string.close)) { _, _ ->
+                if (hasPermission("groupEdit")) showServerGroupEditor(group)
+            }
+        if (hasPermission("groupEdit")) {
+            builder.setNeutralButton(getString(R.string.assign_group)) { _, _ -> showAssignGroupDialog(id) }
+            if (id >= 100) {
+                builder.setNegativeButton(getString(R.string.delete)) { _, _ ->
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.delete))
+                        .setMessage(getString(R.string.delete_group_question, name))
+                        .setPositiveButton(getString(R.string.yes)) { _, _ ->
+                            pendingServerPanel = "groups"
+                            HallaCore.sendRawJson(JSONObject().put("t", "group_delete").put("id", id).toString())
+                        }
+                        .setNegativeButton(getString(R.string.cancel), null)
+                        .show()
+                }
+            }
+        }
+        builder.show()
+    }
+
+    private fun showServerGroupEditor(source: JSONObject) {
+        val isNew = source.optInt("id", 0) == 0
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 20, 36, 8)
+        }
+        val name = EditText(this).apply {
+            hint = getString(R.string.group_name)
+            setText(source.optString("name", ""))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val sigla = EditText(this).apply {
+            hint = getString(R.string.group_sigla)
+            setText(source.optString("sigla", ""))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val order = EditText(this).apply {
+            hint = getString(R.string.group_order)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(source.optInt("order", 0).toString())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val icon = EditText(this).apply {
+            hint = getString(R.string.group_icon)
+            setText(source.optString("icon", ""))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(name)
+        layout.addView(sigla)
+        layout.addView(order)
+        layout.addView(icon)
+
+        val perms = source.optJSONObject("perms") ?: JSONObject()
+        val checks = LinkedHashMap<String, CheckBox>()
+        val permissionLabels = linkedMapOf(
+            "*" to getString(R.string.permission_all),
+            "kick" to getString(R.string.permission_kick),
+            "ban" to getString(R.string.permission_ban),
+            "banList" to getString(R.string.permission_ban_list),
+            "move" to getString(R.string.permission_move),
+            "poke" to getString(R.string.permission_poke),
+            "privmsg" to getString(R.string.permission_private_message),
+            "chanCreateTemp" to getString(R.string.permission_create_temp),
+            "chanCreateSemi" to getString(R.string.permission_create_semi),
+            "chanCreatePerm" to getString(R.string.permission_create_perm),
+            "chanEdit" to getString(R.string.permission_edit_channel),
+            "chanDelete" to getString(R.string.permission_delete_channel),
+            "serverEdit" to getString(R.string.permission_edit_server),
+            "groupEdit" to getString(R.string.permission_edit_groups),
+            "ignoreChanPass" to getString(R.string.permission_ignore_password),
+            "ignoreTalkPower" to getString(R.string.permission_ignore_talk_power)
+        )
+        for ((key, label) in permissionLabels) {
+            val check = CheckBox(this).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                isChecked = perms.optBoolean(key, false)
+                if (key == "*" && !hasPermission("*")) isEnabled = false
+            }
+            checks[key] = check
+            layout.addView(check)
+        }
+        val talkPower = EditText(this).apply {
+            hint = getString(R.string.talk_power)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(perms.optInt("talkPower", 0).toString())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        layout.addView(talkPower)
+
+        AlertDialog.Builder(this)
+            .setTitle(if (isNew) getString(R.string.new_server_group) else getString(R.string.edit_server_group))
+            .setView(layout)
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
+                val groupName = name.text.toString().trim()
+                if (groupName.isEmpty()) {
+                    Toast.makeText(this, getString(R.string.required_fields), Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val outPerms = JSONObject()
+                for ((key, check) in checks) if (check.isChecked) outPerms.put(key, true)
+                outPerms.put("talkPower", talkPower.text.toString().toIntOrNull() ?: 0)
+                val out = JSONObject()
+                    .put("t", "group_set")
+                    .put("id", source.optInt("id", 0))
+                    .put("name", groupName)
+                    .put("perms", outPerms)
+                    .put("sigla", sigla.text.toString().trim())
+                    .put("order", order.text.toString().toIntOrNull() ?: 0)
+                    .put("icon", icon.text.toString().trim())
+                pendingServerPanel = "groups"
+                HallaCore.sendRawJson(out.toString())
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showAssignGroupDialog(groupId: Int) {
+        val names = ArrayList<String>()
+        val ids = ArrayList<Int>()
+        for (i in 0 until usersData.length()) {
+            val user = usersData.optJSONObject(i) ?: continue
+            names.add(user.optString("name", getString(R.string.member_default)))
+            ids.add(user.optInt("id", 0))
+        }
+        if (names.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.assign_group))
+            .setItems(names.toTypedArray()) { _, which ->
+                HallaCore.sendRawJson(JSONObject()
+                    .put("t", "client_set_group")
+                    .put("id", ids[which])
+                    .put("gid", groupId)
+                    .toString())
+                Toast.makeText(this, getString(R.string.group_assignment_sent), Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showBanListDialog() {
+        val names = ArrayList<String>()
+        for (i in 0 until banListData.length()) {
+            val ban = banListData.optJSONObject(i) ?: continue
+            names.add("${ban.optString("name", getString(R.string.member_default))} — " +
+                ban.optString("reason", getString(R.string.no_reason)))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.banned_list))
+            .setItems(names.toTypedArray()) { _, which ->
+                if (!hasPermission("ban")) return@setItems
+                val ban = banListData.optJSONObject(which) ?: return@setItems
+                val uid = ban.optString("uid", "")
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.remove_ban))
+                    .setMessage(ban.optString("name", ""))
+                    .setPositiveButton(getString(R.string.yes)) { _, _ ->
+                        HallaCore.sendRawJson(JSONObject().put("t", "unban").put("uid", uid).toString())
+                        requestServerPanel("bans")
+                    }
+                    .setNegativeButton(getString(R.string.cancel), null)
+                    .show()
+            }
+            .setPositiveButton(getString(R.string.refresh)) { _, _ -> requestServerPanel("bans") }
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
+    }
+
+    private fun showComplaintsDialog() {
+        val names = ArrayList<String>()
+        for (i in 0 until complaintsData.length()) {
+            val complaint = complaintsData.optJSONObject(i) ?: continue
+            names.add("${complaint.optString("name", getString(R.string.member_default))} — " +
+                complaint.optString("byName", getString(R.string.member_default)))
+        }
+        val builder = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.server_complaints))
+            .setItems(names.toTypedArray()) { _, which ->
+                val complaint = complaintsData.optJSONObject(which) ?: return@setItems
+                val clear = hasPermission("banList")
+                AlertDialog.Builder(this)
+                    .setTitle(complaint.optString("name", getString(R.string.member_default)))
+                    .setMessage(complaint.optString("text", ""))
+                    .setPositiveButton(if (clear) getString(R.string.clear) else getString(R.string.close)) { _, _ ->
+                        if (clear) {
+                            HallaCore.sendRawJson(JSONObject().put("t", "complaint_clear")
+                                .put("uid", complaint.optString("uid", "")).toString())
+                            requestServerPanel("complaints")
+                        }
+                    }
+                    .setNegativeButton(getString(R.string.close), null)
+                    .show()
+            }
+            .setNeutralButton(getString(R.string.refresh)) { _, _ -> requestServerPanel("complaints") }
+            .setNegativeButton(getString(R.string.close), null)
+        builder.show()
+    }
+
+    private fun showServerEditDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 20, 36, 8)
+        }
+        val name = EditText(this).apply {
+            hint = getString(R.string.server_name_hint)
+            setText(txtActiveServerName.text)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val motd = EditText(this).apply {
+            hint = getString(R.string.server_motd_hint)
+            setText(txtActiveMotd.text)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            minLines = 3
+        }
+        layout.addView(name)
+        layout.addView(motd)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.server_edit_settings))
+            .setView(layout)
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
+                HallaCore.sendRawJson(JSONObject().put("t", "server_edit")
+                    .put("name", name.text.toString().trim())
+                    .put("motd", motd.text.toString()).toString())
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showChannelGroupsDialog() {
+        val message = getString(R.string.channel_groups_message, channelsData.length())
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_groups))
+            .setMessage(message)
+            .setPositiveButton(getString(R.string.close), null)
+            .show()
+    }
+
+    private fun finishServerPanel(panel: String) {
+        if (pendingServerPanel != panel) return
+        pendingServerPanel = null
+        when (panel) {
+            "groups" -> showServerGroupsDialog()
+            "bans" -> showBanListDialog()
+            "complaints" -> showComplaintsDialog()
+        }
+    }
+
     // Formulário de Adicionar / Editar Servidor
     private fun showServerFormDialog(editSrv: JSONObject?) {
         val context = this
@@ -1946,6 +2355,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 channelsData = obj.getJSONArray("channels")
                 usersData = obj.getJSONArray("users")
                 myPermissions = obj.optJSONObject("myPerms") ?: JSONObject()
+                serverGroupsData = obj.optJSONArray("groups") ?: JSONArray()
                 for (i in 0 until usersData.length()) {
                     val user = usersData.optJSONObject(i) ?: continue
                     if (user.optInt("id", 0) == selfId) {
@@ -2021,6 +2431,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             txtActiveServerName.text = it
                         }
                         if (obj.has("motd")) txtActiveMotd.text = obj.optString("motd")
+                    } else if (t == "group_list") {
+                        serverGroupsData = obj.optJSONArray("groups") ?: JSONArray()
+                        finishServerPanel("groups")
+                    } else if (t == "banlist") {
+                        banListData = obj.optJSONArray("bans") ?: JSONArray()
+                        finishServerPanel("bans")
+                    } else if (t == "complaint_list") {
+                        complaintsData = obj.optJSONArray("complaints") ?: JSONArray()
+                        finishServerPanel("complaints")
                     } else if (t == "chan_update") {
                         val chanObj = obj.getJSONObject("chan")
                         updateOrAddChannel(chanObj)
@@ -2075,6 +2494,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onError(code: String, msg: String) {
+        pendingServerPanel = null
         runOnUiThread {
             txtError.text = if (msg.isNotEmpty()) getString(R.string.error_details, code, msg) else code
             txtError.visibility = View.VISIBLE
@@ -2301,6 +2721,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         renderChannel = renderChannel@{ chan: JSONObject, depth: Int ->
             val chanId = chan.getInt("id")
             val chanName = chan.getString("name")
+            val isSubchannel = depth > 0
 
             if (isChannelCollapsed(chanId)) {
                 return@renderChannel
@@ -2319,10 +2740,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     setMargins(depth * 12, 0, 0, 16)
                 }
                 
-                // Card background (#151322)
+                // Subcanais recebem uma aparência própria além da
+                // indentação: fundo mais claro, margem hierárquica e uma
+                // etiqueta explícita para não parecerem canais de primeiro
+                // nível.
                 val cardShape = GradientDrawable().apply {
-                    setColor(Color.parseColor("#151322"))
-                    cornerRadius = 16f
+                    setColor(Color.parseColor(if (isSubchannel) "#1B1930" else "#151322"))
+                    cornerRadius = if (isSubchannel) 12f else 16f
                 }
                 background = cardShape
                 setOnClickListener {
@@ -2334,11 +2758,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
             }
 
-            // Borda Lateral Esquerda em Roxo/Violeta Brilhante (ı|ı - exato do mockup)
+            // A barra roxa identifica canais normais; a barra azul e mais
+            // estreita identifica visualmente um subcanal.
             val leftBlueBorder = View(this).apply {
-                setBackgroundColor(Color.parseColor("#8B5CF6"))
+                setBackgroundColor(Color.parseColor(if (isSubchannel) "#38BDF8" else "#8B5CF6"))
                 val borderParams = LinearLayout.LayoutParams(
-                    12, // Borda lateral esquerda de alta visibilidade
+                    if (isSubchannel) 6 else 12,
                     LinearLayout.LayoutParams.MATCH_PARENT
                 )
                 layoutParams = borderParams
@@ -2376,15 +2801,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val isCollapsed = collapsedChannels.contains(chanId)
             val indicator = if (hasSubchannels(chanId)) (if (isCollapsed) "  [+]" else "  [-]") else ""
             val txtName = TextView(this).apply {
-                text = "$chanName$indicator"
+                text = if (isSubchannel) "↳ $chanName$indicator" else "$chanName$indicator"
                 setTextColor(Color.parseColor("#FFFFFF"))
-                textSize = 15f
+                textSize = if (isSubchannel) 14f else 15f
                 setTypeface(null, Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(
                     0,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     1f
                 )
+            }
+
+            val txtType = TextView(this).apply {
+                text = if (isSubchannel) getString(R.string.subchannel_badge) else ""
+                setTextColor(Color.parseColor(if (isSubchannel) "#38BDF8" else "#94A3B8"))
+                textSize = 9f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(8, 3, 8, 3)
+                visibility = if (isSubchannel) View.VISIBLE else View.GONE
             }
 
             // Badge de Membros (ex: 👤 2)
@@ -2405,6 +2839,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             headerRow.addView(txtIcon)
             headerRow.addView(txtName)
+            headerRow.addView(txtType)
             headerRow.addView(txtBadge)
 
             contentLayout.addView(headerRow)
