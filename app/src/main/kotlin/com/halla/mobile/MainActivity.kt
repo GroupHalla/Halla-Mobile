@@ -49,6 +49,7 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
@@ -58,6 +59,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var layoutServer: RelativeLayout
     private lateinit var layoutEmptyState: LinearLayout
     private lateinit var scrollServers: ScrollView
+    private lateinit var refreshServers: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
     private lateinit var containerServers: LinearLayout
     private lateinit var txtError: TextView
 
@@ -190,7 +192,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.21"
+    private val currentVersionName = "v1.0.22"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -212,9 +214,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         layoutConnect = findViewById(R.id.layoutConnect)
         layoutServer = findViewById(R.id.layoutServer)
         layoutEmptyState = findViewById(R.id.layoutEmptyState)
+        refreshServers = findViewById(R.id.refreshServers)
         scrollServers = findViewById(R.id.scrollServers)
         containerServers = findViewById(R.id.containerServers)
         txtError = findViewById(R.id.txtError)
+
+        refreshServers.setOnRefreshListener {
+            refreshServerListFromNetwork()
+        }
 
         btnMenu = findViewById(R.id.btnMenu)
         btnAddServer = findViewById(R.id.btnAddServer)
@@ -1246,28 +1253,48 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         rebuildServerList()
     }
 
+    private fun persistServersOnly() {
+        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .putString("saved_servers", savedServers.toString())
+            .apply()
+    }
+
     private fun saveServersToStorage() {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("saved_servers", savedServers.toString()).apply()
+        persistServersOnly()
         rebuildServerList()
     }
 
-    private fun rebuildServerList() {
+    private fun refreshServerListFromNetwork() {
+        if (savedServers.length() == 0) {
+            refreshServers.isRefreshing = false
+            return
+        }
+        // Reconstrói os cartões para refletir imediatamente alterações feitas
+        // no formulário e depois consulta novamente ping, nome e vagas reais.
+        rebuildServerList(startProbe = false)
+        pingServersInBackground {
+            refreshServers.isRefreshing = false
+            Toast.makeText(this, getString(R.string.server_list_updated), Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun rebuildServerList(startProbe: Boolean = true) {
         containerServers.removeAllViews()
 
         if (savedServers.length() == 0) {
             layoutEmptyState.visibility = View.VISIBLE
-            scrollServers.visibility = View.GONE
+            refreshServers.visibility = View.GONE
         } else {
             layoutEmptyState.visibility = View.GONE
-            scrollServers.visibility = View.VISIBLE
+            refreshServers.visibility = View.VISIBLE
 
             for (i in 0 until savedServers.length()) {
                 val srv = savedServers.getJSONObject(i)
                 val card = createServerCard(srv, i)
                 containerServers.addView(card)
             }
-            pingServersInBackground()
+            if (startProbe) pingServersInBackground()
         }
     }
 
@@ -1354,8 +1381,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         val txtStatus = TextView(context).apply {
-            val savedSlots = srv.optString("slots", "0/500") // Slots default corrigidos para 500!
-            text = getString(R.string.available_slots, savedSlots)
+            val hasProbe = srv.has("onlineClients") && srv.has("maxClients")
+            val savedSlots = srv.optString("slots", "0/32")
+            text = if (hasProbe) getString(R.string.available_slots, savedSlots)
+                   else getString(R.string.searching)
+            tag = "slots_text_$index"
             setTextColor(Color.parseColor("#94A3B8"))
             textSize = 13f
             val rParams = RelativeLayout.LayoutParams(
@@ -1579,7 +1609,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         put("port", port)
                         put("pass", pass)
                         put("identity_uid", selectedUid)
-                        put("slots", "0/500") // Slots default corrigidos para 500!
+                        // Até a primeira consulta, o cartão não inventa o
+                        // limite: o servidor responderá com o valor real.
+                        put("slots", "0/32")
                     }
                     savedServers.put(newSrv)
                 }
@@ -1667,38 +1699,90 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnQuickConnect.text = "⏳"
     }
 
-    // Varredura de ping de fundo
-    private fun pingServersInBackground() {
-        for (i in 0 until savedServers.length()) {
+    // Consulta de disponibilidade e de vagas reais em segundo plano. A
+    // mensagem server_probe não autentica nem cria uma sessão, portanto não
+    // altera o contador de clientes do servidor.
+    private fun pingServersInBackground(onFinished: (() -> Unit)? = null) {
+        val total = savedServers.length()
+        if (total == 0) {
+            onFinished?.invoke()
+            return
+        }
+
+        val remaining = AtomicInteger(total)
+        fun finish() {
+            if (remaining.decrementAndGet() == 0) {
+                runOnUiThread { onFinished?.invoke() }
+            }
+        }
+
+        for (i in 0 until total) {
             val srv = savedServers.getJSONObject(i)
-            val host = srv.getString("host")
-            val port = srv.getInt("port")
-            
+            val host = srv.optString("host", "")
+            val port = srv.optInt("port", 9987)
+
             thread {
                 val startTime = System.currentTimeMillis()
+                var socket: java.net.Socket? = null
                 try {
-                    val socket = java.net.Socket()
-                    socket.connect(java.net.InetSocketAddress(host, port), 1500)
+                    socket = java.net.Socket()
+                    socket.soTimeout = 1800
+                    socket.connect(java.net.InetSocketAddress(host, port), 1800)
+                    socket.getOutputStream().write("{\"t\":\"server_probe\"}\n".toByteArray(Charsets.UTF_8))
+                    socket.getOutputStream().flush()
+
+                    val line = socket.getInputStream().bufferedReader().readLine()
                     val elapsed = System.currentTimeMillis() - startTime
-                    socket.close()
-                    
+                    val response = if (!line.isNullOrBlank()) JSONObject(line) else null
+                    val server = response?.optJSONObject("server")
+                    val clients = response?.optInt("clients", -1) ?: -1
+                    val maxClients = response?.optInt("maxClients", -1)
+                        ?: server?.optInt("maxClients", -1)
+                        ?: -1
+
                     runOnUiThread {
-                        updateServerPingOnUI(i, "${elapsed}ms", true)
+                        updateServerProbeOnUI(
+                            i,
+                            "${elapsed}ms",
+                            true,
+                            clients.takeIf { it >= 0 },
+                            maxClients.takeIf { it > 0 }
+                        )
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     runOnUiThread {
-                        updateServerPingOnUI(i, getString(R.string.offline), false)
+                        updateServerProbeOnUI(i, getString(R.string.offline), false, null, null)
                     }
+                } finally {
+                    try { socket?.close() } catch (_: Exception) { }
+                    finish()
                 }
             }
         }
     }
 
-    private fun updateServerPingOnUI(index: Int, pingText: String, online: Boolean) {
+    private fun updateServerProbeOnUI(
+        index: Int,
+        pingText: String,
+        online: Boolean,
+        clientsCount: Int?,
+        maxClients: Int?
+    ) {
         val txtPing = containerServers.findViewWithTag<TextView>("ping_text_$index")
         if (txtPing != null) {
             txtPing.text = pingText
             txtPing.setTextColor(Color.parseColor(if (online) "#4CAF50" else "#D9534F"))
+        }
+
+        if (index < 0 || index >= savedServers.length()) return
+        val srv = savedServers.optJSONObject(index) ?: return
+        if (clientsCount != null && maxClients != null) {
+            srv.put("onlineClients", clientsCount)
+            srv.put("maxClients", maxClients)
+            srv.put("slots", "$clientsCount/$maxClients")
+            val txtStatus = containerServers.findViewWithTag<TextView>("slots_text_$index")
+            txtStatus?.text = getString(R.string.available_slots, "$clientsCount/$maxClients")
+            persistServersOnly()
         }
     }
 
@@ -1712,6 +1796,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         for (i in 0 until savedServers.length()) {
             val srv = savedServers.getJSONObject(i)
             if (srv.getString("host") == host && srv.getInt("port") == port) {
+                srv.put("onlineClients", clientsCount)
+                srv.put("maxClients", maxClients)
                 srv.put("slots", "$clientsCount/$maxClients")
                 modified = true
                 break
@@ -1869,7 +1955,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
 
                 val serverObj = obj.optJSONObject("server")
-                val maxClients = serverObj?.optInt("maxClients") ?: serverObj?.optInt("max") ?: 500
+                val maxClients = (serverObj?.optInt("maxClients", -1) ?: -1)
+                    .takeIf { it > 0 }
+                    ?: (serverObj?.optInt("max", -1) ?: -1).takeIf { it > 0 }
+                    ?: 32
                 val clientsCount = usersData.length()
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
@@ -2189,6 +2278,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return 0
     }
 
+    private fun sortedChildChannels(parentId: Int): List<JSONObject> {
+        val result = ArrayList<JSONObject>()
+        for (i in 0 until channelsData.length()) {
+            val channel = channelsData.optJSONObject(i) ?: continue
+            if (channel.optInt("parent", 0) == parentId) result.add(channel)
+        }
+        return result.sortedWith(
+            compareBy<JSONObject> { it.optInt("order", 0) }
+                .thenBy { it.optString("name", "").lowercase() }
+        )
+    }
+
     // Árvore de canais baseada em cartões (Premium Card-Based UI com Tema Roxo/Violeta idêntica ao print)
     private fun rebuildChannelTree() {
         containerChannels.removeAllViews()
@@ -2433,19 +2534,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // Renderiza subcanais dentro da árvore, em vez de deixar todos os
             // canais no mesmo nível visual. O estado collapsed do pai oculta
             // recursivamente toda a sua descendência.
-            for (j in 0 until channelsData.length()) {
-                val child = channelsData.getJSONObject(j)
-                if (child.optInt("parent", 0) == chanId) {
-                    renderChannel(child, depth + 1)
-                }
+            for (child in sortedChildChannels(chanId)) {
+                renderChannel(child, depth + 1)
             }
         }
 
-        // Começa pelos canais raiz; a ordem dos objetos recebidos pelo
-        // servidor deixa de importar para a visualização hierárquica.
-        for (i in 0 until channelsData.length()) {
-            val root = channelsData.getJSONObject(i)
-            if (root.optInt("parent", 0) == 0) renderChannel(root, 0)
+        // Começa pelos canais raiz e respeita a posição persistida pelo
+        // servidor, independentemente da ordem do JSON recebido.
+        for (root in sortedChildChannels(0)) {
+            renderChannel(root, 0)
         }
     }
 

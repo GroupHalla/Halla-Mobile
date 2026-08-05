@@ -134,20 +134,27 @@
             </LinearLayout>
 
             <!-- Lista Rolável de Cartões de Servidores -->
-            <ScrollView
-                android:id="@+id/scrollServers"
+            <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                android:id="@+id/refreshServers"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:padding="12dp"
                 android:visibility="gone">
 
-                <LinearLayout
-                    android:id="@+id/containerServers"
+                <ScrollView
+                    android:id="@+id/scrollServers"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:layout_height="match_parent"
+                    android:padding="12dp">
 
-            </ScrollView>
+                    <LinearLayout
+                        android:id="@+id/containerServers"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </ScrollView>
+
+            </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
             <TextView
                 android:id="@+id/txtError"

@@ -62,18 +62,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile ${{ github.ref_name }} — sinais sonoros de fala
+          name: Halla Mobile ${{ github.ref_name }} — consulta real de vagas e favoritos
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.21
+            ## Halla Mobile v1.0.22
 
-            ### Sinais sonoros de fala
-            * Nova configuração em **Configurações → Áudio → Diversos**.
-            * Escolha entre **Pressione para Falar** e **Atividade de Voz**.
-            * Selecione arquivos de áudio separados para **Ativo**, **Inativo** e **Sussurro** pelo seletor de arquivos do Android.
-            * Cada sinal possui a opção **Outros usuários** para reproduzir o áudio quando outra pessoa falar.
-            * A reprodução funciona também com o serviço de áudio em segundo plano.
+            ### Menu inicial
+            * A lista de servidores consulta o limite e o total de clientes diretamente no servidor, mostrando vagas reais antes da conexão.
+            * Arrastar a lista para baixo atualiza ping, nome/status e contador de vagas.
+            * Favoritos, identidades e preferências ficam incluídos nas regras de backup/restauração do Android para sobreviver à reinstalação quando o backup do sistema estiver habilitado.
+
+            ### Áudio
+            * Registro UDP periódico reforçado e envio de frames Opus com acumulação de leituras parciais, evitando que a primeira fala do Mobile seja descartada.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

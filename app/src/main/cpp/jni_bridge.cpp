@@ -489,10 +489,11 @@ public:
         }
         {
             std::lock_guard<std::mutex> udpLock(m_udpMutex);
-            if (m_udpSocket != -1) {
-                shutdown(m_udpSocket, SHUT_RDWR);
-                close(m_udpSocket);
-                m_udpSocket = -1;
+            const int socketFd = m_udpSocket.load();
+            if (socketFd != -1) {
+                shutdown(socketFd, SHUT_RDWR);
+                close(socketFd);
+                m_udpSocket.store(-1);
             }
         }
 
@@ -501,8 +502,8 @@ public:
         if (m_natThread.joinable() && m_natThread.get_id() != self) m_natThread.join();
         if (m_udpThread.joinable() && m_udpThread.get_id() != self) m_udpThread.join();
         if (m_tcpThread.joinable() && m_tcpThread.get_id() != self) m_tcpThread.join();
-        m_udpPort = 0;
-        m_voiceToken = 0;
+        m_udpPort.store(0);
+        m_voiceToken.store(0);
         m_authenticated = false;
         m_pingPending = false;
 
@@ -519,6 +520,8 @@ public:
                 opus_decoder_destroy(pair.second);
             }
             m_decoders.clear();
+            m_encodePcm.clear();
+            m_voiceSeq = 0;
         }
         writeLog("Recursos do Codec Opus liberados.");
     }
@@ -614,18 +617,26 @@ public:
 
     void sendVoiceFrame(const char* pcm, int size, uint16_t seq) {
         std::lock_guard<std::mutex> udpLock(m_udpMutex);
-        if (m_udpSocket == -1 || m_udpPort == 0 || m_voiceToken == 0) return;
+        const int socketFd = m_udpSocket.load();
+        const int udpPort = m_udpPort.load();
+        const uint32_t voiceToken = m_voiceToken.load();
+        if (socketFd == -1 || udpPort == 0 || voiceToken == 0) return;
 
         std::vector<char> packet(10 + size);
         memcpy(packet.data(), "HALL", 4);
-        memcpy(packet.data() + 4, &m_voiceToken, 4);
+        memcpy(packet.data() + 4, &voiceToken, 4);
         memcpy(packet.data() + 8, &seq, 2);
         if (size > 0 && pcm != nullptr) {
             memcpy(packet.data() + 10, pcm, size);
         }
 
-        m_serverUdpAddr.sin_port = htons(m_udpPort);
-        sendto(m_udpSocket, packet.data(), packet.size(), 0, (struct sockaddr*)&m_serverUdpAddr, sizeof(m_serverUdpAddr));
+        m_serverUdpAddr.sin_port = htons(static_cast<uint16_t>(udpPort));
+        const ssize_t sent = sendto(socketFd, packet.data(), packet.size(), 0,
+                                    (struct sockaddr*)&m_serverUdpAddr,
+                                    sizeof(m_serverUdpAddr));
+        if (sent < 0) {
+            writeLog("UDP: falha ao enviar frame de voz");
+        }
     }
 
     // Envia um frame Opus de silêncio válido para registrar o endpoint UDP.
@@ -656,15 +667,21 @@ public:
 
     // Codifica PCM bruto de 16-bit Mono @ 48kHz em frames Opus VoIP e transmite
     void encodeAndSendVoice(const int16_t* pcm, int samples) {
-        if (!pcm || samples <= 0 || m_udpSocket == -1 || m_udpPort == 0 || m_voiceToken == 0) return;
-
+        if (!pcm || samples <= 0 || m_udpPort.load() == 0 || m_voiceToken.load() == 0) return;
+        // AudioRecord normalmente entrega 960 amostras, mas leituras parciais
+        // também são possíveis. O Opus só aceita tamanhos de frame válidos;
+        // acumular aqui evita descartar justamente a primeira fala.
         std::lock_guard<std::mutex> codecLock(m_codecMutex);
         if (!m_encoder) return;
-        static uint16_t voiceSeq = 0;
-        unsigned char opusBuf[512];
-        int n = opus_encode(m_encoder, pcm, samples, opusBuf, sizeof(opusBuf));
-        if (n > 0) {
-            sendVoiceFrame(reinterpret_cast<const char*>(opusBuf), n, ++voiceSeq);
+        m_encodePcm.insert(m_encodePcm.end(), pcm, pcm + samples);
+        while (m_encodePcm.size() >= 960) {
+            unsigned char opusBuf[512];
+            const int n = opus_encode(m_encoder, m_encodePcm.data(), 960,
+                                      opusBuf, sizeof(opusBuf));
+            m_encodePcm.erase(m_encodePcm.begin(), m_encodePcm.begin() + 960);
+            if (n > 0) {
+                sendVoiceFrame(reinterpret_cast<const char*>(opusBuf), n, ++m_voiceSeq);
+            }
         }
     }
 
@@ -851,10 +868,10 @@ private:
                 writeLog("welcome: voicePos = " + std::to_string(voicePos));
                 if (voicePos != std::string::npos) {
                     std::string voiceObj = line.substr(voicePos);
-                    m_udpPort = jsonExtractInt(voiceObj, "udp");
-                    m_voiceToken = safeStoul(jsonExtractString(voiceObj, "token"));
+                    m_udpPort.store(jsonExtractInt(voiceObj, "udp"));
+                    m_voiceToken.store(safeStoul(jsonExtractString(voiceObj, "token")));
                 }
-                writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
+                writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
 
                 // Prepara o UDP ANTES de notificar o Kotlin. O callback de
                 // onConnected inicia a captura; antes isso criava uma janela
@@ -871,9 +888,9 @@ private:
             }
 
             if (t == "voice_token") {
-                m_udpPort = jsonExtractInt(line, "udp");
-                m_voiceToken = safeStoul(jsonExtractString(line, "token"));
-                writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort) + ", m_voiceToken = " + std::to_string(m_voiceToken));
+                m_udpPort.store(jsonExtractInt(line, "udp"));
+                m_voiceToken.store(safeStoul(jsonExtractString(line, "token")));
+                writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
                 setupUdpVoice();
                 return;
             }
@@ -935,10 +952,11 @@ private:
         // de forma ordenada antes de trocar o endpoint.
         {
             std::lock_guard<std::mutex> udpLock(m_udpMutex);
-            if (m_udpSocket != -1) {
-                shutdown(m_udpSocket, SHUT_RDWR);
-                close(m_udpSocket);
-                m_udpSocket = -1;
+            const int socketFd = m_udpSocket.load();
+            if (socketFd != -1) {
+                shutdown(socketFd, SHUT_RDWR);
+                close(socketFd);
+                m_udpSocket.store(-1);
             }
         }
         if (m_udpThread.joinable() && m_udpThread.get_id() != std::this_thread::get_id())
@@ -947,8 +965,9 @@ private:
             m_natThread.join();
 
         std::unique_lock<std::mutex> udpLock(m_udpMutex);
-        m_udpSocket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (m_udpSocket == -1) {
+        const int socketFd = socket(AF_INET, SOCK_DGRAM, 0);
+        m_udpSocket.store(socketFd);
+        if (socketFd == -1) {
             writeLog("Erro: setupUdpVoice nao conseguiu criar socket UDP");
             return;
         }
@@ -958,24 +977,24 @@ private:
         struct timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
-        setsockopt(m_udpSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
         struct sockaddr_in localAddr;
         memset(&localAddr, 0, sizeof(localAddr));
         localAddr.sin_family = AF_INET;
         localAddr.sin_port = htons(0);
         localAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-        if (bind(m_udpSocket, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
+        if (bind(socketFd, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
             writeLog("Erro: bind UDP falhou");
-            close(m_udpSocket);
-            m_udpSocket = -1;
+            close(socketFd);
+            m_udpSocket.store(-1);
             return;
         }
 
         // Resolve o host do servidor uma vez de forma robusta e persistente.
         memset(&m_serverUdpAddr, 0, sizeof(m_serverUdpAddr));
         m_serverUdpAddr.sin_family = AF_INET;
-        m_serverUdpAddr.sin_port = htons(m_udpPort);
+        m_serverUdpAddr.sin_port = htons(static_cast<uint16_t>(m_udpPort.load()));
         if (inet_pton(AF_INET, m_host.c_str(), &m_serverUdpAddr.sin_addr) == 1) {
             writeLog("[NAT] IP do servidor resolvido via inet_pton.");
         } else {
@@ -985,8 +1004,8 @@ private:
                 writeLog("[NAT] Host do servidor resolvido via gethostbyname.");
             } else {
                 writeLog("Erro: nao foi possivel resolver o host UDP");
-                close(m_udpSocket);
-                m_udpSocket = -1;
+                close(socketFd);
+                m_udpSocket.store(-1);
                 return;
             }
         }
@@ -1002,18 +1021,19 @@ private:
             sendVoiceRegistration(static_cast<uint16_t>(i + 1));
             usleep(50000);
         }
-        writeLog("Socket UDP configurado na porta " + std::to_string(m_udpPort) +
-                 " com token " + std::to_string(m_voiceToken));
+        writeLog("Socket UDP configurado na porta " + std::to_string(m_udpPort.load()) +
+                 " com token " + std::to_string(m_voiceToken.load()));
 
         m_natThread = std::thread(&HallaClientCore::udpPingLoop, this);
         writeLog("[NAT] Loop de keep-alive UDP iniciado.");
     }
 
     void udpPingLoop() {
-        while (m_connected && m_udpSocket != -1) {
+        while (m_connected && m_udpSocket.load() != -1) {
             for (int i = 0; i < 20 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            if (!m_connected || m_udpSocket == -1) break;
+            if (!m_connected || m_udpSocket.load() == -1 || m_udpPort.load() == 0
+                    || m_voiceToken.load() == 0) break;
             sendVoiceRegistration(1);
         }
         writeLog("[NAT] Loop de keep-alive UDP finalizado.");
@@ -1024,9 +1044,11 @@ private:
         char buf[2048];
         struct sockaddr_in sender;
 
-        while (m_connected && m_udpSocket != -1) {
+        while (m_connected && m_udpSocket.load() != -1) {
+            const int socketFd = m_udpSocket.load();
+            if (socketFd == -1) break;
             socklen_t len = sizeof(sender);
-            int n = recvfrom(m_udpSocket, buf, sizeof(buf), 0,
+            int n = recvfrom(socketFd, buf, sizeof(buf), 0,
                              (struct sockaddr*)&sender, &len);
             if (n <= 0) continue; // timeout de 1 s ou socket sendo encerrado
 
@@ -1048,7 +1070,7 @@ private:
     std::string m_pass;
     std::string m_uid;
     int m_tcpSocket;
-    int m_udpSocket;
+    std::atomic<int> m_udpSocket;
     std::atomic<bool> m_connected;
     std::atomic<bool> m_authenticated;
     std::atomic<bool> m_pingPending;
@@ -1063,9 +1085,11 @@ private:
     std::thread m_pingThread;
     std::thread m_natThread;
 
-    int m_udpPort;
-    uint32_t m_voiceToken;
+    std::atomic<int> m_udpPort;
+    std::atomic<uint32_t> m_voiceToken;
     struct sockaddr_in m_serverUdpAddr;
+    std::vector<int16_t> m_encodePcm;
+    uint16_t m_voiceSeq = 0;
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;

@@ -269,6 +269,7 @@ Deseja baixar e instalar agora?</string>
     <string name="required_fields">Preencha todos os campos obrigatórios!</string>
     <string name="save_upper">SALVAR</string>
     <string name="searching">Buscando...</string>
+    <string name="server_list_updated">Lista de servidores atualizada.</string>
     <string name="select_targets">Selecione os destinos</string>
     <string name="server_name_hint">Nome do servidor (ex.: Halla Oficial)</string>
     <string name="server_password_optional">Senha do servidor (opcional)</string>

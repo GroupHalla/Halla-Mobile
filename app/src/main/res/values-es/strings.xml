@@ -269,6 +269,7 @@ Notas de la versión:
     <string name="required_fields">¡Completa todos los campos obligatorios!</string>
     <string name="save_upper">GUARDAR</string>
     <string name="searching">Buscando...</string>
+    <string name="server_list_updated">Lista de servidores actualizada.</string>
     <string name="select_targets">Selecciona los destinos</string>
     <string name="server_name_hint">Nombre del servidor (ej.: Halla Oficial)</string>
     <string name="server_password_optional">Contraseña del servidor (opcional)</string>

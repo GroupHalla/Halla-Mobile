@@ -269,6 +269,7 @@ Download and install now?</string>
     <string name="required_fields">Fill in all required fields!</string>
     <string name="save_upper">SAVE</string>
     <string name="searching">Searching...</string>
+    <string name="server_list_updated">Server list updated.</string>
     <string name="select_targets">Select targets</string>
     <string name="server_name_hint">Server name (e.g. Halla Official)</string>
     <string name="server_password_optional">Server password (optional)</string>
