@@ -1011,7 +1011,7 @@ private:
 
     void udpPingLoop() {
         while (m_connected && m_udpSocket != -1) {
-            for (int i = 0; i < 50 && m_connected; ++i)
+            for (int i = 0; i < 20 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!m_connected || m_udpSocket == -1) break;
             sendVoiceRegistration(1);

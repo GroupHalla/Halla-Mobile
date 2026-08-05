@@ -67,7 +67,7 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.20
+            ## Halla Mobile v1.0.21
 
             ### Sinais sonoros de fala
             * Nova configuração em **Configurações → Áudio → Diversos**.
