@@ -359,6 +359,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelAudio.addView(btnWhisperLists)
 
+        val btnVoiceDiagnostics = Button(this).apply {
+            text = "Diagnóstico de voz"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12, 0, 0) }
+            setOnClickListener {
+                val output = TextView(this@MainActivity).apply { setPadding(32, 24, 32, 24); setTextColor(Color.WHITE); textSize = 14f }
+                val dialog = AlertDialog.Builder(this@MainActivity).setTitle("Diagnóstico de voz").setView(output)
+                    .setPositiveButton("Fechar", null).create()
+                val refresh = object : Runnable { override fun run() {
+                    output.text = if (HallaService.isRunning()) HallaService.voiceDiagnostics() else audioManager.diagnosticsText()
+                    if (dialog.isShowing) output.postDelayed(this, 500)
+                }}
+                dialog.setOnShowListener { output.post(refresh) }
+                dialog.show()
+            }
+        }
+        panelAudio.addView(btnVoiceDiagnostics)
+
         val floatingOptions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 12, 24, 12)

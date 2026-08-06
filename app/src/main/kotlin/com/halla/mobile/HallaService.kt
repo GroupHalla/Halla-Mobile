@@ -170,6 +170,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         fun currentServerName(): String = lastServerName
         fun currentMotd(): String = lastMotd
         fun currentWelcomeJson(): String = lastWelcomeJson
+        fun voiceDiagnostics(): String = instance?.audio?.diagnosticsText()
+            ?: "Serviço de voz não está ativo."
     }
 
     private val handler = Handler(Looper.getMainLooper())

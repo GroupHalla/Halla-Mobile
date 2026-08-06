@@ -399,6 +399,19 @@ class HallaAudioManager(private val cacheDir: File) {
 
     fun isLocalRecording(): Boolean = isLocalRecording
 
+    fun diagnosticsText(): String = """
+        Captura: ${if (isRecordingMic) "ativa" else "parada"}
+        Reprodução: ${if (isPlayingAudio) "ativa" else "parada"}
+        Transmissão: ${if (transmitEnabled) "permitida" else "mutada"}
+        Alto-falantes: ${if (speakerEnabled) "ativos" else "mutados"}
+        Modo: ${when (transmissionMode) { 1 -> "PTT"; 2 -> "Contínuo"; else -> "Detecção de voz" }}
+        PTT: ${if (isPttPressed) "pressionado" else "solto"}
+        Sussurro: ${if (whisperPressed) "ativo" else "inativo"}
+        RMS atual: ${"%.2f".format(currentVoiceLevel)}%
+        Supressão de ruído: ${if (noiseSuppressionOn) "ligada" else "desligada"}
+        Cancelamento de eco: ${if (echoCancellationOn) "ligado" else "desligado"}
+    """.trimIndent()
+
     fun stop() {
         forceStopTalking()
         isRecordingMic = false
