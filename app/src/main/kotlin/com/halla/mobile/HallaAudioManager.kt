@@ -40,6 +40,9 @@ class HallaAudioManager(private val cacheDir: File) {
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
     @Volatile var whisperPressed = false
+    // Impede que VAD/contínuo enviem áudio normal enquanto o servidor aplica
+    // uma nova lista de destinos de sussurro via TCP.
+    @Volatile var whisperActivationPending = false
     @Volatile private var noiseSuppressionOn = true
     @Volatile private var echoCancellationOn = true
     var vadThreshold = 150.0
@@ -146,6 +149,7 @@ class HallaAudioManager(private val cacheDir: File) {
 
                         // Limiar VAD / PTT / Contínuo para transmissão.
                         val voiceNow = when {
+                            whisperActivationPending -> false
                             whisperPressed -> true // sussurro também funciona sobre VAD
                             transmissionMode == 1 -> isPttPressed // PTT
                             transmissionMode == 2 -> true // Contínuo
@@ -202,8 +206,10 @@ class HallaAudioManager(private val cacheDir: File) {
     ): AudioRecord {
         val sources = if (source == MediaRecorder.AudioSource.MIC) {
             intArrayOf(
-                MediaRecorder.AudioSource.MIC,
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION
+                // O caminho de comunicação mantém o microfone e o volume no
+                // perfil de chamada do Android, inclusive em segundo plano.
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC
             )
         } else {
             intArrayOf(source, MediaRecorder.AudioSource.MIC)
@@ -279,18 +285,22 @@ class HallaAudioManager(private val cacheDir: File) {
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
         try {
-            // Mantém a mesma rota de reprodução que já funcionava no Mobile.
-            // O AcousticEchoCanceler continua ligado à sessão da captura;
-            // trocar o stream de saída não pode impedir o envio do microfone.
-            @Suppress("DEPRECATION")
-            val track = AudioTrack(
-                AudioManager.STREAM_MUSIC,
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                maxOf(minBufSize, 1920 * 4),
-                AudioTrack.MODE_STREAM
-            )
+            // Usa explicitamente o perfil de comunicação. STREAM_MUSIC em
+            // MODE_IN_COMMUNICATION faz alguns aparelhos alternarem entre as
+            // barras de mídia/chamada e pode silenciar a rota de voz.
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build())
+                .setAudioFormat(AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(channelConfig)
+                    .setEncoding(audioFormat)
+                    .build())
+                .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 4))
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
             audioTrack = track
             track.play()
         } catch (e: Exception) {
@@ -378,6 +388,7 @@ class HallaAudioManager(private val cacheDir: File) {
     fun forceStopTalking() {
         isPttPressed = false
         whisperPressed = false
+        whisperActivationPending = false
         if (isTalking) {
             isTalking = false
             HallaCore.sendTalking(false)

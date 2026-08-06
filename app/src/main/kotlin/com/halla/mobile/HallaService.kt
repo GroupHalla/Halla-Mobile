@@ -252,6 +252,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                     audio.isPttPressed = false
                     audio.forceStopTalking()
                     hidePttOverlay()
+                    showWhisperOverlays()
                 } else if (getSharedPreferences("HallaPrefs", MODE_PRIVATE)
                         .getBoolean(PREF_OVERLAY, false)) {
                     showPttOverlay()
@@ -444,6 +445,11 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun startAudio() {
         loadAudioSettings()
+        // Também é necessário quando a Activity está fechada: em alguns
+        // aparelhos, fora deste modo o serviço captura apenas silêncio.
+        try {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
+        } catch (_: Exception) { }
         // Não força um modo/stream especial antes de abrir o microfone: alguns
         // fabricantes deixam a captura sem dados nessa combinação. A fonte
         // MIC e a reprodução original do Mobile continuam sendo o caminho
@@ -787,7 +793,10 @@ class HallaService : Service(), HallaCore.Callbacks {
         // Ao trocar/remover destinos, interrompe imediatamente a transmissão
         // anterior para nunca vazar áudio para o canal normal.
         audio.whisperPressed = false
+        audio.whisperActivationPending = ids.isNotEmpty()
         audio.forceStopTalking()
+        // forceStopTalking limpa os estados de captura; restaura a barreira.
+        audio.whisperActivationPending = ids.isNotEmpty()
         HallaCore.sendRawJson(JSONObject().apply {
             put("t", "whisper")
             put("ids", JSONArray(ids))
@@ -799,6 +808,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             // antigos quando o usuário alterna rapidamente entre listas.
             handler.postDelayed({
                 if (generation == whisperActivationGeneration && activeWhispers.isNotEmpty()) {
+                    audio.whisperActivationPending = false
                     audio.whisperPressed = true
                 }
             }, 150L)
@@ -912,18 +922,22 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     private fun hidePttOverlay() {
-        try {
-            overlayView?.let { overlayWindow?.removeView(it) }
-            for (view in whisperViews.values) overlayWindow?.removeView(view)
-        } catch (_: Exception) {
-        }
+        try { overlayView?.let { overlayWindow?.removeView(it) } } catch (_: Exception) { }
         overlayView = null
+        overlayPttDown = false
+        // As listas de sussurro são independentes do PTT e permanecem
+        // disponíveis em VAD e transmissão contínua.
+        if (whisperViews.isEmpty()) overlayWindow = null
+    }
+
+    private fun hideWhisperOverlays() {
+        try { for (view in whisperViews.values) overlayWindow?.removeView(view) } catch (_: Exception) { }
         whisperViews.clear()
         activeWhispers.clear()
         audio.whisperPressed = false
-        if (overlayWindow != null) updateWhisperUnion()
-        overlayWindow = null
-        overlayPttDown = false
+        audio.whisperActivationPending = false
+        updateWhisperUnion()
+        if (overlayView == null) overlayWindow = null
     }
 
     private fun notifySocial(title: String, text: String) {
@@ -1072,6 +1086,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             try { connectivity.unregisterNetworkCallback(it) } catch (_: Exception) { }
         }
         hidePttOverlay()
+        hideWhisperOverlays()
         stopAudio()
         speechCuePlayer?.release()
         speechCuePlayer = null
