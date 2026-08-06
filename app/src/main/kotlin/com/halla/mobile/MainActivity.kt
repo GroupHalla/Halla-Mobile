@@ -366,7 +366,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12, 0, 0) }
             setOnClickListener {
-                val output = TextView(this@MainActivity).apply { setPadding(32, 24, 32, 24); setTextColor(Color.WHITE); textSize = 14f }
+                val output = TextView(this@MainActivity).apply {
+                    setPadding(32, 24, 32, 24)
+                    // AlertDialog padrão usa superfície clara; texto branco deixava
+                    // o diagnóstico existente, porém invisível.
+                    setTextColor(Color.BLACK)
+                    textSize = 14f
+                }
                 val dialog = AlertDialog.Builder(this@MainActivity).setTitle("Diagnóstico de voz").setView(output)
                     .setPositiveButton("Fechar", null).create()
                 val refresh = object : Runnable { override fun run() {
