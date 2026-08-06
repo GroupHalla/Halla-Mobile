@@ -306,9 +306,6 @@ Deseja baixar e instalar agora?</string>
     <string name="manage_group_members">Gerenciar usuários</string>
     <string name="remove_group_member">Remover usuário do grupo</string>
     <string name="remove">Remover</string>
-    <string name="register_self">Registrar minha identidade</string>
-    <string name="register_user">Registrar usuário</string>
-    <string name="registration_requested">Solicitação de registro enviada.</string>
     <string name="talk_power">Poder de fala</string>
     <string name="remove_ban">Remover banimento</string>
     <string name="no_reason">sem motivo</string>
@@ -326,8 +323,6 @@ Deseja baixar e instalar agora?</string>
     <string name="permission_delete_channel">Excluir canais</string>
     <string name="permission_edit_server">Editar servidor</string>
     <string name="permission_edit_groups">Editar grupos e atribuições</string>
-    <string name="permission_register_users">Registrar outros usuários</string>
-    <string name="permission_self_register">Permitir auto-registro</string>
     <string name="permission_ignore_password">Ignorar senha de canal</string>
     <string name="permission_ignore_talk_power">Ignorar poder de fala</string>
     <string name="permission_talk_power">Poder de fala</string>
@@ -362,7 +357,6 @@ Deseja baixar e instalar agora?</string>
     <string name="offline">Offline</string>
     <string name="unknown_value">Desconhecido</string>
     <string name="member_default">Membro</string>
-    <string name="unregistered_suffix">(não registrado)</string>
     <string name="default_channel_name">Canal %1$s</string>
     <string name="identity_list_item">%1$s (%2$s...)</string>
     <string name="identity_clip_label">UID Halla</string>

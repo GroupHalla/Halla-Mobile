@@ -67,10 +67,10 @@ jobs:
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.31
+            ## Halla Mobile v1.0.32
 
-            ### Correção dos grupos
-            * Corrigida a atualização da sigla/prefixo do cargo depois de atribuir o usuário a um grupo.
-            * A alteração aparece imediatamente sem precisar reconectar.
+            ### Remoção do registro
+            * Removido o sistema de registro separado; o UID continua sendo a identidade do cliente.
+            * Mantido o gerenciamento de grupos e a atualização imediata da sigla/prefixo dos cargos.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
