@@ -774,14 +774,35 @@ class HallaService : Service(), HallaCore.Callbacks {
         return out.filter { it > 0 }
     }
 
+    // O alvo do sussurro é estado TCP, enquanto os quadros de voz são UDP.
+    // Não podemos começar a capturar no mesmo instante em que enviamos o JSON:
+    // em conexões móveis o primeiro UDP pode alcançar o servidor antes do TCP
+    // "whisper" e ser encaminhado como fala normal do canal. Isso tornava o
+    // sussurro entre canais intermitente (ou completamente inaudível).
+    private var whisperActivationGeneration = 0
     private fun updateWhisperUnion() {
         val ids = activeWhispers.values.flatten().toSet().toList()
-        audio.whisperPressed = activeWhispers.isNotEmpty()
-        val json = JSONObject().apply {
+        val generation = ++whisperActivationGeneration
+
+        // Ao trocar/remover destinos, interrompe imediatamente a transmissão
+        // anterior para nunca vazar áudio para o canal normal.
+        audio.whisperPressed = false
+        audio.forceStopTalking()
+        HallaCore.sendRawJson(JSONObject().apply {
             put("t", "whisper")
             put("ids", JSONArray(ids))
+        }.toString())
+
+        if (ids.isNotEmpty()) {
+            // A pequena barreira dá ao servidor tempo para aplicar o estado
+            // TCP antes do primeiro frame UDP. O contador descarta callbacks
+            // antigos quando o usuário alterna rapidamente entre listas.
+            handler.postDelayed({
+                if (generation == whisperActivationGeneration && activeWhispers.isNotEmpty()) {
+                    audio.whisperPressed = true
+                }
+            }, 150L)
         }
-        HallaCore.sendRawJson(json.toString())
     }
 
     private fun hasFloatingWhisperLists(): Boolean {

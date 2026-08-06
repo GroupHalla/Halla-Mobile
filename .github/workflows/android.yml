@@ -58,34 +58,19 @@ jobs:
         with:
           name: halla-mobile-apk
 
-      - name: Remover releases anteriores
-        if: startsWith(github.ref, 'refs/tags/') && github.ref_name == 'v1.0.0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          repo="GroupHalla/Halla-Mobile"
-          current="${GITHUB_REF_NAME}"
-          for tag in $(gh release list --repo "$repo" --limit 100 --json tagName --jq '.[].tagName'); do
-            if [ "$tag" != "$current" ]; then
-              gh release delete "$tag" --repo "$repo" --cleanup-tag --yes
-            fi
-          done
-          if gh release view "$current" --repo "$repo" >/dev/null 2>&1; then
-            gh release delete "$current" --repo "$repo" --yes
-          fi
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Halla Mobile v1.0.0 OFICIAL
+          name: Halla Mobile ${{ github.ref_name }}
           draft: false
           prerelease: false
           files: HallaMobile.apk
           body: |
-            ## Halla Mobile v1.0.0 OFICIAL
+            ## Halla Mobile ${{ github.ref_name }}
 
-            ### Versão oficial
+            ### Atualização oficial
+            * Correção de sincronização TCP/UDP para sussurros entre canais no Mobile.
             * UID como identidade persistente do cliente.
             * Gerenciamento de grupos e cargos.
             * Áudio com redução de ruído e cancelamento de eco quando disponíveis no Android.
