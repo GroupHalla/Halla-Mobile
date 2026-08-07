@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName get() = "v${BuildConfig.VERSION_NAME}"
+    private val currentVersionName get() = "v${packageManager.getPackageInfo(packageName, 0).versionName}"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
