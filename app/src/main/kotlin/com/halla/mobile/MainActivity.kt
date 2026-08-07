@@ -199,7 +199,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeScreenId = R.id.layoutConnect
 
     // Versão atual do aplicativo móvel
-    private val currentVersionName = "v1.0.32"
+    private val currentVersionName get() = "v${BuildConfig.VERSION_NAME}"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleManager.wrap(newBase))
@@ -1095,6 +1095,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Atualizador Automático via API de Releases do GitHub (Sem bugs!)
     // ============================================================================
 
+    private fun normalizeVersion(value: String): String = value.trim().removePrefix("v").removePrefix("V")
+
     private fun checkForUpdatesSilently() {
         val settingsPrefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
         val allowAutoUpdate = settingsPrefs.getBoolean("auto_update", true)
@@ -1123,7 +1125,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val body = json.optString("body", "")
                     val apkUrl = findApkDownloadUrl(json)
 
-                    if (tag.isNotEmpty() && tag != currentVersionName) {
+                    if (tag.isNotEmpty() && normalizeVersion(tag) != normalizeVersion(currentVersionName)) {
                         runOnUiThread {
                             showUpdateNotificationDialog(tag, body, apkUrl)
                         }
@@ -1158,7 +1160,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val tag = json.optString("tag_name", "")
                     val apkUrl = findApkDownloadUrl(json)
                     runOnUiThread {
-                        if (tag.isNotEmpty() && tag != currentVersionName) {
+                        if (tag.isNotEmpty() && normalizeVersion(tag) != normalizeVersion(currentVersionName)) {
                             showUpdateNotificationDialog(tag, json.optString("body", ""), apkUrl)
                         } else {
                             AlertDialog.Builder(this)
