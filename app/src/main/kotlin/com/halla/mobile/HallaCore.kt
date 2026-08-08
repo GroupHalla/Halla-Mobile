@@ -1,10 +1,61 @@
 package com.halla.mobile
 
+import android.content.Context
+import android.util.Base64
+import java.security.KeyFactory
+import java.security.KeyPairGenerator
+import java.security.MessageDigest
+import java.security.Signature
+import java.security.spec.PKCS8EncodedKeySpec
 import java.util.concurrent.CopyOnWriteArraySet
 
 object HallaCore {
+    private var appContext: Context? = null
+
     init {
         System.loadLibrary("halla-core")
+    }
+
+    fun prepareIdentity(context: Context, uidAlias: String): String {
+        appContext = context.applicationContext
+        return ensureIdentity(uidAlias)
+    }
+
+    private fun ensureIdentity(uidAlias: String): String {
+        val ctx = appContext ?: return uidAlias
+        val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
+        val alias = uidAlias.ifEmpty { "default" }
+        if (prefs.getString("$alias.public", null) == null || prefs.getString("$alias.private", null) == null) {
+            val kpg = KeyPairGenerator.getInstance("Ed25519")
+            val kp = kpg.generateKeyPair()
+            prefs.edit()
+                .putString("$alias.public", Base64.encodeToString(kp.public.encoded, Base64.NO_WRAP))
+                .putString("$alias.private", Base64.encodeToString(kp.private.encoded, Base64.NO_WRAP))
+                .apply()
+        }
+        val pub = Base64.decode(prefs.getString("$alias.public", "") ?: "", Base64.NO_WRAP)
+        return Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(pub), Base64.NO_WRAP)
+    }
+
+    @JvmStatic
+    fun identityPublicKeyBase64(uidAlias: String): String {
+        val ctx = appContext ?: return ""
+        ensureIdentity(uidAlias)
+        return ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
+            .getString("${uidAlias.ifEmpty { "default" }}.public", "") ?: ""
+    }
+
+    @JvmStatic
+    fun signIdentityNonceBase64(uidAlias: String, nonceB64: String): String {
+        val ctx = appContext ?: return ""
+        ensureIdentity(uidAlias)
+        val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
+        val privDer = Base64.decode(prefs.getString("${uidAlias.ifEmpty { "default" }}.private", "") ?: "", Base64.NO_WRAP)
+        val priv = KeyFactory.getInstance("Ed25519").generatePrivate(PKCS8EncodedKeySpec(privDer))
+        val sig = Signature.getInstance("Ed25519")
+        sig.initSign(priv)
+        sig.update(Base64.decode(nonceB64, Base64.NO_WRAP))
+        return Base64.encodeToString(sig.sign(), Base64.NO_WRAP)
     }
 
     // Funções nativas C++ para serem chamadas pelo Kotlin

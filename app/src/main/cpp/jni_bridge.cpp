@@ -58,6 +58,8 @@ static jmethodID g_onConnectionFailedMethod = nullptr;
 static jmethodID g_onErrorMethod = nullptr;
 static jmethodID g_onPingMethod = nullptr;
 static jmethodID g_onPokeMethod = nullptr;
+static jmethodID g_identityPublicKeyMethod = nullptr;
+static jmethodID g_signIdentityNonceMethod = nullptr;
 
 static std::string g_cachePath = "";
 
@@ -575,6 +577,50 @@ void invokeOnPoke(const std::string& fromName, const std::string& msg) {
 }
 
 // Motor de Rede C++ Portável e de Alta Performance para o Halla Mobile
+
+std::string callStaticStringString(jmethodID method, const std::string& a) {
+    if (!g_vm || !g_coreClass || !method) return "";
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    std::string out;
+    if (env) {
+        jstring ja = env->NewStringUTF(a.c_str());
+        jstring jr = (jstring)env->CallStaticObjectMethod(g_coreClass, method, ja);
+        env->DeleteLocalRef(ja);
+        if (jr) {
+            const char* chars = env->GetStringUTFChars(jr, nullptr);
+            if (chars) { out = chars; env->ReleaseStringUTFChars(jr, chars); }
+            env->DeleteLocalRef(jr);
+        }
+    }
+    if (attached) g_vm->DetachCurrentThread();
+    return out;
+}
+
+std::string callStaticStringStringString(jmethodID method, const std::string& a, const std::string& b) {
+    if (!g_vm || !g_coreClass || !method) return "";
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    std::string out;
+    if (env) {
+        jstring ja = env->NewStringUTF(a.c_str());
+        jstring jb = env->NewStringUTF(b.c_str());
+        jstring jr = (jstring)env->CallStaticObjectMethod(g_coreClass, method, ja, jb);
+        env->DeleteLocalRef(ja); env->DeleteLocalRef(jb);
+        if (jr) {
+            const char* chars = env->GetStringUTFChars(jr, nullptr);
+            if (chars) { out = chars; env->ReleaseStringUTFChars(jr, chars); }
+            env->DeleteLocalRef(jr);
+        }
+    }
+    if (attached) g_vm->DetachCurrentThread();
+    return out;
+}
+
 class HallaClientCore {
 public:
     static HallaClientCore& getInstance() {
@@ -1050,10 +1096,12 @@ private:
         writeLog("TLS pronto. Enviando pacote Hello...");
 
         const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
+        const std::string idPub = callStaticStringString(g_identityPublicKeyMethod, uid);
         std::string hello = "{\"t\":\"hello\",\"proto\":3,\"uid\":\"" +
-                            jsonEscape(uid) + "\",\"nick\":\"" + jsonEscape(m_nick) +
+                            jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
+                            "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.9-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.10-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1112,6 +1160,19 @@ private:
             writeLog("Recebido pacote TCP de tamanho: " + std::to_string(line.length()));
             std::string t = jsonExtractString(line, "t");
             writeLog("Tipo de pacote extraído (t): " + t);
+
+            if (t == "identity_challenge") {
+                const std::string nonce = jsonExtractString(line, "nonce");
+                const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
+                const std::string sig = callStaticStringStringString(g_signIdentityNonceMethod, uid, nonce);
+                if (sig.empty()) {
+                    invokeOnConnectionFailed("Não foi possível assinar o desafio da identidade");
+                    m_connected = false;
+                    return;
+                }
+                sendTcp("{\"t\":\"identity_proof\",\"sig\":\"" + jsonEscape(sig) + "\"}\n");
+                return;
+            }
 
             if (t == "error") {
                 std::string code = jsonExtractString(line, "code");
@@ -1424,6 +1485,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onErrorMethod = env->GetStaticMethodID(g_coreClass, "triggerOnError", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onPingMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPing", "(II)V");
     g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
+    g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
 
     return JNI_VERSION_1_6;
 }

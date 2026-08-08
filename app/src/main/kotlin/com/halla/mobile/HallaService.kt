@@ -339,6 +339,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         }
         if (!connecting && !sessionActive && host.isNotEmpty()) {
             connecting = true
+            HallaCore.prepareIdentity(this, uid)
             HallaCore.connectToServer(host, port, nick, pass, cachePath, uid)
         }
     }
@@ -634,6 +635,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                 return@Runnable
             }
             connecting = true
+            HallaCore.prepareIdentity(this, uid)
             HallaCore.connectToServer(host, port, nick, pass, cachePath, uid)
         }
         handler.postDelayed(reconnectRunnable!!, nextDelay)

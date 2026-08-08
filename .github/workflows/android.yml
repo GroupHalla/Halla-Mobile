@@ -70,8 +70,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Novidades
-            * Canal de controle TLS no núcleo nativo com pinning TOFU do fingerprint do servidor.
-            * Consulta server_probe também via TLS com pinning, compatível com o servidor atual.
-            * Suporte às chaves de voz por canal para manter áudio cifrado compatível com Desktop e Server.
+            * Identidade Ed25519 persistente no app, com UID derivado da chave pública.
+            * Login com desafio assinado pelo cliente antes do servidor aceitar a sessão.
+            * Mantém TLS/pinning no controle e voz cifrada por canal.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
