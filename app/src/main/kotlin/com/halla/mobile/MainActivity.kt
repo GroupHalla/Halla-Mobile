@@ -49,6 +49,12 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -2248,11 +2254,34 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             thread {
                 val startTime = System.currentTimeMillis()
-                var socket: java.net.Socket? = null
+                var socket: SSLSocket? = null
                 try {
-                    socket = java.net.Socket()
+                    val trustAll = object : X509TrustManager {
+                        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+                    }
+                    val sslContext = SSLContext.getInstance("TLS")
+                    sslContext.init(null, arrayOf(trustAll), SecureRandom())
+                    socket = sslContext.socketFactory.createSocket() as SSLSocket
                     socket.soTimeout = 1800
                     socket.connect(java.net.InetSocketAddress(host, port), 1800)
+                    socket.startHandshake()
+
+                    val cert = socket.session.peerCertificates.firstOrNull()?.encoded
+                        ?: throw SecurityException("Servidor sem certificado TLS")
+                    val fp = MessageDigest.getInstance("SHA-256")
+                        .digest(cert)
+                        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                    val pins = getSharedPreferences("HallaTlsPins", Context.MODE_PRIVATE)
+                    val pinKey = "$host:$port"
+                    val saved = pins.getString(pinKey, null)
+                    if (saved == null) {
+                        pins.edit().putString(pinKey, fp).apply()
+                    } else if (saved != fp) {
+                        throw SecurityException("Fingerprint TLS mudou")
+                    }
+
                     socket.getOutputStream().write("{\"t\":\"server_probe\"}\n".toByteArray(Charsets.UTF_8))
                     socket.getOutputStream().flush()
 

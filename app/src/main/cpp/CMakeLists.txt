@@ -14,11 +14,20 @@ FetchContent_Declare(
   GIT_TAG        v1.4
 )
 
+FetchContent_Declare(
+  mbedtls
+  GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
+  GIT_TAG        v3.6.2
+)
+
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "Build programs" FORCE)
 set(OPUS_BUILD_TESTS OFF CACHE BOOL "Build tests" FORCE)
 set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "Build shared library" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "Disable mbedTLS tests" FORCE)
+set(ENABLE_PROGRAMS OFF CACHE BOOL "Disable mbedTLS programs" FORCE)
+set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "No fatal warnings" FORCE)
 
-FetchContent_MakeAvailable(opus)
+FetchContent_MakeAvailable(opus mbedtls)
 
 add_library(halla-core SHARED
     jni_bridge.cpp
@@ -26,9 +35,12 @@ add_library(halla-core SHARED
 
 find_library(log-lib log)
 
-target_compile_definitions(halla-core PRIVATE HAS_OPUS)
+target_compile_definitions(halla-core PRIVATE HAS_OPUS HAS_MBEDTLS)
 
 target_link_libraries(halla-core PRIVATE
     ${log-lib}
     opus
+    mbedtls
+    mbedx509
+    mbedcrypto
 )

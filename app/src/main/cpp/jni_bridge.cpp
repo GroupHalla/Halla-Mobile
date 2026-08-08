@@ -18,6 +18,19 @@
 #include <cstring>
 #include <exception>
 #include <algorithm>
+#include <cerrno>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <cctype>
+
+#include <mbedtls/ssl.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/error.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/sha256.h>
+#include <mbedtls/base64.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -147,6 +160,83 @@ uint64_t nowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
+std::string hexEncode(const unsigned char* data, size_t len) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (size_t i = 0; i < len; ++i)
+        oss << std::setw(2) << static_cast<int>(data[i]);
+    return oss.str();
+}
+
+std::vector<char> base64DecodeBytes(const std::string& b64) {
+    if (b64.empty()) return {};
+    size_t outLen = 0;
+    mbedtls_base64_decode(nullptr, 0, &outLen,
+                          reinterpret_cast<const unsigned char*>(b64.data()), b64.size());
+    if (outLen == 0) return {};
+    std::vector<unsigned char> out(outLen);
+    if (mbedtls_base64_decode(out.data(), out.size(), &outLen,
+                              reinterpret_cast<const unsigned char*>(b64.data()), b64.size()) != 0) {
+        return {};
+    }
+    return std::vector<char>(reinterpret_cast<char*>(out.data()),
+                             reinterpret_cast<char*>(out.data()) + outLen);
+}
+
+std::vector<char> voiceEncryptDecrypt(const char* data, int size, const std::vector<char>& key, uint16_t seq) {
+    std::vector<char> output;
+    if (!data || size <= 0) return output;
+    output.assign(data, data + size);
+    if (key.size() < 16) return output;
+
+    uint32_t state[4];
+    memcpy(state, key.data(), 16);
+    state[0] ^= seq;
+    state[1] ^= (static_cast<uint32_t>(seq) << 16);
+    state[2] ^= 0xDEADBEEF;
+    state[3] ^= 0xCAFEBABE;
+
+    auto rotl = [](uint32_t x, int k) -> uint32_t {
+        return (x << k) | (x >> (32 - k));
+    };
+    auto next = [&]() -> uint32_t {
+        const uint32_t result = rotl(state[0] + state[3], 7) * 9;
+        const uint32_t t = state[1] << 9;
+        state[2] ^= state[0];
+        state[3] ^= state[1];
+        state[1] ^= state[2];
+        state[0] ^= state[3];
+        state[2] ^= t;
+        state[3] = rotl(state[3], 11);
+        return result;
+    };
+
+    for (int i = 0; i < size; i += 4) {
+        uint32_t ks = next();
+        const int limit = std::min(4, size - i);
+        for (int j = 0; j < limit; ++j)
+            output[i + j] ^= reinterpret_cast<char*>(&ks)[j];
+    }
+    return output;
+}
+
+static int tlsSendCallback(void* ctx, const unsigned char* buf, size_t len) {
+    int fd = *static_cast<int*>(ctx);
+    const ssize_t r = send(fd, buf, len, MSG_NOSIGNAL);
+    if (r >= 0) return static_cast<int>(r);
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_WRITE;
+    return MBEDTLS_ERR_NET_SEND_FAILED;
+}
+
+static int tlsRecvCallback(void* ctx, unsigned char* buf, size_t len) {
+    int fd = *static_cast<int*>(ctx);
+    const ssize_t r = recv(fd, buf, len, 0);
+    if (r > 0) return static_cast<int>(r);
+    if (r == 0) return MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return MBEDTLS_ERR_SSL_WANT_READ;
+    return MBEDTLS_ERR_NET_RECV_FAILED;
+}
+
 // Helpers to extract JSON string fields (zero dependencies, ultra fast & safe)
 std::string jsonExtractString(const std::string& json, const std::string& key) {
     size_t pos = json.find("\"" + key + "\"");
@@ -214,6 +304,55 @@ std::string jsonExtractArray(const std::string& json, const std::string& key) {
         }
     }
     return "[]";
+}
+
+std::string jsonExtractObject(const std::string& json, const std::string& key) {
+    size_t pos = json.find("\"" + key + "\"");
+    if (pos == std::string::npos) return "{}";
+    pos = json.find("{", pos);
+    if (pos == std::string::npos) return "{}";
+    const size_t start = pos;
+    int depth = 0;
+    bool inString = false;
+    bool escaped = false;
+    for (size_t i = start; i < json.size(); ++i) {
+        const char c = json[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (c == '\\') escaped = true;
+            else if (c == '"') inString = false;
+            continue;
+        }
+        if (c == '"') inString = true;
+        else if (c == '{') ++depth;
+        else if (c == '}') {
+            --depth;
+            if (depth == 0) return json.substr(start, i - start + 1);
+        }
+    }
+    return "{}";
+}
+
+std::vector<std::string> jsonObjectStringValues(const std::string& obj) {
+    std::vector<std::string> values;
+    size_t pos = 0;
+    while (true) {
+        pos = obj.find(':', pos);
+        if (pos == std::string::npos) break;
+        pos = obj.find('"', pos);
+        if (pos == std::string::npos) break;
+        size_t start = pos + 1;
+        size_t end = start;
+        while (end < obj.size()) {
+            end = obj.find('"', end);
+            if (end == std::string::npos) return values;
+            if (obj[end - 1] != '\\') break;
+            ++end;
+        }
+        values.push_back(jsonUnescape(obj.substr(start, end - start)));
+        pos = end + 1;
+    }
+    return values;
 }
 
 // Thread-safe helpers to invoke JNI callbacks from background C++ threads
@@ -457,6 +596,11 @@ public:
         m_lastPingSentMs = 0;
         m_pingTotal = 0;
         m_pingSuccess = 0;
+        {
+            std::lock_guard<std::mutex> keyLock(m_keyMutex);
+            m_channelKeys.clear();
+            m_currentVoiceKey.clear();
+        }
 
         // Inicializa o codificador Opus Oficial de voz VoIP
         int err = 0;
@@ -481,6 +625,10 @@ public:
         // conexão, o que terminava o processo com std::terminate.
         {
             std::lock_guard<std::mutex> tcpLock(m_tcpMutex);
+            if (m_tlsReady) {
+                mbedtls_ssl_close_notify(&m_ssl);
+                m_tlsReady = false;
+            }
             if (m_tcpSocket != -1) {
                 shutdown(m_tcpSocket, SHUT_RDWR);
                 close(m_tcpSocket);
@@ -502,6 +650,10 @@ public:
         if (m_natThread.joinable() && m_natThread.get_id() != self) m_natThread.join();
         if (m_udpThread.joinable() && m_udpThread.get_id() != self) m_udpThread.join();
         if (m_tcpThread.joinable() && m_tcpThread.get_id() != self) m_tcpThread.join();
+        {
+            std::lock_guard<std::mutex> tcpLock(m_tcpMutex);
+            freeTlsLocked();
+        }
         m_udpPort.store(0);
         m_voiceToken.store(0);
         m_authenticated = false;
@@ -622,12 +774,18 @@ public:
         const uint32_t voiceToken = m_voiceToken.load();
         if (socketFd == -1 || udpPort == 0 || voiceToken == 0) return;
 
-        std::vector<char> packet(10 + size);
+        std::vector<char> payload;
+        if (size > 0 && pcm != nullptr) {
+            std::lock_guard<std::mutex> keyLock(m_keyMutex);
+            payload = voiceEncryptDecrypt(pcm, size, m_currentVoiceKey, seq);
+        }
+
+        std::vector<char> packet(10 + payload.size());
         memcpy(packet.data(), "HALL", 4);
         memcpy(packet.data() + 4, &voiceToken, 4);
         memcpy(packet.data() + 8, &seq, 2);
-        if (size > 0 && pcm != nullptr) {
-            memcpy(packet.data() + 10, pcm, size);
+        if (!payload.empty()) {
+            memcpy(packet.data() + 10, payload.data(), payload.size());
         }
 
         m_serverUdpAddr.sin_port = htons(static_cast<uint16_t>(udpPort));
@@ -689,18 +847,121 @@ private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
                          m_authenticated(false), m_pingPending(false),
                          m_lastPingSentMs(0), m_pingTotal(0), m_pingSuccess(0),
-                         m_udpPort(0), m_voiceToken(0), m_encoder(nullptr) {}
-    ~HallaClientCore() { disconnect(); }
+                         m_udpPort(0), m_voiceToken(0), m_encoder(nullptr),
+                         m_tlsReady(false), m_tlsInited(false) {}
+    ~HallaClientCore() {
+        disconnect();
+        std::lock_guard<std::mutex> tcpLock(m_tcpMutex);
+        freeTlsLocked();
+    }
 
     void sendTcp(const std::string& data) {
         std::lock_guard<std::mutex> lock(m_tcpMutex);
-        if (m_tcpSocket == -1 || data.empty()) return;
+        if (m_tcpSocket == -1 || data.empty() || !m_tlsReady) return;
         size_t sent = 0;
         while (sent < data.size() && m_connected) {
-            const ssize_t n = send(m_tcpSocket, data.data() + sent,
-                                   data.size() - sent, MSG_NOSIGNAL);
+            const int n = mbedtls_ssl_write(&m_ssl,
+                reinterpret_cast<const unsigned char*>(data.data() + sent),
+                data.size() - sent);
+            if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE)
+                continue;
             if (n <= 0) break;
             sent += static_cast<size_t>(n);
+        }
+    }
+
+    void initTlsLocked() {
+        freeTlsLocked();
+        mbedtls_ssl_init(&m_ssl);
+        mbedtls_ssl_config_init(&m_sslConf);
+        mbedtls_ctr_drbg_init(&m_ctrDrbg);
+        mbedtls_entropy_init(&m_entropy);
+        m_tlsInited = true;
+    }
+
+    void freeTlsLocked() {
+        if (!m_tlsInited) return;
+        mbedtls_ssl_free(&m_ssl);
+        mbedtls_ssl_config_free(&m_sslConf);
+        mbedtls_ctr_drbg_free(&m_ctrDrbg);
+        mbedtls_entropy_free(&m_entropy);
+        m_tlsReady = false;
+        m_tlsInited = false;
+    }
+
+    bool setupTls(const std::string& host, int port) {
+        {
+            std::lock_guard<std::mutex> lock(m_tcpMutex);
+            initTlsLocked();
+        }
+        const char* pers = "halla-mobile-tls";
+        int ret = mbedtls_ctr_drbg_seed(&m_ctrDrbg, mbedtls_entropy_func, &m_entropy,
+                                        reinterpret_cast<const unsigned char*>(pers), strlen(pers));
+        if (ret != 0) { writeLog("TLS: falha ao semear DRBG"); return false; }
+        ret = mbedtls_ssl_config_defaults(&m_sslConf, MBEDTLS_SSL_IS_CLIENT,
+                                          MBEDTLS_SSL_TRANSPORT_STREAM,
+                                          MBEDTLS_SSL_PRESET_DEFAULT);
+        if (ret != 0) { writeLog("TLS: config_defaults falhou"); return false; }
+        mbedtls_ssl_conf_authmode(&m_sslConf, MBEDTLS_SSL_VERIFY_NONE);
+        mbedtls_ssl_conf_rng(&m_sslConf, mbedtls_ctr_drbg_random, &m_ctrDrbg);
+        ret = mbedtls_ssl_setup(&m_ssl, &m_sslConf);
+        if (ret != 0) { writeLog("TLS: ssl_setup falhou"); return false; }
+        mbedtls_ssl_set_hostname(&m_ssl, host.c_str());
+        mbedtls_ssl_set_bio(&m_ssl, &m_tcpSocket, tlsSendCallback, tlsRecvCallback, nullptr);
+        while ((ret = mbedtls_ssl_handshake(&m_ssl)) != 0) {
+            if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
+            char errBuf[128];
+            mbedtls_strerror(ret, errBuf, sizeof(errBuf));
+            writeLog(std::string("TLS: handshake falhou: ") + errBuf);
+            return false;
+        }
+        const mbedtls_x509_crt* cert = mbedtls_ssl_get_peer_cert(&m_ssl);
+        if (!cert || cert->raw.len == 0) {
+            writeLog("TLS: servidor não apresentou certificado");
+            return false;
+        }
+        unsigned char hash[32];
+        mbedtls_sha256(cert->raw.p, cert->raw.len, hash, 0);
+        const std::string fingerprint = hexEncode(hash, sizeof(hash));
+        if (!g_cachePath.empty()) {
+            std::string safeHost = host;
+            for (char& c : safeHost)
+                if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_')) c = '_';
+            const std::string pinPath = g_cachePath + "/tls_fingerprint_" + safeHost + "_" + std::to_string(port) + ".txt";
+            std::ifstream in(pinPath);
+            std::string saved;
+            if (in.good()) std::getline(in, saved);
+            if (saved.empty()) {
+                std::ofstream out(pinPath, std::ios::trunc);
+                out << fingerprint;
+                writeLog("TLS: fingerprint salvo (TOFU)");
+            } else if (saved != fingerprint) {
+                writeLog("TLS: fingerprint mudou; conexão recusada");
+                invokeOnConnectionFailed("ALERTA DE SEGURANÇA: o fingerprint TLS do servidor mudou.");
+                return false;
+            }
+        }
+        m_tlsReady = true;
+        writeLog("TLS: canal de controle protegido e validado por TOFU");
+        return true;
+    }
+
+    void installChannelKey(int channelId, const std::string& keyB64) {
+        const std::vector<char> key = base64DecodeBytes(keyB64);
+        if (channelId <= 0 || key.size() < 16) return;
+        std::lock_guard<std::mutex> lock(m_keyMutex);
+        m_channelKeys[channelId] = key;
+        m_currentVoiceKey = key;
+    }
+
+    void installWelcomeKeys(const std::string& line) {
+        const std::string keysObj = jsonExtractObject(line, "channelKeys");
+        for (const std::string& value : jsonObjectStringValues(keysObj)) {
+            const std::vector<char> key = base64DecodeBytes(value);
+            if (key.size() >= 16) {
+                std::lock_guard<std::mutex> lock(m_keyMutex);
+                if (m_currentVoiceKey.empty()) m_currentVoiceKey = key;
+            }
         }
     }
 
@@ -719,15 +980,26 @@ private:
 
     void decodeAndNotifyVoice(uint32_t fromId, uint16_t seq, const char* opusData, int size) {
         OpusDecoder* dec = getOrCreateDecoder(fromId);
-        if (!dec) return;
+        if (!dec || !opusData || size <= 0) return;
 
         int16_t pcm[960]; // Amortiza em blocos padrão de 20ms @ 48kHz
-        if (size > 0) {
-            int n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
-            if (n > 0) {
-                // Envia o áudio descriptografado PCM cru para o Android tocar
-                invokeOnAudioFrame(fromId, reinterpret_cast<const char*>(pcm), n * 2);
-            }
+        std::vector<char> decrypted;
+        {
+            std::lock_guard<std::mutex> keyLock(m_keyMutex);
+            decrypted = voiceEncryptDecrypt(opusData, size, m_currentVoiceKey, seq);
+        }
+
+        int n = -1;
+        if (!decrypted.empty()) {
+            n = opus_decode(dec, reinterpret_cast<const unsigned char*>(decrypted.data()),
+                            decrypted.size(), pcm, 960, 0);
+        }
+        // Compatibilidade com servidores/clientes antigos sem channel_key.
+        if (n <= 0) {
+            n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
+        }
+        if (n > 0) {
+            invokeOnAudioFrame(fromId, reinterpret_cast<const char*>(pcm), n * 2);
         }
     }
 
@@ -767,13 +1039,21 @@ private:
             return;
         }
 
-        writeLog("TCP Conectado! Enviando pacote Hello...");
+        writeLog("TCP conectado. Iniciando TLS...");
+        if (!setupTls(hostStr, port)) {
+            m_connected = false;
+            close(m_tcpSocket);
+            m_tcpSocket = -1;
+            if (!m_authenticated) invokeOnConnectionFailed("Falha no handshake TLS");
+            return;
+        }
+        writeLog("TLS pronto. Enviando pacote Hello...");
 
         const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
         std::string hello = "{\"t\":\"hello\",\"proto\":3,\"uid\":\"" +
                             jsonEscape(uid) + "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.8-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.9-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -783,9 +1063,10 @@ private:
         std::string buffer;
         char tempBuf[1024];
         while (m_connected) {
-            int n = recv(m_tcpSocket, tempBuf, sizeof(tempBuf) - 1, 0);
+            int n = mbedtls_ssl_read(&m_ssl, reinterpret_cast<unsigned char*>(tempBuf), sizeof(tempBuf) - 1);
+            if (n == MBEDTLS_ERR_SSL_WANT_READ || n == MBEDTLS_ERR_SSL_WANT_WRITE) continue;
             if (n <= 0) {
-                writeLog("TCP conexao fechada pelo servidor remoto.");
+                writeLog("TLS/TCP conexao fechada pelo servidor remoto.");
                 break;
             }
             tempBuf[n] = '\0';
@@ -872,6 +1153,7 @@ private:
                     m_voiceToken.store(safeStoul(jsonExtractString(voiceObj, "token")));
                 }
                 writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
+                installWelcomeKeys(line);
 
                 // Prepara o UDP ANTES de notificar o Kotlin. O callback de
                 // onConnected inicia a captura; antes isso criava uma janela
@@ -892,6 +1174,11 @@ private:
                 m_voiceToken.store(safeStoul(jsonExtractString(line, "token")));
                 writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
                 setupUdpVoice();
+                return;
+            }
+
+            if (t == "channel_key") {
+                installChannelKey(jsonExtractInt(line, "channel"), jsonExtractString(line, "key"));
                 return;
             }
 
@@ -1082,6 +1369,7 @@ private:
     std::mutex m_tcpMutex;
     std::mutex m_udpMutex;
     std::mutex m_codecMutex;
+    std::mutex m_keyMutex;
     std::thread m_tcpThread;
     std::thread m_udpThread;
     std::thread m_pingThread;
@@ -1092,6 +1380,16 @@ private:
     struct sockaddr_in m_serverUdpAddr;
     std::vector<int16_t> m_encodePcm;
     uint16_t m_voiceSeq = 0;
+
+    mbedtls_ssl_context m_ssl;
+    mbedtls_ssl_config m_sslConf;
+    mbedtls_ctr_drbg_context m_ctrDrbg;
+    mbedtls_entropy_context m_entropy;
+    bool m_tlsReady;
+    bool m_tlsInited;
+
+    std::map<int, std::vector<char>> m_channelKeys;
+    std::vector<char> m_currentVoiceKey;
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;

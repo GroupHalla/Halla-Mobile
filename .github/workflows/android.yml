@@ -69,10 +69,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Atualização oficial
-            * Correção de sincronização TCP/UDP para sussurros entre canais no Mobile.
-            * UID como identidade persistente do cliente.
-            * Gerenciamento de grupos e cargos.
-            * Áudio com redução de ruído e cancelamento de eco quando disponíveis no Android.
+            ### Novidades
+            * Canal de controle TLS no núcleo nativo com pinning TOFU do fingerprint do servidor.
+            * Consulta server_probe também via TLS com pinning, compatível com o servidor atual.
+            * Suporte às chaves de voz por canal para manter áudio cifrado compatível com Desktop e Server.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
