@@ -8,7 +8,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-android:
@@ -39,19 +39,25 @@ jobs:
         run: ./gradlew assembleDebug
 
       - name: Copy APK to root
-        run: cp app/build/outputs/apk/debug/app-debug.apk HallaMobile.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk HallaMobile.apk
+          sha256sum HallaMobile.apk > HallaMobile.apk.sha256
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: halla-mobile-apk
-          path: HallaMobile.apk
+          path: |
+            HallaMobile.apk
+            HallaMobile.apk.sha256
 
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
     needs: build-android
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download APK Artifact
         uses: actions/download-artifact@v4
@@ -65,13 +71,15 @@ jobs:
           name: Halla Mobile ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: HallaMobile.apk
+          files: |
+            HallaMobile.apk
+            HallaMobile.apk.sha256
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Novidades
-            * Identidade Ed25519 persistente no app, com UID derivado da chave pública.
-            * Login com desafio assinado pelo cliente antes do servidor aceitar a sessão.
-            * Mantém TLS/pinning no controle e voz cifrada por canal.
+            * Atualizador in-app agora exige HTTPS confiável e valida SHA-256 do APK antes de instalar.
+            * Release publica HallaMobile.apk.sha256 junto do APK para verificação local.
+            * Parser nativo recebeu limites de tamanho para reduzir superfície de DoS por JSON grande.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

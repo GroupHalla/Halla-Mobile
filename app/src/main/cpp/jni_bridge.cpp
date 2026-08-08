@@ -62,6 +62,7 @@ static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
 
 static std::string g_cachePath = "";
+static constexpr size_t kMaxJsonLineBytes = 2 * 1024 * 1024;
 
 // Logging local para depuração em tempo real no dispositivo
 void writeLog(const std::string& msg) {
@@ -241,6 +242,7 @@ static int tlsRecvCallback(void* ctx, unsigned char* buf, size_t len) {
 
 // Helpers to extract JSON string fields (zero dependencies, ultra fast & safe)
 std::string jsonExtractString(const std::string& json, const std::string& key) {
+    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "";
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return "";
     pos = json.find(":", pos);
@@ -261,6 +263,7 @@ std::string jsonExtractString(const std::string& json, const std::string& key) {
 }
 
 int jsonExtractInt(const std::string& json, const std::string& key) {
+    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return 0;
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return 0;
     pos = json.find(":", pos);
@@ -274,6 +277,7 @@ int jsonExtractInt(const std::string& json, const std::string& key) {
 }
 
 uint64_t jsonExtractUint64(const std::string& json, const std::string& key) {
+    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return 0;
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return 0;
     pos = json.find(":", pos);
@@ -290,6 +294,7 @@ uint64_t jsonExtractUint64(const std::string& json, const std::string& key) {
 }
 
 std::string jsonExtractArray(const std::string& json, const std::string& key) {
+    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "[]";
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return "[]";
     pos = json.find("[", pos);
@@ -309,6 +314,7 @@ std::string jsonExtractArray(const std::string& json, const std::string& key) {
 }
 
 std::string jsonExtractObject(const std::string& json, const std::string& key) {
+    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "{}";
     size_t pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) return "{}";
     pos = json.find("{", pos);
@@ -1101,7 +1107,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.10-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.11-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1119,6 +1125,11 @@ private:
             }
             tempBuf[n] = '\0';
             buffer += tempBuf;
+            if (buffer.size() > kMaxJsonLineBytes) {
+                writeLog("TCP: linha JSON excedeu 2 MiB; encerrando conexão");
+                m_connected = false;
+                break;
+            }
 
             size_t pos;
             while ((pos = buffer.find('\n')) != std::string::npos) {
@@ -1157,6 +1168,10 @@ private:
 
     void handleTcpPacket(const std::string& line) {
         try {
+            if (line.size() > kMaxJsonLineBytes) {
+                writeLog("TCP: pacote JSON ignorado por exceder 2 MiB");
+                return;
+            }
             writeLog("Recebido pacote TCP de tamanho: " + std::to_string(line.length()));
             std::string t = jsonExtractString(line, "t");
             writeLog("Tipo de pacote extraído (t): " + t);

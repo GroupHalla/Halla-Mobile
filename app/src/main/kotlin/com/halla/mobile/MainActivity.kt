@@ -1130,10 +1130,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val tag = json.optString("tag_name", "")
                     val body = json.optString("body", "")
                     val apkUrl = findApkDownloadUrl(json)
+                    val checksumUrl = findApkChecksumUrl(json)
 
                     if (tag.isNotEmpty() && normalizeVersion(tag) != normalizeVersion(currentVersionName)) {
                         runOnUiThread {
-                            showUpdateNotificationDialog(tag, body, apkUrl)
+                            showUpdateNotificationDialog(tag, body, apkUrl, checksumUrl)
                         }
                     }
                 }
@@ -1165,9 +1166,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val json = JSONObject(response.toString())
                     val tag = json.optString("tag_name", "")
                     val apkUrl = findApkDownloadUrl(json)
+                    val checksumUrl = findApkChecksumUrl(json)
                     runOnUiThread {
                         if (tag.isNotEmpty() && normalizeVersion(tag) != normalizeVersion(currentVersionName)) {
-                            showUpdateNotificationDialog(tag, json.optString("body", ""), apkUrl)
+                            showUpdateNotificationDialog(tag, json.optString("body", ""), apkUrl, checksumUrl)
                         } else {
                             AlertDialog.Builder(this)
                                 .setTitle(getString(R.string.update_title))
@@ -1197,15 +1199,50 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return ""
     }
 
-    private fun showUpdateNotificationDialog(newTag: String, notes: String, apkUrl: String) {
-        val action = if (apkUrl.isNotEmpty()) getString(R.string.download_install) else getString(R.string.open_release)
+    private fun findApkChecksumUrl(json: JSONObject): String {
+        val assets = json.optJSONArray("assets") ?: return ""
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            val name = asset.optString("name", "")
+            if (name.equals("HallaMobile.apk.sha256", ignoreCase = true)
+                || name.endsWith(".apk.sha256", ignoreCase = true)) {
+                return asset.optString("browser_download_url", "")
+            }
+        }
+        return ""
+    }
+
+    private fun isTrustedUpdateUrl(raw: String): Boolean = try {
+        val uri = Uri.parse(raw)
+        uri.scheme == "https" && (uri.host == "github.com" || uri.host?.endsWith(".githubusercontent.com") == true)
+    } catch (_: Exception) { false }
+
+    private fun fetchExpectedSha256(checksumUrl: String): String {
+        if (!isTrustedUpdateUrl(checksumUrl)) throw SecurityException("URL de checksum não confiável")
+        val conn = (URL(checksumUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 10000
+            readTimeout = 15000
+            setRequestProperty("User-Agent", "Halla-Mobile-Updater")
+        }
+        conn.inputStream.bufferedReader().use { reader ->
+            val text = reader.readText().trim()
+            val match = Regex("(?i)\b[0-9a-f]{64}\b").find(text)
+            return match?.value?.lowercase()
+                ?: throw SecurityException("Checksum SHA-256 ausente")
+        }
+    }
+
+    private fun showUpdateNotificationDialog(newTag: String, notes: String, apkUrl: String, checksumUrl: String) {
+        val canInstall = apkUrl.isNotEmpty() && checksumUrl.isNotEmpty()
+        val action = if (canInstall) getString(R.string.download_install) else getString(R.string.open_release)
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.update_title))
             .setMessage(getString(R.string.auto_update_available, newTag, notes))
             .setPositiveButton(action) { dialog, _ ->
                 dialog.dismiss()
-                if (apkUrl.isNotEmpty()) {
-                    downloadAndInstallUpdate(apkUrl, newTag)
+                if (canInstall) {
+                    downloadAndInstallUpdate(apkUrl, checksumUrl, newTag)
                 } else {
                     startActivity(Intent(Intent.ACTION_VIEW,
                         Uri.parse("https://github.com/GroupHalla/Halla-Mobile/releases/latest")))
@@ -1215,7 +1252,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    private fun downloadAndInstallUpdate(url: String, version: String) {
+    private fun downloadAndInstallUpdate(url: String, checksumUrl: String, version: String) {
         val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             isIndeterminate = true
@@ -1232,6 +1269,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             var output: File? = null
             var error: String? = null
             try {
+                if (!isTrustedUpdateUrl(url)) throw SecurityException("URL de APK não confiável")
+                val expectedSha256 = fetchExpectedSha256(checksumUrl)
+                val digest = MessageDigest.getInstance("SHA-256")
                 val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 10000
@@ -1253,7 +1293,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             if (read < 0) break
                             if (read == 0) continue
                             out.write(buffer, 0, read)
+                            digest.update(buffer, 0, read)
                             downloaded += read
+                            if (downloaded > 200L * 1024L * 1024L) throw SecurityException("APK excede 200 MiB")
                             if (total > 0) {
                                 val pct = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
                                 runOnUiThread {
@@ -1265,6 +1307,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             }
                         }
                     }
+                }
+                val actualSha256 = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                if (!actualSha256.equals(expectedSha256, ignoreCase = true)) {
+                    target.delete()
+                    throw SecurityException("Checksum SHA-256 do APK não confere")
                 }
                 output = target
                 connection.disconnect()
