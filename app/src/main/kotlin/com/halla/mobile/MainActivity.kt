@@ -191,6 +191,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
     private val collapsedChannels = HashSet<Int>()
     private var selfId = 0
+    private var activeMaxClients = 32
     private var isChannelCommander = false
     private var isAway = false
     private var awayMessage = ""
@@ -2314,10 +2315,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     .takeIf { it > 0 }
                     ?: (serverObj?.optInt("max", -1) ?: -1).takeIf { it > 0 }
                     ?: 32
+                activeMaxClients = maxClients
                 val clientsCount = usersData.length()
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
-                txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$maxClients")
+                txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 updateActiveServerSlots(clientsCount, maxClients)
@@ -2416,9 +2418,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     usersData = JSONArray(usersJson)
                 }
                 
-                // Atualiza contadores dinâmicos no banner
-                txtActiveUsersCountBadge.text = getString(R.string.members, usersData.length().toString())
+                // Atualiza contadores dinâmicos no banner e no cartão salvo.
+                txtActiveUsersCountBadge.text = getString(R.string.members, "${usersData.length()}/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
+                updateActiveServerSlots(usersData.length(), activeMaxClients)
 
                 rebuildChannelTree()
             } catch (e: Exception) {

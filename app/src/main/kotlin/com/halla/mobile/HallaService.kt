@@ -451,7 +451,10 @@ class HallaService : Service(), HallaCore.Callbacks {
         // Também é necessário quando a Activity está fechada: em alguns
         // aparelhos, fora deste modo o serviço captura apenas silêncio.
         try {
-            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).mode = AudioManager.MODE_IN_COMMUNICATION
+            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            systemAudio.isSpeakerphoneOn = true
         } catch (_: Exception) { }
         // Não força um modo/stream especial antes de abrir o microfone: alguns
         // fabricantes deixam a captura sem dados nessa combinação. A fonte

@@ -1057,8 +1057,12 @@ private:
         for (const auto& key : candidateKeys) {
             std::vector<char> decrypted = voiceEncryptDecrypt(opusData, size, key, seq);
             if (decrypted.empty()) continue;
-            n = opus_decode(dec, reinterpret_cast<const unsigned char*>(decrypted.data()),
+            int trialErr = 0;
+            OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
+            if (!trial) continue;
+            n = opus_decode(trial, reinterpret_cast<const unsigned char*>(decrypted.data()),
                             decrypted.size(), pcm, 960, 0);
+            opus_decoder_destroy(trial);
             if (n > 0) break;
         }
 
@@ -1123,7 +1127,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.13-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.14-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())

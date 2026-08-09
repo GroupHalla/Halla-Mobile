@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige crash ao entrar no servidor em aparelhos sem provider Ed25519 nativo, usando fallback EdDSA embutido.
-            * Remove espaços iniciais dos nomes de canais somente no Mobile, tanto na exibição quanto ao criar/editar.
-            * Corrige recepção de áudio PC -> Mobile tentando todas as chaves de canal conhecidas antes do fallback sem cifra.
+            * Corrige reprodução de voz PC -> Mobile: abre playback sob demanda, força rota viva-voz no serviço e testa chaves de canal sem corromper o decoder.
+            * Restaura contador conectado como usuários/slots no banner e atualiza o cartão salvo do servidor em eventos de entrada/saída.
+            * Mantém canais sem espaço inicial apenas no Mobile e fallback EdDSA para aparelhos sem Ed25519 nativo.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

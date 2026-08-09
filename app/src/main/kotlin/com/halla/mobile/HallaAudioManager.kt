@@ -311,6 +311,12 @@ class HallaAudioManager(private val cacheDir: File) {
     }
 
     fun handleIncomingVoice(pcmData: ByteArray) {
+        if (!speakerEnabled || pcmData.isEmpty()) return
+        if (!isPlayingAudio || audioTrack == null) {
+            // Se o primeiro frame chegar antes do onConnected terminar de abrir
+            // o AudioTrack, não descarte: abra a reprodução preguiçosamente.
+            startPlayback()
+        }
         if (isPlayingAudio && speakerEnabled) {
             try {
                 audioTrack?.write(pcmData, 0, pcmData.size)
@@ -320,6 +326,7 @@ class HallaAudioManager(private val cacheDir: File) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                isPlayingAudio = false
             }
         }
     }
