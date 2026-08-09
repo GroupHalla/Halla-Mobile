@@ -219,6 +219,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContentView(R.layout.activity_main)
 
         // Limpa o log de depuração antigo na inicialização
@@ -3930,6 +3931,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         } else {
             screenShareOverlay?.visibility = View.VISIBLE
         }
+        screenShareOverlay?.bringToFront()
+        // A rotação pode relayoutar a árvore de views; reaplica a camada logo
+        // depois para garantir que a transmissão fique acima do app.
+        screenShareOverlay?.postDelayed({
+            screenShareOverlay?.visibility = View.VISIBLE
+            screenShareOverlay?.bringToFront()
+        }, 250)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
     }
 
@@ -3937,8 +3945,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         watchingStreamUserId = 0
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
-        requestedOrientation = if (screenSharePreviousOrientation == ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else screenSharePreviousOrientation
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
