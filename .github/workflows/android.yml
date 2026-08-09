@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### WebRTC viewer
-            * Adiciona PeerConnection/SufaceViewRenderer no Mobile para assistir ofertas WebRTC.
-            * Ver transmissão cria viewer WebRTC, responde offer com answer e troca ICE pelo HallaServer.
-            * Mantém fallback visual JPEG/UDP enquanto o transmissor desktop WebRTC não estiver ativo.
+            ### Correção de build
+            * Troca a dependência WebRTC removida org.webrtc:google-webrtc por io.github.webrtc-sdk:android no Maven Central.
+            * Mantém PeerConnection/SurfaceViewRenderer no Mobile para a etapa de viewer WebRTC.
+            * Mantém signaling WebRTC via HallaServer.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
