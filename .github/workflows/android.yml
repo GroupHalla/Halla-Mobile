@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Correções
-            * Corrige reprodução de voz PC -> Mobile: abre playback sob demanda, força rota viva-voz no serviço e testa chaves de canal sem corromper o decoder.
-            * Restaura contador conectado como usuários/slots no banner e atualiza o cartão salvo do servidor em eventos de entrada/saída.
-            * Mantém canais sem espaço inicial apenas no Mobile e fallback EdDSA para aparelhos sem Ed25519 nativo.
+            ### Segurança e correções
+            * Voz cifrada com ChaCha20-Poly1305 autenticado em vez do antigo XOR/scrambler.
+            * Corrige reprodução PC -> Mobile com rota viva-voz, playback sob demanda e AEAD validado.
+            * Mantém contador usuários/slots conectado e canais sem espaço inicial apenas no Mobile.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

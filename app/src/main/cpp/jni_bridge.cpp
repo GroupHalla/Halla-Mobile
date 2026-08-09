@@ -31,6 +31,7 @@
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/sha256.h>
 #include <mbedtls/base64.h>
+#include <mbedtls/chachapoly.h>
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -186,41 +187,62 @@ std::vector<char> base64DecodeBytes(const std::string& b64) {
                              reinterpret_cast<char*>(out.data()) + outLen);
 }
 
-std::vector<char> voiceEncryptDecrypt(const char* data, int size, const std::vector<char>& key, uint16_t seq) {
-    std::vector<char> output;
-    if (!data || size <= 0) return output;
-    output.assign(data, data + size);
-    if (key.size() < 16) return output;
+std::vector<unsigned char> makeVoiceNonce(uint32_t senderId, uint32_t counter, uint16_t seq) {
+    std::vector<unsigned char> nonce(12, 0);
+    memcpy(nonce.data(), &senderId, 4);
+    memcpy(nonce.data() + 4, &counter, 4);
+    memcpy(nonce.data() + 8, &seq, 2);
+    return nonce;
+}
 
-    uint32_t state[4];
-    memcpy(state, key.data(), 16);
-    state[0] ^= seq;
-    state[1] ^= (static_cast<uint32_t>(seq) << 16);
-    state[2] ^= 0xDEADBEEF;
-    state[3] ^= 0xCAFEBABE;
-
-    auto rotl = [](uint32_t x, int k) -> uint32_t {
-        return (x << k) | (x >> (32 - k));
-    };
-    auto next = [&]() -> uint32_t {
-        const uint32_t result = rotl(state[0] + state[3], 7) * 9;
-        const uint32_t t = state[1] << 9;
-        state[2] ^= state[0];
-        state[3] ^= state[1];
-        state[1] ^= state[2];
-        state[0] ^= state[3];
-        state[2] ^= t;
-        state[3] = rotl(state[3], 11);
-        return result;
-    };
-
-    for (int i = 0; i < size; i += 4) {
-        uint32_t ks = next();
-        const int limit = std::min(4, size - i);
-        for (int j = 0; j < limit; ++j)
-            output[i + j] ^= reinterpret_cast<char*>(&ks)[j];
+std::vector<char> voiceEncryptAead(const char* data, int size, const std::vector<char>& key,
+                                   uint32_t senderId, uint16_t seq, uint32_t counter) {
+    std::vector<char> out;
+    if (!data || size <= 0) return out;
+    if (key.size() < 32) return std::vector<char>(data, data + size);
+    std::vector<unsigned char> nonce = makeVoiceNonce(senderId, counter, seq);
+    std::vector<unsigned char> cipher(size);
+    unsigned char tag[16];
+    mbedtls_chachapoly_context ctx;
+    mbedtls_chachapoly_init(&ctx);
+    int ret = mbedtls_chachapoly_setkey(&ctx, reinterpret_cast<const unsigned char*>(key.data()));
+    if (ret == 0) {
+        ret = mbedtls_chachapoly_encrypt_and_tag(&ctx, size, nonce.data(), nullptr, 0,
+            reinterpret_cast<const unsigned char*>(data), cipher.data(), tag);
     }
-    return output;
+    mbedtls_chachapoly_free(&ctx);
+    if (ret != 0) return out;
+    out.reserve(4 + size + 16);
+    out.insert(out.end(), reinterpret_cast<char*>(&counter), reinterpret_cast<char*>(&counter) + 4);
+    out.insert(out.end(), reinterpret_cast<char*>(cipher.data()), reinterpret_cast<char*>(cipher.data()) + cipher.size());
+    out.insert(out.end(), reinterpret_cast<char*>(tag), reinterpret_cast<char*>(tag) + 16);
+    return out;
+}
+
+std::vector<char> voiceDecryptAead(const char* data, int size, const std::vector<char>& key,
+                                   uint32_t senderId, uint16_t seq) {
+    std::vector<char> out;
+    if (!data || size <= 0) return out;
+    if (key.size() < 32) return std::vector<char>(data, data + size);
+    if (size < 4 + 16) return out;
+    uint32_t counter = 0;
+    memcpy(&counter, data, 4);
+    const int cipherLen = size - 4 - 16;
+    const unsigned char* cipher = reinterpret_cast<const unsigned char*>(data + 4);
+    const unsigned char* tag = reinterpret_cast<const unsigned char*>(data + 4 + cipherLen);
+    std::vector<unsigned char> nonce = makeVoiceNonce(senderId, counter, seq);
+    std::vector<unsigned char> plain(cipherLen);
+    mbedtls_chachapoly_context ctx;
+    mbedtls_chachapoly_init(&ctx);
+    int ret = mbedtls_chachapoly_setkey(&ctx, reinterpret_cast<const unsigned char*>(key.data()));
+    if (ret == 0) {
+        ret = mbedtls_chachapoly_auth_decrypt(&ctx, cipherLen, nonce.data(), nullptr, 0,
+            tag, cipher, plain.data());
+    }
+    mbedtls_chachapoly_free(&ctx);
+    if (ret != 0) return out;
+    out.assign(reinterpret_cast<char*>(plain.data()), reinterpret_cast<char*>(plain.data()) + plain.size());
+    return out;
 }
 
 static int tlsSendCallback(void* ctx, const unsigned char* buf, size_t len) {
@@ -829,7 +851,7 @@ public:
         std::vector<char> payload;
         if (size > 0 && pcm != nullptr) {
             std::lock_guard<std::mutex> keyLock(m_keyMutex);
-            payload = voiceEncryptDecrypt(pcm, size, m_currentVoiceKey, seq);
+            payload = voiceEncryptAead(pcm, size, m_currentVoiceKey, m_selfId.load(), seq, ++m_cryptoCounter);
         }
 
         std::vector<char> packet(10 + payload.size());
@@ -899,8 +921,8 @@ private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
                          m_authenticated(false), m_pingPending(false),
                          m_lastPingSentMs(0), m_pingTotal(0), m_pingSuccess(0),
-                         m_udpPort(0), m_voiceToken(0), m_encoder(nullptr),
-                         m_tlsReady(false), m_tlsInited(false) {}
+                         m_udpPort(0), m_voiceToken(0), m_selfId(0), m_encoder(nullptr),
+                         m_tlsReady(false), m_tlsInited(false), m_cryptoCounter(0) {}
     ~HallaClientCore() {
         disconnect();
         std::lock_guard<std::mutex> tcpLock(m_tcpMutex);
@@ -1055,19 +1077,15 @@ private:
             }
         }
         for (const auto& key : candidateKeys) {
-            std::vector<char> decrypted = voiceEncryptDecrypt(opusData, size, key, seq);
+            std::vector<char> decrypted = voiceDecryptAead(opusData, size, key, fromId, seq);
             if (decrypted.empty()) continue;
-            int trialErr = 0;
-            OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
-            if (!trial) continue;
-            n = opus_decode(trial, reinterpret_cast<const unsigned char*>(decrypted.data()),
+            n = opus_decode(dec, reinterpret_cast<const unsigned char*>(decrypted.data()),
                             decrypted.size(), pcm, 960, 0);
-            opus_decoder_destroy(trial);
             if (n > 0) break;
         }
 
-        // Compatibilidade com servidores/clientes antigos sem channel_key.
-        if (n <= 0) {
+        // Compatibilidade apenas quando ainda não há chave de canal.
+        if (n <= 0 && candidateKeys.empty()) {
             n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
         }
         if (n > 0) {
@@ -1127,7 +1145,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.14-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.15-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1225,6 +1243,7 @@ private:
             }
 
             if (t == "welcome") {
+                m_selfId.store(static_cast<uint32_t>(jsonExtractInt(line, "selfId")));
                 std::string serverName;
                 std::string motd;
                 
@@ -1473,6 +1492,7 @@ private:
 
     std::atomic<int> m_udpPort;
     std::atomic<uint32_t> m_voiceToken;
+    std::atomic<uint32_t> m_selfId;
     struct sockaddr_in m_serverUdpAddr;
     std::vector<int16_t> m_encodePcm;
     uint16_t m_voiceSeq = 0;
@@ -1483,6 +1503,7 @@ private:
     mbedtls_entropy_context m_entropy;
     bool m_tlsReady;
     bool m_tlsInited;
+    uint32_t m_cryptoCounter;
 
     std::map<int, std::vector<char>> m_channelKeys;
     std::vector<char> m_currentVoiceKey;
