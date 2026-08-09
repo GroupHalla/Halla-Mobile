@@ -224,7 +224,10 @@ std::vector<char> voiceDecryptAead(const char* data, int size, const std::vector
                                    uint32_t senderId, uint16_t seq) {
     std::vector<char> out;
     if (!data || size <= 0) return out;
-    if (key.size() < 32) return std::vector<char>(data, data + size);
+    // Chaves de 16 bytes são do formato legado XOR. Não trate como plaintext,
+    // senão a transmissão de Desktop antigo monta JPEG preto e nunca tenta o
+    // fallback legacy correto.
+    if (key.size() < 32) return out;
     if (size < 4 + 16) return out;
     uint32_t counter = 0;
     memcpy(&counter, data, 4);
@@ -1284,7 +1287,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.29-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.30-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
