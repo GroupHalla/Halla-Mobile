@@ -1284,7 +1284,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.27-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.28-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1583,32 +1583,43 @@ private:
         writeLog("[NAT] Loop de keep-alive UDP finalizado.");
     }
 
-    std::vector<char> decryptScreenChunk(uint32_t fromId, uint16_t seq, const char* data, int size) {
+    std::vector<std::vector<char>> currentVoiceKeyCandidates() {
         std::vector<std::vector<char>> candidateKeys;
-        {
-            std::lock_guard<std::mutex> keyLock(m_keyMutex);
-            if (!m_currentVoiceKey.empty()) candidateKeys.push_back(m_currentVoiceKey);
-            for (const auto& pair : m_channelKeys) {
-                if (pair.second.empty()) continue;
-                bool exists = false;
-                for (const auto& k : candidateKeys) {
-                    if (k == pair.second) { exists = true; break; }
-                }
-                if (!exists) candidateKeys.push_back(pair.second);
+        std::lock_guard<std::mutex> keyLock(m_keyMutex);
+        if (!m_currentVoiceKey.empty()) candidateKeys.push_back(m_currentVoiceKey);
+        for (const auto& pair : m_channelKeys) {
+            if (pair.second.empty()) continue;
+            bool exists = false;
+            for (const auto& k : candidateKeys) {
+                if (k == pair.second) { exists = true; break; }
             }
+            if (!exists) candidateKeys.push_back(pair.second);
         }
-        for (const auto& key : candidateKeys) {
-            std::vector<char> plain = voiceDecryptAead(data, size, key, fromId, seq);
-            if (!plain.empty()) return plain;
+        return candidateKeys;
+    }
+
+    static bool looksLikeJpeg(const std::vector<char>& data) {
+        if (data.size() < 4) return false;
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(data.data());
+        return p[0] == 0xFF && p[1] == 0xD8;
+    }
+
+    bool emitScreenFrameIfValid(uint32_t fromId, const std::vector<std::vector<char>>& rawChunks,
+                                const std::vector<char>& key, bool legacy, uint16_t seq) {
+        std::vector<char> combined;
+        for (const auto& raw : rawChunks) {
+            std::vector<char> plain = legacy
+                ? voiceDecryptLegacyXor(raw.data(), int(raw.size()), key, seq)
+                : voiceDecryptAead(raw.data(), int(raw.size()), key, fromId, seq);
+            if (plain.empty()) return false;
+            combined.insert(combined.end(), plain.begin(), plain.end());
         }
-        // Compatibilidade com Desktop antigo: screen chunks usavam o mesmo XOR
-        // legado da voz. Sem isso a tela abre, mas fica preta porque nenhum
-        // chunk monta um JPEG válido.
-        for (const auto& key : candidateKeys) {
-            std::vector<char> plain = voiceDecryptLegacyXor(data, size, key, seq);
-            if (!plain.empty()) return plain;
-        }
-        return candidateKeys.empty() ? std::vector<char>(data, data + size) : std::vector<char>();
+        if (!looksLikeJpeg(combined)) return false;
+        writeLog(std::string("ScreenShare: frame ") + (legacy ? "legacy" : "aead") +
+                 " completo de #" + std::to_string(fromId) +
+                 " bytes=" + std::to_string(combined.size()));
+        invokeOnScreenShareFrame(static_cast<int>(fromId), combined.data(), combined.size());
+        return true;
     }
 
     void handleScreenDatagram(uint32_t fromId, uint16_t seq, const char* data, int size) {
@@ -1616,28 +1627,52 @@ private:
         const uint8_t chunkIdx = static_cast<uint8_t>(data[0]);
         const uint8_t chunkCount = static_cast<uint8_t>(data[1]);
         if (chunkCount == 0 || chunkIdx >= chunkCount) return;
-        std::vector<char> chunk = decryptScreenChunk(fromId, seq, data + 2, size - 2);
-        if (chunk.empty()) {
-            writeLog("ScreenShare: falha ao decifrar chunk de #" + std::to_string(fromId) +
-                     " seq=" + std::to_string(seq) + " idx=" + std::to_string(chunkIdx));
-            return;
-        }
+
+        // Guarda o payload bruto do chunk. A descriptografia/validação é feita
+        // só quando todos os chunks do frame chegam. Isso é essencial para o
+        // fallback legado XOR, que não tem autenticação por chunk: validar só no
+        // frame JPEG completo evita escolher a chave errada e mostrar tela preta.
         auto& bySeq = m_screenReassembly[fromId][seq];
-        bySeq[chunkIdx] = std::move(chunk);
-        if (bySeq.size() == chunkCount) {
+        bySeq[chunkIdx] = std::vector<char>(data + 2, data + size);
+        if (bySeq.size() != chunkCount) return;
+
+        std::vector<std::vector<char>> rawChunks;
+        rawChunks.reserve(chunkCount);
+        for (int i = 0; i < chunkCount; ++i) {
+            auto it = bySeq.find(i);
+            if (it == bySeq.end()) return;
+            rawChunks.push_back(it->second);
+        }
+
+        const std::vector<std::vector<char>> keys = currentVoiceKeyCandidates();
+        bool emitted = false;
+        for (const auto& key : keys) {
+            if (emitScreenFrameIfValid(fromId, rawChunks, key, false, seq)) { emitted = true; break; }
+        }
+        if (!emitted) {
+            for (const auto& key : keys) {
+                if (emitScreenFrameIfValid(fromId, rawChunks, key, true, seq)) { emitted = true; break; }
+            }
+        }
+        if (!emitted && keys.empty()) {
             std::vector<char> combined;
-            for (int i = 0; i < chunkCount; ++i) {
-                auto it = bySeq.find(i);
-                if (it == bySeq.end()) return;
-                combined.insert(combined.end(), it->second.begin(), it->second.end());
+            for (const auto& raw : rawChunks) combined.insert(combined.end(), raw.begin(), raw.end());
+            if (looksLikeJpeg(combined)) {
+                writeLog("ScreenShare: frame puro completo de #" + std::to_string(fromId) +
+                         " bytes=" + std::to_string(combined.size()));
+                invokeOnScreenShareFrame(static_cast<int>(fromId), combined.data(), combined.size());
+                emitted = true;
             }
-            writeLog("ScreenShare: frame completo de #" + std::to_string(fromId) +
-                     " bytes=" + std::to_string(combined.size()));
-            invokeOnScreenShareFrame(static_cast<int>(fromId), combined.data(), combined.size());
-            m_screenReassembly[fromId].erase(seq);
-            while (m_screenReassembly[fromId].size() > 20) {
-                m_screenReassembly[fromId].erase(m_screenReassembly[fromId].begin());
-            }
+        }
+        if (!emitted) {
+            writeLog("ScreenShare: frame descartado de #" + std::to_string(fromId) +
+                     " seq=" + std::to_string(seq) +
+                     " chunks=" + std::to_string(chunkCount) +
+                     " chaves=" + std::to_string(keys.size()));
+        }
+        m_screenReassembly[fromId].erase(seq);
+        while (m_screenReassembly[fromId].size() > 20) {
+            m_screenReassembly[fromId].erase(m_screenReassembly[fromId].begin());
         }
     }
 

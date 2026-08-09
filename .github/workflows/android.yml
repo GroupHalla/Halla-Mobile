@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige abertura da transmissão: Activity não recria ao girar e a camada de vídeo fica acima do app.
-            * A transmissão força landscape ao abrir e volta para portrait ao fechar no X.
-            * Mantém suporte UDP HALF com fallback de descriptografia legado para Desktop antigo.
+            * Corrige transmissão travada/preta validando descriptografia no frame JPEG completo, não chunk a chunk.
+            * Fallback legado XOR agora tenta todas as chaves e só aceita frame com cabeçalho JPEG válido.
+            * Mantém landscape forçado e camada de transmissão acima do app.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
