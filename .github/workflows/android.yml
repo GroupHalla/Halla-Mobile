@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Novidades
-            * Refatoração inicial do MainActivity: atualizador extraído para HallaUpdateManager.kt.
-            * Mantém verificação SHA-256 do APK, HTTPS obrigatório e limites no parser JSON nativo.
-            * Base preparada para separar gradualmente áudio, chat, canais e administração.
+            ### Correções
+            * Corrige crash ao entrar no servidor em aparelhos sem provider Ed25519 nativo, usando fallback EdDSA embutido.
+            * Remove espaços iniciais dos nomes de canais somente no Mobile, tanto na exibição quanto ao criar/editar.
+            * Corrige recepção de áudio PC -> Mobile tentando todas as chaves de canal conhecidas antes do fallback sem cifra.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

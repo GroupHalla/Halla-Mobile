@@ -2697,7 +2697,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         lateinit var renderChannel: (JSONObject, Int) -> Unit
         renderChannel = renderChannel@{ chan: JSONObject, depth: Int ->
             val chanId = chan.getInt("id")
-            val chanName = chan.getString("name")
+            // Mobile não preserva espaços decorativos no início dos nomes de
+            // canais: isso evita cards desalinhados e canais "invisivelmente"
+            // diferentes apenas por whitespace inicial.
+            val chanName = chan.getString("name").trimStart()
             val isSubchannel = depth > 0
 
             if (isChannelCollapsed(chanId)) {
@@ -3155,7 +3158,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val channel = channelsData.optJSONObject(i) ?: continue
                     val id = channel.optInt("id", 0).toString()
                     val check = CheckBox(this).apply {
-                        text = channel.optString("name", getString(R.string.default_channel_name, id))
+                        text = channel.optString("name", getString(R.string.default_channel_name, id)).trimStart()
                         tag = id
                         setTextColor(Color.WHITE)
                         buttonTintList = ColorStateList.valueOf(Color.WHITE)
@@ -3702,7 +3705,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setTitle(getString(R.string.edit_channel_title))
             .setView(layout)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val name = inputName.text.toString().trim()
+                val name = inputName.text.toString().trimStart().trimEnd()
                 val desc = inputDesc.text.toString()
                 val pass = inputPass.text.toString().trim()
                 val bitrate = inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96
@@ -3737,7 +3740,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setTitle(getString(R.string.create_subchannel_title))
             .setView(layout)
             .setPositiveButton(getString(R.string.create)) { _, _ ->
-                val name = inputName.text.toString().trim()
+                val name = inputName.text.toString().trimStart().trimEnd()
                 if (name.isNotEmpty()) {
                     val msg = JSONObject().apply {
                         put("t", "chan_create")

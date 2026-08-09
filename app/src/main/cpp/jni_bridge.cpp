@@ -1035,17 +1035,33 @@ private:
         if (!dec || !opusData || size <= 0) return;
 
         int16_t pcm[960]; // Amortiza em blocos padrão de 20ms @ 48kHz
-        std::vector<char> decrypted;
+        int n = -1;
+
+        // Primeiro tenta a chave ativa. Se o pacote veio de um canal vinculado
+        // ou a ordem dos channel_key mudou, tenta todas as chaves conhecidas.
+        // Isso corrige o caso PC -> Mobile em que o Desktop cifrava com uma
+        // chave que o Mobile possuía, mas não era a m_currentVoiceKey.
+        std::vector<std::vector<char>> candidateKeys;
         {
             std::lock_guard<std::mutex> keyLock(m_keyMutex);
-            decrypted = voiceEncryptDecrypt(opusData, size, m_currentVoiceKey, seq);
+            if (!m_currentVoiceKey.empty()) candidateKeys.push_back(m_currentVoiceKey);
+            for (const auto& pair : m_channelKeys) {
+                if (pair.second.empty()) continue;
+                bool exists = false;
+                for (const auto& k : candidateKeys) {
+                    if (k == pair.second) { exists = true; break; }
+                }
+                if (!exists) candidateKeys.push_back(pair.second);
+            }
         }
-
-        int n = -1;
-        if (!decrypted.empty()) {
+        for (const auto& key : candidateKeys) {
+            std::vector<char> decrypted = voiceEncryptDecrypt(opusData, size, key, seq);
+            if (decrypted.empty()) continue;
             n = opus_decode(dec, reinterpret_cast<const unsigned char*>(decrypted.data()),
                             decrypted.size(), pcm, 960, 0);
+            if (n > 0) break;
         }
+
         // Compatibilidade com servidores/clientes antigos sem channel_key.
         if (n <= 0) {
             n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
@@ -1107,7 +1123,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.12-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.13-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())

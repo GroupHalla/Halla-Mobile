@@ -12,8 +12,8 @@ android {
         applicationId = "com.halla.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 43
-        versionName = "1.0.10"
+        versionCode = 44
+        versionName = "1.0.11"
 
         externalNativeBuild {
             cmake {
@@ -49,4 +49,5 @@ dependencies {
     implementation("com.google.android.material:material:1.9.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("net.i2p.crypto:eddsa:0.3.0")
 }
