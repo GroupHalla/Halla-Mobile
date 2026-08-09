@@ -197,6 +197,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenSharePreviousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var screenShareOverlay: FrameLayout? = null
     private var screenShareImage: ImageView? = null
+    private var screenShareVideoHost: FrameLayout? = null
+    private var webRtcViewer: HallaWebRtcViewer? = null
     private var screenShareTitle: TextView? = null
     private var screenShareFrameCount = 0
     private var isChannelCommander = false
@@ -3883,7 +3885,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         watchingStreamUserId = userId
         screenShareFrameCount = 0
-        HallaCore.sendWebRtcWatchRequest(userId)
         if (screenShareOverlay?.visibility != View.VISIBLE) {
             screenSharePreviousOrientation = requestedOrientation
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -3899,6 +3900,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundColor(Color.BLACK)
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+            val videoHost = FrameLayout(this).apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT
@@ -3927,11 +3935,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 setOnClickListener { stopWatchingScreenShare() }
             }
             overlay.addView(image)
+            overlay.addView(videoHost)
             overlay.addView(title)
             overlay.addView(close)
             drawerLayout.addView(overlay)
             screenShareOverlay = overlay
             screenShareImage = image
+            screenShareVideoHost = videoHost
             screenShareTitle = title
         } else {
             screenShareOverlay?.visibility = View.VISIBLE
@@ -3944,26 +3954,43 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             screenShareOverlay?.visibility = View.VISIBLE
             screenShareOverlay?.bringToFront()
         }, 250)
+        webRtcViewer?.close()
+        screenShareVideoHost?.let { host ->
+            webRtcViewer = HallaWebRtcViewer(this, userId, host)
+        }
+        HallaCore.sendWebRtcWatchRequest(userId)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopWatchingScreenShare() {
         val previous = watchingStreamUserId
         if (previous > 0) HallaCore.sendWebRtcWatchStop(previous)
+        webRtcViewer?.close()
+        webRtcViewer = null
         watchingStreamUserId = 0
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
+        screenShareVideoHost?.removeAllViews()
         screenShareFrameCount = 0
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
     override fun onWebRtcSignalReceived(signalJson: String) {
-        // Próxima etapa: criar PeerConnection Android e responder offer/ICE.
-        // Por enquanto registramos sinalização pronta para a migração WebRTC.
         try {
             val signal = JSONObject(signalJson)
-            android.util.Log.d("HallaWebRTC", "signal: ${signal.optString("t")} from ${signal.optInt("from")}")
-        } catch (_: Exception) { }
+            val from = signal.optInt("from", 0)
+            if (watchingStreamUserId != 0 && from != 0 && from != watchingStreamUserId) return
+            runOnUiThread {
+                if (webRtcViewer == null && watchingStreamUserId != 0) {
+                    screenShareVideoHost?.let { host ->
+                        webRtcViewer = HallaWebRtcViewer(this, watchingStreamUserId, host)
+                    }
+                }
+                webRtcViewer?.handleSignal(signal)
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("HallaWebRTC", "signal failed", e)
+        }
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
