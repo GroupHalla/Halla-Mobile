@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige PC -> Mobile quando o PC ainda usa Desktop antigo: tenta fallback legado XOR com as chaves do canal.
-            * Mantém channelKeys do welcome indexadas por canal e canal atual informado pelo Kotlin.
+            * Reproduz voz remota no stream de mídia para o volume físico controlar a barra de mídia/celular, não só chamada.
+            * Mantém compatibilidade PC -> Mobile com Desktop antigo e channelKeys indexadas por canal.
             * Mantém ChaCha20-Poly1305 autenticado para clientes atualizados.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

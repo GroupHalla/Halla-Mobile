@@ -286,12 +286,13 @@ class HallaAudioManager(private val cacheDir: File) {
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
         try {
-            // Usa explicitamente o perfil de comunicação. STREAM_MUSIC em
-            // MODE_IN_COMMUNICATION faz alguns aparelhos alternarem entre as
-            // barras de mídia/chamada e pode silenciar a rota de voz.
+            // Reproduz a voz remota no stream de mídia. Em muitos aparelhos o
+            // stream de chamada fica extremamente baixo ou vai para a rota de
+            // auricular; usando USAGE_MEDIA o botão físico controla o volume do
+            // celular/mídia e o áudio sai no alto-falante como esperado.
             val track = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build())
                 .setAudioFormat(AudioFormat.Builder()

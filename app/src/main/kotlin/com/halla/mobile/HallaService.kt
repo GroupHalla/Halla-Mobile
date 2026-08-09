@@ -448,11 +448,12 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun startAudio() {
         loadAudioSettings()
-        // Também é necessário quando a Activity está fechada: em alguns
-        // aparelhos, fora deste modo o serviço captura apenas silêncio.
+        // A reprodução remota usa stream de mídia; deixar o AudioManager em
+        // MODE_NORMAL evita que o botão de volume controle só a barra de
+        // chamada, que em vários aparelhos fica silenciosa/baixa demais.
         try {
             val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
+            systemAudio.mode = AudioManager.MODE_NORMAL
             @Suppress("DEPRECATION")
             systemAudio.isSpeakerphoneOn = true
         } catch (_: Exception) { }
