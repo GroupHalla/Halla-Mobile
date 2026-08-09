@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige transmissão travada/preta validando descriptografia no frame JPEG completo, não chunk a chunk.
-            * Fallback legado XOR agora tenta todas as chaves e só aceita frame com cabeçalho JPEG válido.
+            * Corrige tela preta da transmissão restaurando descriptografia por chunk HALF; o congelamento foi corrigido no Desktop v1.0.39.
+            * Mantém fallback legado XOR para Desktop antigo e logs de frames completos/chunks com erro.
             * Mantém landscape forçado e camada de transmissão acima do app.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
