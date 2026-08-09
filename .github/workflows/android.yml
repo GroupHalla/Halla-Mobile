@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige tela preta em transmissão de Desktop legado: chaves de 16 bytes agora caem no fallback XOR em vez de serem tratadas como plaintext.
-            * Mantém descriptografia por chunk HALF e transmissão horizontal em overlay.
-            * Compatível com transmissões abertas antes do Mobile entrar quando usado com Halla Server v1.1.30+.
+            * A tela de transmissão agora aceita frames de qualquer transmissor no mesmo canal quando o ID do stream diverge do item tocado.
+            * Mostra resolução e contador de frames no topo da transmissão para confirmar atualização em tempo real.
+            * Mantém landscape forçado, remontagem HALF por chunk e compatibilidade com Desktop antigo.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

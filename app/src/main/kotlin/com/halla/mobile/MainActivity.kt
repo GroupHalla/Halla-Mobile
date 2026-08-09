@@ -197,6 +197,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenSharePreviousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var screenShareOverlay: FrameLayout? = null
     private var screenShareImage: ImageView? = null
+    private var screenShareTitle: TextView? = null
+    private var screenShareFrameCount = 0
     private var isChannelCommander = false
     private var isAway = false
     private var awayMessage = ""
@@ -3880,6 +3882,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             return
         }
         watchingStreamUserId = userId
+        screenShareFrameCount = 0
         if (screenShareOverlay?.visibility != View.VISIBLE) {
             screenSharePreviousOrientation = requestedOrientation
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -3928,8 +3931,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             drawerLayout.addView(overlay)
             screenShareOverlay = overlay
             screenShareImage = image
+            screenShareTitle = title
         } else {
             screenShareOverlay?.visibility = View.VISIBLE
+            screenShareTitle?.text = "Transmissão de $name"
         }
         screenShareOverlay?.bringToFront()
         // A rotação pode relayoutar a árvore de views; reaplica a camada logo
@@ -3945,15 +3950,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         watchingStreamUserId = 0
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
+        screenShareFrameCount = 0
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
-        if (fromUserId != watchingStreamUserId || jpegData.isEmpty()) return
+        if (watchingStreamUserId == 0 || jpegData.isEmpty()) return
+        // Em algumas combinações de servidor/cliente, o ID do stream pode não
+        // bater com o item tocado, mas o frame ainda pertence a alguém do mesmo
+        // canal. Não descarte: isso deixava a tela preta mesmo com UDP chegando.
+        if (fromUserId != watchingStreamUserId) {
+            val sameChannel = getChannelOfUser(fromUserId) == getChannelOfUser(selfId)
+            if (!sameChannel) return
+            watchingStreamUserId = fromUserId
+        }
         runOnUiThread {
             val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
             if (bitmap != null) {
+                screenShareFrameCount++
                 screenShareImage?.setImageBitmap(bitmap)
+                screenShareTitle?.text = "Transmissão • ${bitmap.width}x${bitmap.height} • $screenShareFrameCount"
             } else {
                 Toast.makeText(this, "Frame da transmissão inválido", Toast.LENGTH_SHORT).show()
             }
