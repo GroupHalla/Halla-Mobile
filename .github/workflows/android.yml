@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Corrige falha de build da v1.0.14 no JNI e mantém channelKeys do welcome indexadas por canal.
-            * O núcleo nativo recebe o canal atual do Kotlin para escolher a chave correta ao enviar voz.
-            * Mantém ChaCha20-Poly1305 autenticado, contador usuários/slots e canais sem espaço inicial no Mobile.
+            * Corrige PC -> Mobile quando o PC ainda usa Desktop antigo: tenta fallback legado XOR com as chaves do canal.
+            * Mantém channelKeys do welcome indexadas por canal e canal atual informado pelo Kotlin.
+            * Mantém ChaCha20-Poly1305 autenticado para clientes atualizados.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

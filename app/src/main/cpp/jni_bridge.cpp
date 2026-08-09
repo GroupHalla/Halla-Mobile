@@ -245,6 +245,43 @@ std::vector<char> voiceDecryptAead(const char* data, int size, const std::vector
     return out;
 }
 
+std::vector<char> voiceDecryptLegacyXor(const char* data, int size, const std::vector<char>& key, uint16_t seq) {
+    std::vector<char> output;
+    if (!data || size <= 0 || key.size() < 16) return output;
+    output.assign(data, data + size);
+
+    uint32_t state[4];
+    memcpy(state, key.data(), 16);
+    state[0] ^= seq;
+    state[1] ^= (static_cast<uint32_t>(seq) << 16);
+    state[2] ^= 0xDEADBEEF;
+    state[3] ^= 0xCAFEBABE;
+
+    auto rotl = [](uint32_t x, int k) -> uint32_t {
+        return (x << k) | (x >> (32 - k));
+    };
+    auto next = [&]() -> uint32_t {
+        const uint32_t result = rotl(state[0] + state[3], 7) * 9;
+        const uint32_t t = state[1] << 9;
+        state[2] ^= state[0];
+        state[3] ^= state[1];
+        state[1] ^= state[2];
+        state[0] ^= state[3];
+        state[2] ^= t;
+        state[3] = rotl(state[3], 11);
+        return result;
+    };
+
+    for (int i = 0; i < size; i += 4) {
+        uint32_t ks = next();
+        const int limit = std::min(4, size - i);
+        for (int j = 0; j < limit; ++j) {
+            output[i + j] ^= reinterpret_cast<char*>(&ks)[j];
+        }
+    }
+    return output;
+}
+
 static int tlsSendCallback(void* ctx, const unsigned char* buf, size_t len) {
     int fd = *static_cast<int*>(ctx);
     const ssize_t r = send(fd, buf, len, MSG_NOSIGNAL);
@@ -1137,6 +1174,23 @@ private:
             if (n > 0) break;
         }
 
+        // Compatibilidade com Desktop <= v1.0.37: voz cifrada pelo antigo XOR
+        // usando os 16 primeiros bytes da chave do canal. Usa decoder temporário
+        // para não corromper o decoder principal caso a tentativa esteja errada.
+        if (n <= 0) {
+            for (const auto& key : candidateKeys) {
+                std::vector<char> legacy = voiceDecryptLegacyXor(opusData, size, key, seq);
+                if (legacy.empty()) continue;
+                int trialErr = 0;
+                OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
+                if (!trial) continue;
+                n = opus_decode(trial, reinterpret_cast<const unsigned char*>(legacy.data()),
+                                legacy.size(), pcm, 960, 0);
+                opus_decoder_destroy(trial);
+                if (n > 0) break;
+            }
+        }
+
         // Compatibilidade apenas quando ainda não há chave de canal.
         if (n <= 0 && candidateKeys.empty()) {
             n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
@@ -1198,7 +1252,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.18-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.19-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
