@@ -397,7 +397,7 @@ std::vector<std::pair<std::string, std::string>> jsonObjectStringMap(const std::
         while (end < obj.size()) {
             end = obj.find('"', end);
             if (end == std::string::npos) return false;
-            if (obj[end - 1] != '\') break;
+            if (obj[end - 1] != '\\') break;
             ++end;
         }
         value = jsonUnescape(obj.substr(start, end - start));
@@ -950,6 +950,8 @@ public:
         }
     }
 
+    void setCurrentChannelFromClient(int channelId) { setCurrentChannel(channelId); }
+
 private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
                          m_authenticated(false), m_pingPending(false),
@@ -1196,7 +1198,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.17-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.18-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1633,7 +1635,7 @@ Java_com_halla_mobile_HallaCore_joinChannel(JNIEnv* env, jclass clazz, jint chan
 
 JNIEXPORT void JNICALL
 Java_com_halla_mobile_HallaCore_setCurrentChannel(JNIEnv*, jclass, jint channelId) {
-    HallaClientCore::getInstance().setCurrentChannel(channelId);
+    HallaClientCore::getInstance().setCurrentChannelFromClient(channelId);
 }
 
 JNIEXPORT void JNICALL
