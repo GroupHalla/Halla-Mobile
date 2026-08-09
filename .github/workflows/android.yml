@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Correções
-            * A tela de transmissão agora aceita frames de qualquer transmissor no mesmo canal quando o ID do stream diverge do item tocado.
-            * Mostra resolução e contador de frames no topo da transmissão para confirmar atualização em tempo real.
-            * Mantém landscape forçado, remontagem HALF por chunk e compatibilidade com Desktop antigo.
+            ### WebRTC signaling
+            * Adiciona callbacks e helpers de signaling WebRTC no Mobile para watch_request/stop, answer e ICE.
+            * O botão Ver transmissão já envia webrtc_watch_request e o X envia webrtc_watch_stop.
+            * Base inicial para substituir o antigo screen share JPEG/UDP por WebRTC.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

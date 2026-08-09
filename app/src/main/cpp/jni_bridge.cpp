@@ -60,6 +60,7 @@ static jmethodID g_onErrorMethod = nullptr;
 static jmethodID g_onPingMethod = nullptr;
 static jmethodID g_onPokeMethod = nullptr;
 static jmethodID g_onScreenShareFrameMethod = nullptr;
+static jmethodID g_onWebRtcSignalMethod = nullptr;
 static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
 
@@ -695,6 +696,20 @@ void invokeOnPoke(const std::string& fromName, const std::string& msg) {
 }
 
 // Motor de Rede C++ Portável e de Alta Performance para o Halla Mobile
+
+void invokeOnWebRtcSignal(const std::string& signalJson) {
+    if (!g_vm || !g_coreClass || !g_onWebRtcSignalMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    if (env) {
+        jstring j = env->NewStringUTF(signalJson.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onWebRtcSignalMethod, j);
+        env->DeleteLocalRef(j);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
 
 std::string callStaticStringString(jmethodID method, const std::string& a) {
     if (!g_vm || !g_coreClass || !method) return "";
@@ -1476,6 +1491,12 @@ private:
                 return;
             }
 
+            if (t == "webrtc_watch_request" || t == "webrtc_watch_stop" ||
+                t == "webrtc_offer" || t == "webrtc_answer" || t == "webrtc_ice") {
+                invokeOnWebRtcSignal(line);
+                return;
+            }
+
             if (t == "user_joined" || t == "user_left" || t == "user_moved" ||
                 t == "chan_update" || t == "chan_removed" || t == "user_state" ||
                 t == "user_nick" || t == "user_desc" || t == "user_group" ||
@@ -1767,6 +1788,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onPingMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPing", "(II)V");
     g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onScreenShareFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnScreenShareFrame", "(I[B)V");
+    g_onWebRtcSignalMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWebRtcSignal", "(Ljava/lang/String;)V");
     g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
     g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
 

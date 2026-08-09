@@ -2,6 +2,7 @@ package com.halla.mobile
 
 import android.content.Context
 import android.util.Base64
+import org.json.JSONObject
 import net.i2p.crypto.eddsa.EdDSASecurityProvider
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
 import java.security.KeyFactory
@@ -133,6 +134,16 @@ object HallaCore {
     @JvmStatic
     external fun sendRawJson(json: String)
 
+    fun sendWebRtcWatchRequest(userId: Int) = sendRawJson(JSONObject().put("t", "webrtc_watch_request").put("to", userId).toString())
+    fun sendWebRtcWatchStop(userId: Int) = sendRawJson(JSONObject().put("t", "webrtc_watch_stop").put("to", userId).toString())
+    fun sendWebRtcAnswer(userId: Int, sdp: String) = sendRawJson(JSONObject().put("t", "webrtc_answer").put("to", userId).put("sdp", sdp).toString())
+    fun sendWebRtcIce(userId: Int, candidate: String, sdpMid: String = "", sdpMLineIndex: Int = -1) {
+        val obj = JSONObject().put("t", "webrtc_ice").put("to", userId).put("candidate", candidate)
+        if (sdpMid.isNotEmpty()) obj.put("sdpMid", sdpMid)
+        if (sdpMLineIndex >= 0) obj.put("sdpMLineIndex", sdpMLineIndex)
+        sendRawJson(obj.toString())
+    }
+
     @JvmStatic
     external fun sendStatus(mic: Boolean, spk: Boolean, away: Boolean, rec: Boolean, cc: Boolean)
 
@@ -174,6 +185,7 @@ object HallaCore {
         fun onPingUpdated(pingMs: Int, packetLossPercent: Int)
         fun onPokeReceived(fromName: String, msg: String)
         fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray)
+        fun onWebRtcSignalReceived(signalJson: String)
     }
 
     private val callbacks = CopyOnWriteArraySet<Callbacks>()
@@ -253,5 +265,10 @@ object HallaCore {
     @JvmStatic
     fun triggerOnScreenShareFrame(fromUserId: Int, jpegData: ByteArray) {
         callbacks.forEach { it.onScreenShareFrameReceived(fromUserId, jpegData) }
+    }
+
+    @JvmStatic
+    fun triggerOnWebRtcSignal(signalJson: String) {
+        callbacks.forEach { it.onWebRtcSignalReceived(signalJson) }
     }
 }

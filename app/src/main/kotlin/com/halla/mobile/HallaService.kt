@@ -1111,6 +1111,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) = Unit
+    override fun onWebRtcSignalReceived(signalJson: String) = Unit
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // O usuário pode remover a Activity da tela de recentes sem derrubar

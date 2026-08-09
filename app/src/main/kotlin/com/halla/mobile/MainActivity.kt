@@ -3883,6 +3883,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         watchingStreamUserId = userId
         screenShareFrameCount = 0
+        HallaCore.sendWebRtcWatchRequest(userId)
         if (screenShareOverlay?.visibility != View.VISIBLE) {
             screenSharePreviousOrientation = requestedOrientation
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -3947,11 +3948,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun stopWatchingScreenShare() {
+        val previous = watchingStreamUserId
+        if (previous > 0) HallaCore.sendWebRtcWatchStop(previous)
         watchingStreamUserId = 0
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
         screenShareFrameCount = 0
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
+    override fun onWebRtcSignalReceived(signalJson: String) {
+        // Próxima etapa: criar PeerConnection Android e responder offer/ICE.
+        // Por enquanto registramos sinalização pronta para a migração WebRTC.
+        try {
+            val signal = JSONObject(signalJson)
+            android.util.Log.d("HallaWebRTC", "signal: ${signal.optString("t")} from ${signal.optInt("from")}")
+        } catch (_: Exception) { }
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
