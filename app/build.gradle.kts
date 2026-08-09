@@ -12,8 +12,8 @@ android {
         applicationId = "com.halla.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 51
-        versionName = "1.0.18"
+        versionCode = 52
+        versionName = "1.0.19"
 
         externalNativeBuild {
             cmake {

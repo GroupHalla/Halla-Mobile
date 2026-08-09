@@ -988,6 +988,7 @@ public:
     }
 
     void setCurrentChannelFromClient(int channelId) { setCurrentChannel(channelId); }
+    void installChannelKeyFromClient(int channelId, const std::string& keyB64) { installChannelKey(channelId, keyB64); }
 
 private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
@@ -1191,12 +1192,23 @@ private:
             }
         }
 
-        // Compatibilidade apenas quando ainda não há chave de canal.
-        if (n <= 0 && candidateKeys.empty()) {
-            n = opus_decode(dec, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
+        // Último fallback: alguns desktops/intermediários podem ainda enviar
+        // Opus puro mesmo com chaves presentes. Usa decoder temporário para
+        // não danificar o estado do decoder principal se for ciphertext.
+        if (n <= 0) {
+            int trialErr = 0;
+            OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
+            if (trial) {
+                n = opus_decode(trial, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
+                opus_decoder_destroy(trial);
+            }
         }
         if (n > 0) {
             invokeOnAudioFrame(fromId, reinterpret_cast<const char*>(pcm), n * 2);
+        } else {
+            writeLog("UDP voz: falha ao decodificar pacote de #" + std::to_string(fromId) +
+                     " bytes=" + std::to_string(size) +
+                     " chaves=" + std::to_string(candidateKeys.size()));
         }
     }
 
@@ -1252,7 +1264,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.21-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.22-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1690,6 +1702,13 @@ Java_com_halla_mobile_HallaCore_joinChannel(JNIEnv* env, jclass clazz, jint chan
 JNIEXPORT void JNICALL
 Java_com_halla_mobile_HallaCore_setCurrentChannel(JNIEnv*, jclass, jint channelId) {
     HallaClientCore::getInstance().setCurrentChannelFromClient(channelId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_installChannelKey(JNIEnv* env, jclass, jint channelId, jstring keyB64) {
+    const char* nativeKey = env->GetStringUTFChars(keyB64, nullptr);
+    HallaClientCore::getInstance().installChannelKeyFromClient(channelId, nativeKey);
+    env->ReleaseStringUTFChars(keyB64, nativeKey);
 }
 
 JNIEXPORT void JNICALL

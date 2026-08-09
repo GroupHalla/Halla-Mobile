@@ -1028,10 +1028,21 @@ class HallaService : Service(), HallaCore.Callbacks {
             val server = welcome.optJSONObject("server")
             lastServerName = server?.optString("name", lastServerName).orEmpty()
             lastMotd = server?.optString("motd", lastMotd).orEmpty()
+            installWelcomeChannelKeys(welcome)
             HallaCore.setCurrentChannel(currentChannelFromWelcome(welcome))
         } catch (_: Exception) { }
         getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
             .putString("last_welcome_json", welcomeJson).apply()
+    }
+
+    private fun installWelcomeChannelKeys(welcome: JSONObject) {
+        val keys = welcome.optJSONObject("channelKeys") ?: return
+        val names = keys.keys()
+        while (names.hasNext()) {
+            val channelId = names.next().toIntOrNull() ?: continue
+            val key = keys.optString(channelId.toString(), "")
+            if (key.isNotEmpty()) HallaCore.installChannelKey(channelId, key)
+        }
     }
 
     private fun currentChannelFromWelcome(welcome: JSONObject): Int {

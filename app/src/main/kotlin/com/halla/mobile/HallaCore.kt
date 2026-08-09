@@ -116,6 +116,9 @@ object HallaCore {
     external fun setCurrentChannel(channelId: Int)
 
     @JvmStatic
+    external fun installChannelKey(channelId: Int, keyBase64: String)
+
+    @JvmStatic
     external fun sendChatMessage(text: String)
 
     @JvmStatic

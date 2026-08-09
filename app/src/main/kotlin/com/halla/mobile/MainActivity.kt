@@ -2317,6 +2317,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     ?: 32
                 activeMaxClients = maxClients
                 val clientsCount = usersData.length()
+                installWelcomeChannelKeys(obj)
                 HallaCore.setCurrentChannel(getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
@@ -2328,6 +2329,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    private fun installWelcomeChannelKeys(welcome: JSONObject) {
+        val keys = welcome.optJSONObject("channelKeys") ?: return
+        val names = keys.keys()
+        while (names.hasNext()) {
+            val channelId = names.next().toIntOrNull() ?: continue
+            val key = keys.optString(channelId.toString(), "")
+            if (key.isNotEmpty()) HallaCore.installChannelKey(channelId, key)
         }
     }
 

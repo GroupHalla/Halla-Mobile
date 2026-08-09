@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Restaura modo de comunicação para manter a barra/volume de chamada enquanto a voz remota toca no stream de mídia.
-            * Remove o forçamento do botão físico para STREAM_MUSIC, permitindo o painel do sistema expor chamada e mídia.
-            * Mantém compatibilidade PC -> Mobile com Desktop antigo e channelKeys indexadas por canal.
+            * Instala channelKeys do welcome também pelo parser Kotlin org.json, garantindo mapa canal->chave no núcleo nativo.
+            * Adiciona fallback final para Opus puro e logs de falha de decode PC -> Mobile.
+            * Mantém modo de comunicação, stream de mídia e compatibilidade com Desktop antigo.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
