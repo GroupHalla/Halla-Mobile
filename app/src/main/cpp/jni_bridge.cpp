@@ -1284,7 +1284,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.25-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.26-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1601,6 +1601,13 @@ private:
             std::vector<char> plain = voiceDecryptAead(data, size, key, fromId, seq);
             if (!plain.empty()) return plain;
         }
+        // Compatibilidade com Desktop antigo: screen chunks usavam o mesmo XOR
+        // legado da voz. Sem isso a tela abre, mas fica preta porque nenhum
+        // chunk monta um JPEG válido.
+        for (const auto& key : candidateKeys) {
+            std::vector<char> plain = voiceDecryptLegacyXor(data, size, key, seq);
+            if (!plain.empty()) return plain;
+        }
         return candidateKeys.empty() ? std::vector<char>(data, data + size) : std::vector<char>();
     }
 
@@ -1610,7 +1617,11 @@ private:
         const uint8_t chunkCount = static_cast<uint8_t>(data[1]);
         if (chunkCount == 0 || chunkIdx >= chunkCount) return;
         std::vector<char> chunk = decryptScreenChunk(fromId, seq, data + 2, size - 2);
-        if (chunk.empty()) return;
+        if (chunk.empty()) {
+            writeLog("ScreenShare: falha ao decifrar chunk de #" + std::to_string(fromId) +
+                     " seq=" + std::to_string(seq) + " idx=" + std::to_string(chunkIdx));
+            return;
+        }
         auto& bySeq = m_screenReassembly[fromId][seq];
         bySeq[chunkIdx] = std::move(chunk);
         if (bySeq.size() == chunkCount) {
@@ -1620,6 +1631,8 @@ private:
                 if (it == bySeq.end()) return;
                 combined.insert(combined.end(), it->second.begin(), it->second.end());
             }
+            writeLog("ScreenShare: frame completo de #" + std::to_string(fromId) +
+                     " bytes=" + std::to_string(combined.size()));
             invokeOnScreenShareFrame(static_cast<int>(fromId), combined.data(), combined.size());
             m_screenReassembly[fromId].erase(seq);
             while (m_screenReassembly[fromId].size() > 20) {

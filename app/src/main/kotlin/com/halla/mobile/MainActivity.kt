@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -193,6 +194,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var selfId = 0
     private var activeMaxClients = 32
     private var watchingStreamUserId = 0
+    private var screenSharePreviousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var screenShareOverlay: FrameLayout? = null
     private var screenShareImage: ImageView? = null
     private var isChannelCommander = false
@@ -3877,6 +3879,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             return
         }
         watchingStreamUserId = userId
+        if (screenShareOverlay?.visibility != View.VISIBLE) {
+            screenSharePreviousOrientation = requestedOrientation
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         if (screenShareOverlay == null) {
             val overlay = FrameLayout(this).apply {
                 setBackgroundColor(Color.BLACK)
@@ -3931,13 +3937,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         watchingStreamUserId = 0
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
+        requestedOrientation = if (screenSharePreviousOrientation == ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else screenSharePreviousOrientation
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
         if (fromUserId != watchingStreamUserId || jpegData.isEmpty()) return
         runOnUiThread {
             val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-            if (bitmap != null) screenShareImage?.setImageBitmap(bitmap)
+            if (bitmap != null) {
+                screenShareImage?.setImageBitmap(bitmap)
+            } else {
+                Toast.makeText(this, "Frame da transmissão inválido", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

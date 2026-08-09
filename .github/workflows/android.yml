@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Novidades
-            * Mobile agora pode assistir transmissões de tela de usuários desktop no mesmo canal.
-            * Ao tocar no usuário transmitindo, aparece a opção "Ver transmissão"; a tela tem botão X para parar.
-            * Suporte UDP HALF no núcleo nativo com remontagem de quadros JPEG.
+            ### Correções
+            * Transmissão abre em orientação horizontal forçada e volta ao retrato ao fechar no X.
+            * Corrige tela preta com Desktop antigo tentando fallback de descriptografia XOR nos chunks HALF.
+            * Adiciona logs de remontagem/erro de frames de transmissão para diagnóstico.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
