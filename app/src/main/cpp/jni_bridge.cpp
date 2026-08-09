@@ -385,6 +385,37 @@ std::vector<std::string> jsonObjectStringValues(const std::string& obj) {
     return values;
 }
 
+
+std::vector<std::pair<std::string, std::string>> jsonObjectStringMap(const std::string& obj) {
+    std::vector<std::pair<std::string, std::string>> out;
+    size_t pos = 0;
+    auto readString = [&](size_t& cursor, std::string& value) -> bool {
+        cursor = obj.find('"', cursor);
+        if (cursor == std::string::npos) return false;
+        const size_t start = cursor + 1;
+        size_t end = start;
+        while (end < obj.size()) {
+            end = obj.find('"', end);
+            if (end == std::string::npos) return false;
+            if (obj[end - 1] != '\') break;
+            ++end;
+        }
+        value = jsonUnescape(obj.substr(start, end - start));
+        cursor = end + 1;
+        return true;
+    };
+    while (pos < obj.size()) {
+        std::string key, value;
+        if (!readString(pos, key)) break;
+        pos = obj.find(':', pos);
+        if (pos == std::string::npos) break;
+        ++pos;
+        if (!readString(pos, value)) break;
+        out.emplace_back(key, value);
+    }
+    return out;
+}
+
 // Thread-safe helpers to invoke JNI callbacks from background C++ threads
 void invokeOnConnected(const std::string& serverName, const std::string& motd) {
     writeLog("invokeOnConnected chamada!");
@@ -670,10 +701,12 @@ public:
         m_lastPingSentMs = 0;
         m_pingTotal = 0;
         m_pingSuccess = 0;
+        m_cryptoCounter = 0;
         {
             std::lock_guard<std::mutex> keyLock(m_keyMutex);
             m_channelKeys.clear();
             m_currentVoiceKey.clear();
+            m_currentChannelId = 0;
         }
 
         // Inicializa o codificador Opus Oficial de voz VoIP
@@ -1025,18 +1058,36 @@ private:
         if (channelId <= 0 || key.size() < 16) return;
         std::lock_guard<std::mutex> lock(m_keyMutex);
         m_channelKeys[channelId] = key;
-        m_currentVoiceKey = key;
+        if (m_currentChannelId == channelId || m_currentVoiceKey.empty()) {
+            m_currentVoiceKey = key;
+        }
+    }
+
+    void setCurrentChannel(int channelId) {
+        if (channelId <= 0) return;
+        std::lock_guard<std::mutex> lock(m_keyMutex);
+        m_currentChannelId = channelId;
+        auto it = m_channelKeys.find(channelId);
+        if (it != m_channelKeys.end()) {
+            m_currentVoiceKey = it->second;
+            writeLog("Cripto voz: canal atual definido para #" + std::to_string(channelId));
+        }
     }
 
     void installWelcomeKeys(const std::string& line) {
         const std::string keysObj = jsonExtractObject(line, "channelKeys");
-        for (const std::string& value : jsonObjectStringValues(keysObj)) {
-            const std::vector<char> key = base64DecodeBytes(value);
-            if (key.size() >= 16) {
+        for (const auto& entry : jsonObjectStringMap(keysObj)) {
+            const int channelId = safeStoi(entry.first);
+            const std::vector<char> key = base64DecodeBytes(entry.second);
+            if (channelId > 0 && key.size() >= 16) {
                 std::lock_guard<std::mutex> lock(m_keyMutex);
-                if (m_currentVoiceKey.empty()) m_currentVoiceKey = key;
+                m_channelKeys[channelId] = key;
+                if (m_currentChannelId == channelId || m_currentVoiceKey.empty()) {
+                    m_currentVoiceKey = key;
+                }
             }
         }
+        writeLog("Cripto voz: " + std::to_string(m_channelKeys.size()) + " chaves de canal carregadas do welcome");
     }
 
     OpusDecoder* getOrCreateDecoder(uint32_t userId) {
@@ -1145,7 +1196,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.15-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.17-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1507,6 +1558,7 @@ private:
 
     std::map<int, std::vector<char>> m_channelKeys;
     std::vector<char> m_currentVoiceKey;
+    int m_currentChannelId = 0;
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;
@@ -1577,6 +1629,11 @@ Java_com_halla_mobile_HallaCore_joinChannel(JNIEnv* env, jclass clazz, jint chan
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
     HallaClientCore::getInstance().joinChannel(channelId, nativePass);
     env->ReleaseStringUTFChars(pass, nativePass);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_setCurrentChannel(JNIEnv*, jclass, jint channelId) {
+    HallaClientCore::getInstance().setCurrentChannel(channelId);
 }
 
 JNIEXPORT void JNICALL

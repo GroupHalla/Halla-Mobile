@@ -2317,6 +2317,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     ?: 32
                 activeMaxClients = maxClients
                 val clientsCount = usersData.length()
+                HallaCore.setCurrentChannel(getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
                 txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$activeMaxClients")
@@ -2610,6 +2611,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
+        if (userId == selfId) HallaCore.setCurrentChannel(newChannelId)
     }
 
     private fun updateOrAddChannel(chanObj: JSONObject) {

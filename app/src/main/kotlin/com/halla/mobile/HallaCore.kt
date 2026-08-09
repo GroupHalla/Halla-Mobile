@@ -113,6 +113,9 @@ object HallaCore {
     external fun joinChannel(channelId: Int, pass: String)
 
     @JvmStatic
+    external fun setCurrentChannel(channelId: Int)
+
+    @JvmStatic
     external fun sendChatMessage(text: String)
 
     @JvmStatic

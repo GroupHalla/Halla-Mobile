@@ -1026,9 +1026,22 @@ class HallaService : Service(), HallaCore.Callbacks {
             val server = welcome.optJSONObject("server")
             lastServerName = server?.optString("name", lastServerName).orEmpty()
             lastMotd = server?.optString("motd", lastMotd).orEmpty()
+            HallaCore.setCurrentChannel(currentChannelFromWelcome(welcome))
         } catch (_: Exception) { }
         getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
             .putString("last_welcome_json", welcomeJson).apply()
+    }
+
+    private fun currentChannelFromWelcome(welcome: JSONObject): Int {
+        val channels = welcome.optJSONArray("channels") ?: return 0
+        for (i in 0 until channels.length()) {
+            val ch = channels.optJSONObject(i) ?: continue
+            val users = ch.optJSONArray("users") ?: continue
+            for (j in 0 until users.length()) {
+                if (users.optInt(j, 0) == selfId) return ch.optInt("id", 0)
+            }
+        }
+        return 0
     }
 
     override fun onChannelListReceived(channelsJson: String) = Unit
@@ -1043,6 +1056,9 @@ class HallaService : Service(), HallaCore.Callbacks {
             } else if (usersJson.trimStart().startsWith("{")) {
                 val obj = JSONObject(usersJson)
                 if (obj.optString("t") == "user_state") updateRemoteUserState(obj)
+                else if (obj.optString("t") == "user_moved" && obj.optInt("id", 0) == selfId) {
+                    HallaCore.setCurrentChannel(obj.optInt("channel", 0))
+                }
             }
         } catch (_: Exception) { }
     }

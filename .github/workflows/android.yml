@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Segurança e correções
-            * Voz cifrada com ChaCha20-Poly1305 autenticado em vez do antigo XOR/scrambler.
-            * Corrige reprodução PC -> Mobile com rota viva-voz, playback sob demanda e AEAD validado.
-            * Mantém contador usuários/slots conectado e canais sem espaço inicial apenas no Mobile.
+            ### Correções
+            * Corrige PC -> Mobile carregando todas as channelKeys do welcome com seus IDs de canal.
+            * O núcleo nativo agora recebe o canal atual do Kotlin para escolher a chave correta ao enviar voz.
+            * Mantém ChaCha20-Poly1305 autenticado, contador usuários/slots e canais sem espaço inicial no Mobile.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
