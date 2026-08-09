@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Novidades
-            * Atualizador in-app agora exige HTTPS confiável e valida SHA-256 do APK antes de instalar.
-            * Release publica HallaMobile.apk.sha256 junto do APK para verificação local.
-            * Parser nativo recebeu limites de tamanho para reduzir superfície de DoS por JSON grande.
+            * Refatoração inicial do MainActivity: atualizador extraído para HallaUpdateManager.kt.
+            * Mantém verificação SHA-256 do APK, HTTPS obrigatório e limites no parser JSON nativo.
+            * Base preparada para separar gradualmente áudio, chat, canais e administração.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

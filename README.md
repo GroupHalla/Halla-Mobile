@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.9
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.10
 </p>
 
 ---
