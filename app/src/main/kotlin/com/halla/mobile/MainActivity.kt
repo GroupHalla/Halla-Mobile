@@ -192,6 +192,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private val collapsedChannels = HashSet<Int>()
     private var selfId = 0
     private var activeMaxClients = 32
+    private var watchingStreamUserId = 0
+    private var screenShareOverlay: FrameLayout? = null
+    private var screenShareImage: ImageView? = null
     private var isChannelCommander = false
     private var isAway = false
     private var awayMessage = ""
@@ -2406,6 +2409,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     } else if (t == "user_state" || t == "user_nick" ||
                                t == "user_desc" || t == "user_group") {
                         updateUserState(obj)
+                    } else if (t == "user_screenshare_state") {
+                        updateScreenShareState(obj.optInt("id", 0), obj.optBoolean("on", false))
                     } else if (t == "server_edit") {
                         obj.optString("name").takeIf { it.isNotEmpty() }?.let {
                             txtActiveServerName.text = it
@@ -2660,6 +2665,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (stateObj.has("spk")) u.put("spk", stateObj.getBoolean("spk"))
                 if (stateObj.has("away")) u.put("away", stateObj.getBoolean("away"))
                 if (stateObj.has("rec")) u.put("rec", stateObj.getBoolean("rec"))
+                if (stateObj.has("screensharing")) u.put("screensharing", stateObj.getBoolean("screensharing"))
                 if (stateObj.has("cc")) {
                     u.put("cc", stateObj.getBoolean("cc"))
                     if (uid == selfId) {
@@ -2677,6 +2683,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
+    }
+
+    private fun updateScreenShareState(userId: Int, on: Boolean) {
+        if (userId <= 0) return
+        for (i in 0 until usersData.length()) {
+            val u = usersData.optJSONObject(i) ?: continue
+            if (u.optInt("id", 0) == userId) {
+                u.put("screensharing", on)
+                break
+            }
+        }
+        if (!on && watchingStreamUserId == userId) stopWatchingScreenShare()
+        rebuildChannelTree()
     }
 
     private fun getChannelOfUser(userId: Int): Int {
@@ -3793,6 +3812,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
             options.add("👉 ${getString(R.string.poke)}")
+            if (usr.optBoolean("screensharing", false) && getChannelOfUser(userId) == getChannelOfUser(selfId)) {
+                options.add("📺 Ver transmissão")
+            }
             options.add("💬 ${getString(R.string.private_message)}")
             options.add("ℹ️ ${getString(R.string.client_info)}")
             if (canSetOtherCommander()) options.add("👑 $targetCommanderLabel")
@@ -3830,6 +3852,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     showChangeNicknameDialog()
                 } else if (choice.contains(getString(R.string.poke))) {
                     showSendPokeDialog(userId, name)
+                } else if (choice.contains("Ver transmissão")) {
+                    startWatchingScreenShare(userId, name)
                 } else if (choice.contains(getString(R.string.private_message))) {
                     showPrivateMessageDialog(userId, name)
                 } else if (choice.contains(getString(R.string.client_info))) {
@@ -3845,6 +3869,76 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
             }
             .show()
+    }
+
+    private fun startWatchingScreenShare(userId: Int, name: String) {
+        if (getChannelOfUser(userId) != getChannelOfUser(selfId)) {
+            Toast.makeText(this, "Você precisa estar no mesmo canal para ver a transmissão.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        watchingStreamUserId = userId
+        if (screenShareOverlay == null) {
+            val overlay = FrameLayout(this).apply {
+                setBackgroundColor(Color.BLACK)
+                layoutParams = DrawerLayout.LayoutParams(
+                    DrawerLayout.LayoutParams.MATCH_PARENT,
+                    DrawerLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.BLACK)
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+            val title = TextView(this).apply {
+                text = "Transmissão de $name"
+                setTextColor(Color.WHITE)
+                textSize = 16f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(24, 24, 96, 16)
+                setBackgroundColor(0x99000000.toInt())
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP
+                )
+            }
+            val close = Button(this).apply {
+                text = "X"
+                setTextColor(Color.WHITE)
+                setBackgroundColor(Color.parseColor("#7C3AED"))
+                layoutParams = FrameLayout.LayoutParams(72, 72, Gravity.TOP or Gravity.RIGHT).apply {
+                    setMargins(0, 16, 16, 0)
+                }
+                setOnClickListener { stopWatchingScreenShare() }
+            }
+            overlay.addView(image)
+            overlay.addView(title)
+            overlay.addView(close)
+            drawerLayout.addView(overlay)
+            screenShareOverlay = overlay
+            screenShareImage = image
+        } else {
+            screenShareOverlay?.visibility = View.VISIBLE
+        }
+        Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopWatchingScreenShare() {
+        watchingStreamUserId = 0
+        screenShareOverlay?.visibility = View.GONE
+        screenShareImage?.setImageDrawable(null)
+    }
+
+    override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
+        if (fromUserId != watchingStreamUserId || jpegData.isEmpty()) return
+        runOnUiThread {
+            val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
+            if (bitmap != null) screenShareImage?.setImageBitmap(bitmap)
+        }
     }
 
     private fun showAwayMessageDialog() {

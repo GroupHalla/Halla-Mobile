@@ -77,9 +77,9 @@ jobs:
           body: |
             ## Halla Mobile ${{ github.ref_name }}
 
-            ### Correções
-            * Remove a opção de exportar/compartilhar log das opções de áudio.
-            * Mantém channelKeys via parser Kotlin, logs internos de decode PC -> Mobile e compatibilidade com Desktop antigo.
-            * Mantém modo de comunicação e stream de mídia para áudio.
+            ### Novidades
+            * Mobile agora pode assistir transmissões de tela de usuários desktop no mesmo canal.
+            * Ao tocar no usuário transmitindo, aparece a opção "Ver transmissão"; a tela tem botão X para parar.
+            * Suporte UDP HALF no núcleo nativo com remontagem de quadros JPEG.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1110,6 +1110,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         notifySocial(t(R.string.social_poke, fromName), msg)
     }
 
+    override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) = Unit
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         // O usuário pode remover a Activity da tela de recentes sem derrubar
         // a chamada; o serviço foreground permanece responsável pela sessão.

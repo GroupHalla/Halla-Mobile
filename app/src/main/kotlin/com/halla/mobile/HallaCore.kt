@@ -173,6 +173,7 @@ object HallaCore {
         fun onError(code: String, msg: String)
         fun onPingUpdated(pingMs: Int, packetLossPercent: Int)
         fun onPokeReceived(fromName: String, msg: String)
+        fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray)
     }
 
     private val callbacks = CopyOnWriteArraySet<Callbacks>()
@@ -247,5 +248,10 @@ object HallaCore {
     @JvmStatic
     fun triggerOnPoke(fromName: String, msg: String) {
         callbacks.forEach { it.onPokeReceived(fromName, msg) }
+    }
+
+    @JvmStatic
+    fun triggerOnScreenShareFrame(fromUserId: Int, jpegData: ByteArray) {
+        callbacks.forEach { it.onScreenShareFrameReceived(fromUserId, jpegData) }
     }
 }

@@ -59,6 +59,7 @@ static jmethodID g_onConnectionFailedMethod = nullptr;
 static jmethodID g_onErrorMethod = nullptr;
 static jmethodID g_onPingMethod = nullptr;
 static jmethodID g_onPokeMethod = nullptr;
+static jmethodID g_onScreenShareFrameMethod = nullptr;
 static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
 
@@ -599,6 +600,24 @@ void invokeOnAudioFrame(int fromUserId, const char* data, int size) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
+void invokeOnScreenShareFrame(int fromUserId, const char* data, int size) {
+    if (!g_vm || !g_coreClass || !g_onScreenShareFrameMethod || !data || size <= 0) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jbyteArray jArr = env->NewByteArray(size);
+        env->SetByteArrayRegion(jArr, 0, size, reinterpret_cast<const jbyte*>(data));
+        env->CallStaticVoidMethod(g_coreClass, g_onScreenShareFrameMethod, fromUserId, jArr);
+        env->DeleteLocalRef(jArr);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
 void invokeOnConnectionFailed(const std::string& reason) {
     writeLog("invokeOnConnectionFailed chamada: " + reason);
     if (!g_vm || !g_coreClass || !g_onConnectionFailedMethod) return;
@@ -744,6 +763,7 @@ public:
             m_channelKeys.clear();
             m_currentVoiceKey.clear();
             m_currentChannelId = 0;
+            m_screenReassembly.clear();
         }
 
         // Inicializa o codificador Opus Oficial de voz VoIP
@@ -1264,7 +1284,7 @@ private:
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.24-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"1.0.25-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1456,6 +1476,7 @@ private:
             if (t == "user_joined" || t == "user_left" || t == "user_moved" ||
                 t == "chan_update" || t == "chan_removed" || t == "user_state" ||
                 t == "user_nick" || t == "user_desc" || t == "user_group" ||
+                t == "user_screenshare_state" ||
                 t == "server_edit" || t == "group_list" || t == "banlist" ||
                 t == "ban_removed" || t == "complaint_list" ||
                 t == "complaint_added" || t == "complaint_cleared") {
@@ -1562,6 +1583,51 @@ private:
         writeLog("[NAT] Loop de keep-alive UDP finalizado.");
     }
 
+    std::vector<char> decryptScreenChunk(uint32_t fromId, uint16_t seq, const char* data, int size) {
+        std::vector<std::vector<char>> candidateKeys;
+        {
+            std::lock_guard<std::mutex> keyLock(m_keyMutex);
+            if (!m_currentVoiceKey.empty()) candidateKeys.push_back(m_currentVoiceKey);
+            for (const auto& pair : m_channelKeys) {
+                if (pair.second.empty()) continue;
+                bool exists = false;
+                for (const auto& k : candidateKeys) {
+                    if (k == pair.second) { exists = true; break; }
+                }
+                if (!exists) candidateKeys.push_back(pair.second);
+            }
+        }
+        for (const auto& key : candidateKeys) {
+            std::vector<char> plain = voiceDecryptAead(data, size, key, fromId, seq);
+            if (!plain.empty()) return plain;
+        }
+        return candidateKeys.empty() ? std::vector<char>(data, data + size) : std::vector<char>();
+    }
+
+    void handleScreenDatagram(uint32_t fromId, uint16_t seq, const char* data, int size) {
+        if (!data || size < 2) return;
+        const uint8_t chunkIdx = static_cast<uint8_t>(data[0]);
+        const uint8_t chunkCount = static_cast<uint8_t>(data[1]);
+        if (chunkCount == 0 || chunkIdx >= chunkCount) return;
+        std::vector<char> chunk = decryptScreenChunk(fromId, seq, data + 2, size - 2);
+        if (chunk.empty()) return;
+        auto& bySeq = m_screenReassembly[fromId][seq];
+        bySeq[chunkIdx] = std::move(chunk);
+        if (bySeq.size() == chunkCount) {
+            std::vector<char> combined;
+            for (int i = 0; i < chunkCount; ++i) {
+                auto it = bySeq.find(i);
+                if (it == bySeq.end()) return;
+                combined.insert(combined.end(), it->second.begin(), it->second.end());
+            }
+            invokeOnScreenShareFrame(static_cast<int>(fromId), combined.data(), combined.size());
+            m_screenReassembly[fromId].erase(seq);
+            while (m_screenReassembly[fromId].size() > 20) {
+                m_screenReassembly[fromId].erase(m_screenReassembly[fromId].begin());
+            }
+        }
+    }
+
     void udpLoop() {
         writeLog("udpLoop iniciado");
         char buf[2048];
@@ -1575,15 +1641,22 @@ private:
                              (struct sockaddr*)&sender, &len);
             if (n <= 0) continue; // timeout de 1 s ou socket sendo encerrado
 
-            if (n < 10 || memcmp(buf, "HALL", 4) != 0) continue;
+            if (n < 10) continue;
+            const bool isVoice = memcmp(buf, "HALL", 4) == 0;
+            const bool isScreen = memcmp(buf, "HALF", 4) == 0;
+            if (!isVoice && !isScreen) continue;
 
             uint32_t fromId;
             uint16_t seq;
             memcpy(&fromId, buf + 4, 4);
             memcpy(&seq, buf + 8, 2);
 
-            // Descompacta áudio Opus recebido e avisa o Kotlin.
-            decodeAndNotifyVoice(fromId, seq, buf + 10, n - 10);
+            if (isVoice) {
+                // Descompacta áudio Opus recebido e avisa o Kotlin.
+                decodeAndNotifyVoice(fromId, seq, buf + 10, n - 10);
+            } else {
+                handleScreenDatagram(fromId, seq, buf + 10, n - 10);
+            }
         }
         writeLog("udpLoop finalizado");
     }
@@ -1627,6 +1700,7 @@ private:
     std::map<int, std::vector<char>> m_channelKeys;
     std::vector<char> m_currentVoiceKey;
     int m_currentChannelId = 0;
+    std::map<uint32_t, std::map<uint16_t, std::map<int, std::vector<char>>>> m_screenReassembly;
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;
@@ -1661,6 +1735,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onErrorMethod = env->GetStaticMethodID(g_coreClass, "triggerOnError", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onPingMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPing", "(II)V");
     g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onScreenShareFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnScreenShareFrame", "(I[B)V");
     g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
     g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
 
