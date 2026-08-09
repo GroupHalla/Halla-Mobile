@@ -214,7 +214,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        volumeControlStream = AudioManager.STREAM_MUSIC
         setContentView(R.layout.activity_main)
 
         // Limpa o log de depuração antigo na inicialização

@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Reproduz voz remota no stream de mídia para o volume físico controlar a barra de mídia/celular, não só chamada.
+            * Restaura modo de comunicação para manter a barra/volume de chamada enquanto a voz remota toca no stream de mídia.
+            * Remove o forçamento do botão físico para STREAM_MUSIC, permitindo o painel do sistema expor chamada e mídia.
             * Mantém compatibilidade PC -> Mobile com Desktop antigo e channelKeys indexadas por canal.
-            * Mantém ChaCha20-Poly1305 autenticado para clientes atualizados.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -448,12 +448,13 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun startAudio() {
         loadAudioSettings()
-        // A reprodução remota usa stream de mídia; deixar o AudioManager em
-        // MODE_NORMAL evita que o botão de volume controle só a barra de
-        // chamada, que em vários aparelhos fica silenciosa/baixa demais.
+        // Mantém o Android em modo de comunicação para exibir/usar o volume
+        // de chamada e preservar captura de microfone em segundo plano. A voz
+        // recebida continua sendo reproduzida pelo AudioTrack em USAGE_MEDIA,
+        // então o painel expandido do sistema também expõe o volume de mídia.
         try {
             val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            systemAudio.mode = AudioManager.MODE_NORMAL
+            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
             @Suppress("DEPRECATION")
             systemAudio.isSpeakerphoneOn = true
         } catch (_: Exception) { }
