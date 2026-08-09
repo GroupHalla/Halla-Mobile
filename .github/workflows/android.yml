@@ -78,8 +78,8 @@ jobs:
             ## Halla Mobile ${{ github.ref_name }}
 
             ### Correções
-            * Instala channelKeys do welcome também pelo parser Kotlin org.json, garantindo mapa canal->chave no núcleo nativo.
-            * Adiciona fallback final para Opus puro e logs de falha de decode PC -> Mobile.
-            * Mantém modo de comunicação, stream de mídia e compatibilidade com Desktop antigo.
+            * Adiciona botão para exportar/compartilhar halla_log.txt e diagnóstico de voz nas opções de áudio.
+            * Mantém channelKeys via parser Kotlin, logs de falha de decode PC -> Mobile e compatibilidade com Desktop antigo.
+            * Mantém modo de comunicação e stream de mídia para testes de áudio.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

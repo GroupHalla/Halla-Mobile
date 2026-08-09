@@ -21,6 +21,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.drawerlayout.widget.DrawerLayout
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
@@ -391,6 +392,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         panelAudio.addView(btnVoiceDiagnostics)
+
+        val btnShareDiagnostics = Button(this).apply {
+            text = "Exportar/compartilhar log"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setOnClickListener { shareDiagnosticsLog() }
+        }
+        panelAudio.addView(btnShareDiagnostics)
 
         val floatingOptions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2174,6 +2187,42 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         } catch (e: Exception) {
             getString(R.string.log_read_error, e.message ?: getString(R.string.unknown_value))
+        }
+    }
+
+    private fun shareDiagnosticsLog() {
+        try {
+            val rawLog = File(cacheDir, "halla_log.txt")
+            val export = File(cacheDir, "halla-diagnostics.txt")
+            val diagnostics = if (HallaService.isRunning()) HallaService.voiceDiagnostics()
+                              else audioManager.diagnosticsText()
+            val logText = if (rawLog.exists()) rawLog.readText()
+                          else getString(R.string.log_file_not_found)
+            export.writeText(
+                buildString {
+                    appendLine("Halla Mobile diagnostics")
+                    appendLine("Version: $currentVersionName")
+                    appendLine("Service running: ${HallaService.isRunning()}")
+                    appendLine("Session active: ${HallaService.isSessionActive()}")
+                    appendLine()
+                    appendLine("=== Voice diagnostics ===")
+                    appendLine(diagnostics)
+                    appendLine()
+                    appendLine("=== Native halla_log.txt ===")
+                    appendLine(logText)
+                }
+            )
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", export)
+            val share = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "Halla Mobile diagnostics")
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "Halla Mobile diagnostics attached.")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(share, "Compartilhar log do Halla"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Falha ao exportar log: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
