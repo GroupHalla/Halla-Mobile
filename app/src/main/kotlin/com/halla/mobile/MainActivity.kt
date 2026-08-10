@@ -3955,6 +3955,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             screenShareOverlay?.bringToFront()
         }, 250)
         webRtcViewer?.close()
+        screenShareImage?.visibility = View.GONE
+        screenShareVideoHost?.visibility = View.VISIBLE
+        screenShareVideoHost?.bringToFront()
         screenShareVideoHost?.let { host ->
             webRtcViewer = HallaWebRtcViewer(this, userId, host)
         }
@@ -4007,6 +4010,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
             if (bitmap != null) {
                 screenShareFrameCount++
+                screenShareImage?.visibility = View.VISIBLE
                 screenShareImage?.setImageBitmap(bitmap)
                 screenShareTitle?.text = "Transmissão • ${bitmap.width}x${bitmap.height} • $screenShareFrameCount"
             } else {

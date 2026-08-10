@@ -11,10 +11,12 @@ import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
+import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RendererCommon
 import org.webrtc.RtpReceiver
+import org.webrtc.RtpTransceiver
 import org.webrtc.SessionDescription
 import org.webrtc.SdpObserver
 import org.webrtc.SurfaceViewRenderer
@@ -83,12 +85,18 @@ class HallaWebRtcViewer(
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
         }
         peerConnection = factory.createPeerConnection(config, object : PeerConnection.Observer {
-            override fun onSignalingChange(newState: PeerConnection.SignalingState) = Unit
+            override fun onSignalingChange(newState: PeerConnection.SignalingState) {
+                Log.d(TAG, "Signaling state: $newState")
+            }
             override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
                 Log.d(TAG, "ICE connection: $newState")
             }
-            override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-            override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {
+                Log.d(TAG, "ICE receiving: $receiving")
+            }
+            override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
+                Log.d(TAG, "ICE gathering: $newState")
+            }
             override fun onIceCandidate(candidate: IceCandidate) {
                 HallaCore.sendWebRtcIce(remoteUserId, candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
             }
@@ -100,9 +108,19 @@ class HallaWebRtcViewer(
             override fun onDataChannel(dataChannel: DataChannel) = Unit
             override fun onRenegotiationNeeded() = Unit
             override fun onAddTrack(receiver: RtpReceiver, mediaStreams: Array<MediaStream>) {
+                Log.d(TAG, "onAddTrack kind=${receiver.track()?.kind()}")
                 (receiver.track() as? VideoTrack)?.let { attachVideoTrack(it) }
             }
         })
+        try {
+            peerConnection?.addTransceiver(
+                MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
+                RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
+            )
+            Log.d(TAG, "Video transceiver RECV_ONLY added")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not add video recvonly transceiver", e)
+        }
     }
 
     private fun attachVideoTrack(track: VideoTrack) {
@@ -110,8 +128,12 @@ class HallaWebRtcViewer(
             if (!remoteTracks.contains(track)) {
                 remoteTracks.add(track)
                 track.setEnabled(true)
+                renderer.setEnableHardwareScaler(true)
+                renderer.visibility = android.view.View.VISIBLE
+                container.visibility = android.view.View.VISIBLE
+                container.bringToFront()
                 track.addSink(renderer)
-                Log.d(TAG, "Video track attached")
+                Log.d(TAG, "Video track attached and renderer brought to front")
             }
         }
     }
@@ -126,6 +148,7 @@ class HallaWebRtcViewer(
 
     private fun handleOffer(sdp: String) {
         if (sdp.isBlank()) return
+        Log.d(TAG, "Offer received: chars=${sdp.length}, hasVideo=${sdp.contains("m=video")}, hasVp8=${sdp.contains("VP8", ignoreCase = true)}")
         val pc = peerConnection ?: return
         val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
         pc.setRemoteDescription(object : SimpleSdpObserver() {
@@ -134,6 +157,7 @@ class HallaWebRtcViewer(
                     override fun onCreateSuccess(answer: SessionDescription) {
                         pc.setLocalDescription(object : SimpleSdpObserver() {
                             override fun onSetSuccess() {
+                                Log.d(TAG, "Answer sent: chars=${answer.description.length}, hasVideo=${answer.description.contains("m=video")}")
                                 HallaCore.sendWebRtcAnswer(remoteUserId, answer.description)
                             }
                         }, answer)
