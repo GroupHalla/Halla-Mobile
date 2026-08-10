@@ -11,12 +11,10 @@ import org.webrtc.EglBase
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
-import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RendererCommon
 import org.webrtc.RtpReceiver
-import org.webrtc.RtpTransceiver
 import org.webrtc.SessionDescription
 import org.webrtc.SdpObserver
 import org.webrtc.SurfaceViewRenderer
@@ -112,15 +110,9 @@ class HallaWebRtcViewer(
                 (receiver.track() as? VideoTrack)?.let { attachVideoTrack(it) }
             }
         })
-        try {
-            peerConnection?.addTransceiver(
-                MediaStreamTrack.MediaType.MEDIA_TYPE_VIDEO,
-                RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.RECV_ONLY)
-            )
-            Log.d(TAG, "Video transceiver RECV_ONLY added")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not add video recvonly transceiver", e)
-        }
+        // Não adicionamos transceiver manual aqui: em algumas builds do SDK
+        // Android WebRTC isso derruba o processo nativo. O m=video do offer
+        // do Desktop cria o receiver automaticamente via Unified Plan.
     }
 
     private fun attachVideoTrack(track: VideoTrack) {

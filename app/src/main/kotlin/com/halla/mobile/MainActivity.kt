@@ -3959,7 +3959,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         screenShareVideoHost?.visibility = View.VISIBLE
         screenShareVideoHost?.bringToFront()
         screenShareVideoHost?.let { host ->
-            webRtcViewer = HallaWebRtcViewer(this, userId, host)
+            try {
+                webRtcViewer = HallaWebRtcViewer(this, userId, host)
+            } catch (t: Throwable) {
+                android.util.Log.e("HallaWebRTC", "viewer init failed", t)
+                Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                return
+            }
         }
         HallaCore.sendWebRtcWatchRequest(userId)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
@@ -3986,7 +3992,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             runOnUiThread {
                 if (webRtcViewer == null && watchingStreamUserId != 0) {
                     screenShareVideoHost?.let { host ->
-                        webRtcViewer = HallaWebRtcViewer(this, watchingStreamUserId, host)
+                        try {
+                            webRtcViewer = HallaWebRtcViewer(this, watchingStreamUserId, host)
+                        } catch (t: Throwable) {
+                            android.util.Log.e("HallaWebRTC", "viewer init failed from signal", t)
+                            Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
                 webRtcViewer?.handleSignal(signal)
