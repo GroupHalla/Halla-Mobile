@@ -163,7 +163,8 @@ class HallaWebRtcViewer(
   const video = document.getElementById('video');
   const status = document.getElementById('status');
   let pc = null;
-  const remoteStream = new MediaStream();
+  let fallbackStream = null;
+  let currentRemoteStream = null;
 
   function log(msg) {
     status.textContent = msg;
@@ -193,15 +194,22 @@ class HallaWebRtcViewer(
         );
       } catch (e) {}
     };
-    video.srcObject = remoteStream;
     video.volume = 1.0;
     video.muted = false;
     pc.ontrack = ev => {
       log('Track recebida: ' + ev.track.kind);
-      if (!remoteStream.getTracks().some(t => t.id === ev.track.id)) {
-        remoteStream.addTrack(ev.track);
+      if (ev.streams && ev.streams[0]) {
+        // Preferir o MediaStream negociado pelo WebRTC. Quando o Desktop envia
+        // áudio+vídeo com o mesmo stream id, este stream carrega as duas tracks.
+        currentRemoteStream = ev.streams[0];
+        video.srcObject = currentRemoteStream;
+      } else {
+        if (!fallbackStream) fallbackStream = new MediaStream();
+        if (!fallbackStream.getTracks().some(t => t.id === ev.track.id)) {
+          fallbackStream.addTrack(ev.track);
+        }
+        video.srcObject = fallbackStream;
       }
-      video.srcObject = remoteStream;
       video.play().catch(err => log('Falha ao iniciar mídia: ' + err.message));
     };
     pc.oniceconnectionstatechange = () => log('ICE: ' + pc.iceConnectionState);
@@ -236,7 +244,8 @@ class HallaWebRtcViewer(
     try { if (pc) pc.close(); } catch (e) {}
     pc = null;
     video.srcObject = null;
-    try { remoteStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { if (fallbackStream) fallbackStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    currentRemoteStream = null;
   };
 
   ensurePc().catch(err => log('Erro WebRTC: ' + err.message));
