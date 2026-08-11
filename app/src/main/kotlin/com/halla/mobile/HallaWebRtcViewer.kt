@@ -48,14 +48,16 @@ class HallaWebRtcViewer(
         }
     }
 
-    private val eglBase = EglBase.create()
-    private val renderer = SurfaceViewRenderer(activity)
-    private val factory: PeerConnectionFactory
+    private lateinit var eglBase: EglBase
+    private lateinit var renderer: SurfaceViewRenderer
+    private lateinit var factory: PeerConnectionFactory
     private var peerConnection: PeerConnection? = null
     private val remoteTracks = mutableListOf<VideoTrack>()
 
     init {
         ensureFactoryInitialized(activity)
+        eglBase = EglBase.create()
+        renderer = SurfaceViewRenderer(activity)
         renderer.init(eglBase.eglBaseContext, null)
         renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
         renderer.setEnableHardwareScaler(true)
@@ -171,15 +173,19 @@ class HallaWebRtcViewer(
 
     fun close() {
         try {
-            remoteTracks.forEach { it.removeSink(renderer) }
+            if (::renderer.isInitialized) {
+                remoteTracks.forEach { it.removeSink(renderer) }
+            }
             remoteTracks.clear()
             peerConnection?.close()
             peerConnection?.dispose()
             peerConnection = null
-            container.removeView(renderer)
-            renderer.release()
-            factory.dispose()
-            eglBase.release()
+            if (::renderer.isInitialized) {
+                container.removeView(renderer)
+                renderer.release()
+            }
+            if (::factory.isInitialized) factory.dispose()
+            if (::eglBase.isInitialized) eglBase.release()
         } catch (e: Exception) {
             Log.w(TAG, "close failed", e)
         }
