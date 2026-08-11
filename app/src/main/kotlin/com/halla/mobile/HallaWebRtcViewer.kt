@@ -156,14 +156,14 @@ class HallaWebRtcViewer(
   </style>
 </head>
 <body>
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline></video>
   <div id="status">Preparando WebRTC...</div>
 <script>
 (() => {
   const video = document.getElementById('video');
   const status = document.getElementById('status');
   let pc = null;
-  let fallbackStream = null;
+  const remoteStream = new MediaStream();
 
   function log(msg) {
     status.textContent = msg;
@@ -193,16 +193,16 @@ class HallaWebRtcViewer(
         );
       } catch (e) {}
     };
+    video.srcObject = remoteStream;
+    video.volume = 1.0;
+    video.muted = false;
     pc.ontrack = ev => {
-      log('Track de vídeo recebida');
-      if (ev.streams && ev.streams[0]) {
-        video.srcObject = ev.streams[0];
-      } else {
-        if (!fallbackStream) fallbackStream = new MediaStream();
-        fallbackStream.addTrack(ev.track);
-        video.srcObject = fallbackStream;
+      log('Track recebida: ' + ev.track.kind);
+      if (!remoteStream.getTracks().some(t => t.id === ev.track.id)) {
+        remoteStream.addTrack(ev.track);
       }
-      video.play().catch(err => log('Falha ao iniciar vídeo: ' + err.message));
+      video.srcObject = remoteStream;
+      video.play().catch(err => log('Falha ao iniciar mídia: ' + err.message));
     };
     pc.oniceconnectionstatechange = () => log('ICE: ' + pc.iceConnectionState);
     pc.onconnectionstatechange = () => log('Conexão: ' + pc.connectionState);
@@ -236,6 +236,7 @@ class HallaWebRtcViewer(
     try { if (pc) pc.close(); } catch (e) {}
     pc = null;
     video.srcObject = null;
+    try { remoteStream.getTracks().forEach(t => t.stop()); } catch (e) {}
   };
 
   ensurePc().catch(err => log('Erro WebRTC: ' + err.message));
