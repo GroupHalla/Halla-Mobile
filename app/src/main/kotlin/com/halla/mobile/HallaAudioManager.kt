@@ -300,7 +300,7 @@ class HallaAudioManager(private val cacheDir: File) {
                     .setChannelMask(channelConfig)
                     .setEncoding(audioFormat)
                     .build())
-                .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 10))
+                .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 6))
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             audioTrack = track
@@ -320,16 +320,10 @@ class HallaAudioManager(private val cacheDir: File) {
         }
         if (isPlayingAudio && speakerEnabled) {
             try {
-                val track = audioTrack ?: return
-                var offset = 0
-                while (offset < pcmData.size) {
-                    val written = track.write(pcmData, offset, pcmData.size - offset)
-                    if (written <= 0) break
-                    offset += written
-                }
-                if (isLocalRecording && offset > 0) {
-                    localRecordFile?.write(pcmData, 0, offset)
-                    localRecordBytes += offset
+                val written = audioTrack?.write(pcmData, 0, pcmData.size) ?: 0
+                if (isLocalRecording && written > 0) {
+                    localRecordFile?.write(pcmData, 0, written)
+                    localRecordBytes += written
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
