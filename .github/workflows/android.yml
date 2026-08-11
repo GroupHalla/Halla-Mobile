@@ -78,7 +78,9 @@ jobs:
         run: |
           ./gradlew --no-daemon -PrequireReleaseSigning=true assembleRelease
           cp app/build/outputs/apk/release/app-release.apk HallaMobile.apk
-          apksigner verify --verbose --print-certs HallaMobile.apk
+          APKSIGNER="$(find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          [[ -x "$APKSIGNER" ]] || { echo "apksigner not found under $ANDROID_SDK_ROOT/build-tools" >&2; exit 1; }
+          "$APKSIGNER" verify --verbose --print-certs HallaMobile.apk
           sha256sum HallaMobile.apk > HallaMobile.apk.sha256
 
       - name: Upload CI artifact
