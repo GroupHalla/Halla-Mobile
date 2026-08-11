@@ -1,31 +1,24 @@
 package com.halla.mobile
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.util.Log
+import android.webkit.JavascriptInterface
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import org.json.JSONObject
-import org.webrtc.DataChannel
-import org.webrtc.DefaultVideoDecoderFactory
-import org.webrtc.DefaultVideoEncoderFactory
-import org.webrtc.EglBase
-import org.webrtc.IceCandidate
-import org.webrtc.MediaConstraints
-import org.webrtc.MediaStream
-import org.webrtc.PeerConnection
-import org.webrtc.PeerConnectionFactory
-import org.webrtc.RendererCommon
-import org.webrtc.RtpReceiver
-import org.webrtc.SessionDescription
-import org.webrtc.SdpObserver
-import org.webrtc.SurfaceViewRenderer
-import org.webrtc.VideoTrack
 
 /**
  * WebRTC viewer for desktop screen share.
  *
- * Signaling is transported by HallaCore over the existing TCP/TLS session.
- * Media is native WebRTC (P2P in this first stage). The Desktop transmitter
- * will provide SDP offer/ICE in the next stage.
+ * This implementation intentionally uses Android System WebView's built-in
+ * RTCPeerConnection instead of bundling a native libwebrtc AAR. Some devices
+ * were force-closing the app inside the native Android WebRTC SDK when opening
+ * the stream; keeping WebRTC in the WebView process avoids crashing Halla's
+ * main process and still uses real browser WebRTC for media.
  */
 class HallaWebRtcViewer(
     private val activity: Activity,
@@ -34,167 +27,221 @@ class HallaWebRtcViewer(
 ) {
     companion object {
         private const val TAG = "HallaWebRTC"
-        private var factoryInitialized = false
-
-        @Synchronized
-        private fun ensureFactoryInitialized(activity: Activity) {
-            if (factoryInitialized) return
-            PeerConnectionFactory.initialize(
-                PeerConnectionFactory.InitializationOptions.builder(activity.applicationContext)
-                    .setEnableInternalTracer(false)
-                    .createInitializationOptions()
-            )
-            factoryInitialized = true
-        }
     }
 
-    private lateinit var eglBase: EglBase
-    private lateinit var renderer: SurfaceViewRenderer
-    private lateinit var factory: PeerConnectionFactory
-    private var peerConnection: PeerConnection? = null
-    private val remoteTracks = mutableListOf<VideoTrack>()
+    private val pendingSignals = mutableListOf<JSONObject>()
+    private var pageReady = false
+    private var webView: WebView? = null
+
+    private inner class Bridge {
+        @JavascriptInterface
+        fun log(message: String) {
+            Log.d(TAG, message)
+        }
+
+        @JavascriptInterface
+        fun onAnswer(sdp: String) {
+            Log.d(TAG, "WebView answer: chars=${sdp.length}, hasVideo=${sdp.contains("m=video")}")
+            HallaCore.sendWebRtcAnswer(remoteUserId, sdp)
+        }
+
+        @JavascriptInterface
+        fun onIce(candidate: String, sdpMid: String, sdpMLineIndex: Int) {
+            if (candidate.isBlank()) return
+            HallaCore.sendWebRtcIce(remoteUserId, candidate, sdpMid, sdpMLineIndex)
+        }
+    }
 
     init {
-        ensureFactoryInitialized(activity)
-        eglBase = EglBase.create()
-        renderer = SurfaceViewRenderer(activity)
-        renderer.init(eglBase.eglBaseContext, null)
-        renderer.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
-        renderer.setEnableHardwareScaler(true)
-        renderer.setMirror(false)
-        container.removeAllViews()
-        container.addView(renderer, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-        ))
-
-        val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
-        val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
-        factory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(encoderFactory)
-            .setVideoDecoderFactory(decoderFactory)
-            .createPeerConnectionFactory()
-        createPeerConnection()
+        createWebView()
     }
 
-    private fun createPeerConnection() {
-        val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )
-        val config = PeerConnection.RTCConfiguration(iceServers).apply {
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        }
-        peerConnection = factory.createPeerConnection(config, object : PeerConnection.Observer {
-            override fun onSignalingChange(newState: PeerConnection.SignalingState) {
-                Log.d(TAG, "Signaling state: $newState")
-            }
-            override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
-                Log.d(TAG, "ICE connection: $newState")
-            }
-            override fun onIceConnectionReceivingChange(receiving: Boolean) {
-                Log.d(TAG, "ICE receiving: $receiving")
-            }
-            override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) {
-                Log.d(TAG, "ICE gathering: $newState")
-            }
-            override fun onIceCandidate(candidate: IceCandidate) {
-                HallaCore.sendWebRtcIce(remoteUserId, candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
-            }
-            override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) = Unit
-            override fun onAddStream(stream: MediaStream) {
-                stream.videoTracks.firstOrNull()?.let { attachVideoTrack(it) }
-            }
-            override fun onRemoveStream(stream: MediaStream) = Unit
-            override fun onDataChannel(dataChannel: DataChannel) = Unit
-            override fun onRenegotiationNeeded() = Unit
-            override fun onAddTrack(receiver: RtpReceiver, mediaStreams: Array<MediaStream>) {
-                Log.d(TAG, "onAddTrack kind=${receiver.track()?.kind()}")
-                (receiver.track() as? VideoTrack)?.let { attachVideoTrack(it) }
-            }
-        })
-        // Não adicionamos transceiver manual aqui: em algumas builds do SDK
-        // Android WebRTC isso derruba o processo nativo. O m=video do offer
-        // do Desktop cria o receiver automaticamente via Unified Plan.
-    }
-
-    private fun attachVideoTrack(track: VideoTrack) {
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWebView() {
         activity.runOnUiThread {
-            if (!remoteTracks.contains(track)) {
-                remoteTracks.add(track)
-                track.setEnabled(true)
-                renderer.setEnableHardwareScaler(true)
-                renderer.visibility = android.view.View.VISIBLE
-                container.visibility = android.view.View.VISIBLE
-                container.bringToFront()
-                track.addSink(renderer)
-                Log.d(TAG, "Video track attached and renderer brought to front")
+            WebView.setWebContentsDebuggingEnabled(true)
+            val web = WebView(activity)
+            web.setBackgroundColor(android.graphics.Color.BLACK)
+            web.settings.javaScriptEnabled = true
+            web.settings.domStorageEnabled = true
+            web.settings.mediaPlaybackRequiresUserGesture = false
+            web.webChromeClient = object : WebChromeClient() {
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    // We only receive remote video, but grant requested WebRTC
+                    // resources if WebView asks during negotiation.
+                    request.grant(request.resources)
+                }
             }
+            web.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    pageReady = true
+                    Log.d(TAG, "WebView WebRTC page ready")
+                    flushPendingSignals()
+                }
+            }
+            web.addJavascriptInterface(Bridge(), "HallaAndroid")
+            container.removeAllViews()
+            container.addView(web, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+            container.visibility = android.view.View.VISIBLE
+            container.bringToFront()
+            webView = web
+            web.loadDataWithBaseURL(
+                "https://halla.local/webrtc-viewer/",
+                html(),
+                "text/html",
+                "UTF-8",
+                null
+            )
         }
     }
 
     fun handleSignal(signal: JSONObject) {
-        when (signal.optString("t")) {
-            "webrtc_offer" -> handleOffer(signal.optString("sdp", ""))
-            "webrtc_ice" -> handleIce(signal)
-            "webrtc_watch_stop" -> close()
+        val type = signal.optString("t")
+        if (type == "webrtc_watch_stop") {
+            close()
+            return
         }
+        if (type != "webrtc_offer" && type != "webrtc_ice") return
+        Log.d(TAG, "Signal to WebView: $type")
+        if (!pageReady || webView == null) {
+            pendingSignals.add(JSONObject(signal.toString()))
+            return
+        }
+        sendSignalToPage(signal)
     }
 
-    private fun handleOffer(sdp: String) {
-        if (sdp.isBlank()) return
-        Log.d(TAG, "Offer received: chars=${sdp.length}, hasVideo=${sdp.contains("m=video")}, hasVp8=${sdp.contains("VP8", ignoreCase = true)}")
-        val pc = peerConnection ?: return
-        val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
-        pc.setRemoteDescription(object : SimpleSdpObserver() {
-            override fun onSetSuccess() {
-                pc.createAnswer(object : SimpleSdpObserver() {
-                    override fun onCreateSuccess(answer: SessionDescription) {
-                        pc.setLocalDescription(object : SimpleSdpObserver() {
-                            override fun onSetSuccess() {
-                                Log.d(TAG, "Answer sent: chars=${answer.description.length}, hasVideo=${answer.description.contains("m=video")}")
-                                HallaCore.sendWebRtcAnswer(remoteUserId, answer.description)
-                            }
-                        }, answer)
-                    }
-                }, MediaConstraints())
-            }
-        }, offer)
+    private fun flushPendingSignals() {
+        val copy = pendingSignals.toList()
+        pendingSignals.clear()
+        copy.forEach { sendSignalToPage(it) }
     }
 
-    private fun handleIce(signal: JSONObject) {
-        val candidate = signal.optString("candidate", "")
-        if (candidate.isBlank()) return
-        peerConnection?.addIceCandidate(IceCandidate(
-            signal.optString("sdpMid", "0"),
-            signal.optInt("sdpMLineIndex", 0),
-            candidate
-        ))
+    private fun sendSignalToPage(signal: JSONObject) {
+        val js = "window.hallaHandleSignal(${JSONObject.quote(signal.toString())});"
+        activity.runOnUiThread {
+            webView?.evaluateJavascript(js, null)
+        }
     }
 
     fun close() {
-        try {
-            if (::renderer.isInitialized) {
-                remoteTracks.forEach { it.removeSink(renderer) }
+        activity.runOnUiThread {
+            try {
+                webView?.evaluateJavascript("window.hallaClose && window.hallaClose();", null)
+                webView?.removeJavascriptInterface("HallaAndroid")
+                container.removeView(webView)
+                webView?.stopLoading()
+                webView?.destroy()
+            } catch (e: Exception) {
+                Log.w(TAG, "close failed", e)
+            } finally {
+                webView = null
+                pageReady = false
+                pendingSignals.clear()
             }
-            remoteTracks.clear()
-            peerConnection?.close()
-            peerConnection?.dispose()
-            peerConnection = null
-            if (::renderer.isInitialized) {
-                container.removeView(renderer)
-                renderer.release()
-            }
-            if (::factory.isInitialized) factory.dispose()
-            if (::eglBase.isInitialized) eglBase.release()
-        } catch (e: Exception) {
-            Log.w(TAG, "close failed", e)
         }
     }
 
-    open class SimpleSdpObserver : SdpObserver {
-        override fun onCreateSuccess(desc: SessionDescription) = Unit
-        override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String) { Log.w(TAG, "SDP create failed: $error") }
-        override fun onSetFailure(error: String) { Log.w(TAG, "SDP set failed: $error") }
+    private fun html(): String = """
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <style>
+    html, body { margin:0; width:100%; height:100%; background:#000; overflow:hidden; }
+    #video { position:fixed; inset:0; width:100%; height:100%; background:#000; object-fit:contain; }
+    #status { position:fixed; left:12px; right:12px; bottom:12px; padding:8px 10px; color:#fff; background:rgba(0,0,0,.55); font:13px sans-serif; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+  <div id="status">Preparando WebRTC...</div>
+<script>
+(() => {
+  const video = document.getElementById('video');
+  const status = document.getElementById('status');
+  let pc = null;
+  let fallbackStream = null;
+
+  function log(msg) {
+    status.textContent = msg;
+    try { HallaAndroid.log(String(msg)); } catch (e) {}
+  }
+
+  function supported() {
+    return typeof RTCPeerConnection !== 'undefined' && typeof RTCSessionDescription !== 'undefined';
+  }
+
+  async function ensurePc() {
+    if (pc) return pc;
+    if (!supported()) {
+      log('WebRTC não disponível no Android System WebView deste aparelho.');
+      throw new Error('RTCPeerConnection unavailable');
     }
+    pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+    pc.onicecandidate = ev => {
+      if (!ev.candidate) return;
+      try {
+        HallaAndroid.onIce(
+          ev.candidate.candidate || '',
+          ev.candidate.sdpMid || '',
+          ev.candidate.sdpMLineIndex == null ? -1 : ev.candidate.sdpMLineIndex
+        );
+      } catch (e) {}
+    };
+    pc.ontrack = ev => {
+      log('Track de vídeo recebida');
+      if (ev.streams && ev.streams[0]) {
+        video.srcObject = ev.streams[0];
+      } else {
+        if (!fallbackStream) fallbackStream = new MediaStream();
+        fallbackStream.addTrack(ev.track);
+        video.srcObject = fallbackStream;
+      }
+      video.play().catch(err => log('Falha ao iniciar vídeo: ' + err.message));
+    };
+    pc.oniceconnectionstatechange = () => log('ICE: ' + pc.iceConnectionState);
+    pc.onconnectionstatechange = () => log('Conexão: ' + pc.connectionState);
+    pc.onsignalingstatechange = () => { try { HallaAndroid.log('Signaling: ' + pc.signalingState); } catch(e) {} };
+    log('PeerConnection pronta');
+    return pc;
+  }
+
+  window.hallaHandleSignal = async function(signalText) {
+    const signal = JSON.parse(signalText);
+    const peer = await ensurePc();
+    if (signal.t === 'webrtc_offer') {
+      const sdp = signal.sdp || '';
+      log('Offer recebida: video=' + sdp.includes('m=video') + ', VP8=' + /VP8/i.test(sdp));
+      await peer.setRemoteDescription({ type: 'offer', sdp });
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      HallaAndroid.onAnswer(answer.sdp || '');
+      log('Answer enviada');
+    } else if (signal.t === 'webrtc_ice') {
+      if (!signal.candidate) return;
+      await peer.addIceCandidate({
+        candidate: signal.candidate,
+        sdpMid: signal.sdpMid || '0',
+        sdpMLineIndex: signal.sdpMLineIndex == null ? 0 : signal.sdpMLineIndex
+      });
+    }
+  };
+
+  window.hallaClose = function() {
+    try { if (pc) pc.close(); } catch (e) {}
+    pc = null;
+    video.srcObject = null;
+  };
+
+  ensurePc().catch(err => log('Erro WebRTC: ' + err.message));
+})();
+</script>
+</body>
+</html>
+""".trimIndent()
 }
