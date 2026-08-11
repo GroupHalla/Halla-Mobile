@@ -788,10 +788,13 @@ public:
         int err = 0;
         m_encoder = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
         if (m_encoder) {
-            opus_encoder_ctl(m_encoder, OPUS_SET_BITRATE(32000));
-            opus_encoder_ctl(m_encoder, OPUS_SET_VBR(1));
-            opus_encoder_ctl(m_encoder, OPUS_SET_DTX(1));
-            writeLog("Opus Encoder nativo inicializado com sucesso.");
+            opus_encoder_ctl(m_encoder, OPUS_SET_BITRATE(48000));
+            opus_encoder_ctl(m_encoder, OPUS_SET_VBR(0));
+            opus_encoder_ctl(m_encoder, OPUS_SET_DTX(0));
+            opus_encoder_ctl(m_encoder, OPUS_SET_INBAND_FEC(1));
+            opus_encoder_ctl(m_encoder, OPUS_SET_PACKET_LOSS_PERC(10));
+            opus_encoder_ctl(m_encoder, OPUS_SET_COMPLEXITY(5));
+            writeLog("Opus Encoder nativo inicializado com FEC/CBR para voz estável.");
         } else {
             writeLog("Erro ao inicializar Opus Encoder nativo!");
         }
