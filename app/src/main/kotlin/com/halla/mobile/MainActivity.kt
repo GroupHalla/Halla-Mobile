@@ -2973,6 +2973,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                         userRow.addView(avatarContainer)
                         userRow.addView(txtUser)
+                        if (usr.optBoolean("screensharing", false)) {
+                            val liveBadge = TextView(this).apply {
+                                text = "● LIVE"
+                                setTextColor(Color.WHITE)
+                                textSize = 10f
+                                setTypeface(null, Typeface.BOLD)
+                                gravity = android.view.Gravity.CENTER
+                                background = GradientDrawable().apply {
+                                    cornerRadius = 18f
+                                    setColor(Color.parseColor("#B91C1C"))
+                                    setStroke(1, Color.parseColor("#EF4444"))
+                                }
+                                setPadding(10, 3, 10, 3)
+                                layoutParams = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT
+                                ).apply { setMargins(8, 0, 8, 0) }
+                            }
+                            userRow.addView(liveBadge)
+                        }
                         userRow.addView(txtStatusIcon)
 
                         userRow.setOnLongClickListener {
