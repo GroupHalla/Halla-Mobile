@@ -2,6 +2,8 @@ package com.halla.mobile
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -162,6 +164,44 @@ private fun fetchExpectedSha256(checksumUrl: String): String {
     }
 }
 
+private fun signatureDigests(signatures: Array<Signature>): Set<String> = signatures.map { signature ->
+    MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+}.toSet()
+
+@Suppress("DEPRECATION")
+private fun currentSignerDigests(): Set<String> {
+    val pm = activity.packageManager
+    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+        pm.getPackageInfo(activity.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+    else pm.getPackageInfo(activity.packageName, PackageManager.GET_SIGNATURES)
+    val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+        info.signingInfo?.signingCertificateHistory ?: emptyArray()
+    else info.signatures ?: emptyArray()
+    return signatureDigests(signatures)
+}
+
+@Suppress("DEPRECATION")
+private fun apkSignerDigests(file: File): Set<String> {
+    val pm = activity.packageManager
+    val info = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+        pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+    else pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES))
+        ?: throw SecurityException("APK sem assinatura reconhecível")
+    val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+        info.signingInfo?.apkContentsSigners ?: emptyArray()
+    else info.signatures ?: emptyArray()
+    return signatureDigests(signatures)
+}
+
+private fun verifySameApplicationSigner(file: File) {
+    val current = currentSignerDigests()
+    val downloaded = apkSignerDigests(file)
+    if (current.isEmpty() || downloaded.isEmpty() || current.intersect(downloaded).isEmpty()) {
+        throw SecurityException("Assinatura do APK não corresponde ao Halla instalado")
+    }
+}
+
 private fun showUpdateNotificationDialog(newTag: String, notes: String, apkUrl: String, checksumUrl: String) {
     val canInstall = apkUrl.isNotEmpty() && checksumUrl.isNotEmpty()
     val action = if (canInstall) activity.getString(R.string.download_install) else activity.getString(R.string.open_release)
@@ -242,6 +282,7 @@ private fun downloadAndInstallUpdate(url: String, checksumUrl: String, version: 
                 target.delete()
                 throw SecurityException("Checksum SHA-256 do APK não confere")
             }
+            verifySameApplicationSigner(target)
             output = target
             connection.disconnect()
         } catch (e: Exception) {

@@ -41,13 +41,14 @@ class HallaWebRtcViewer(
 
         @JavascriptInterface
         fun onAnswer(sdp: String) {
+            if (sdp.isBlank() || sdp.length > 256 * 1024) return
             Log.d(TAG, "WebView answer: chars=${sdp.length}, hasVideo=${sdp.contains("m=video")}")
             HallaCore.sendWebRtcAnswer(remoteUserId, sdp)
         }
 
         @JavascriptInterface
         fun onIce(candidate: String, sdpMid: String, sdpMLineIndex: Int) {
-            if (candidate.isBlank()) return
+            if (candidate.isBlank() || candidate.length > 16 * 1024) return
             HallaCore.sendWebRtcIce(remoteUserId, candidate, sdpMid, sdpMLineIndex)
         }
     }
@@ -59,20 +60,26 @@ class HallaWebRtcViewer(
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView() {
         activity.runOnUiThread {
-            WebView.setWebContentsDebuggingEnabled(true)
+            WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
             val web = WebView(activity)
             web.setBackgroundColor(android.graphics.Color.BLACK)
             web.settings.javaScriptEnabled = true
             web.settings.domStorageEnabled = true
             web.settings.mediaPlaybackRequiresUserGesture = false
+            web.settings.allowFileAccess = false
+            web.settings.allowContentAccess = false
+            web.settings.safeBrowsingEnabled = true
             web.webChromeClient = object : WebChromeClient() {
                 override fun onPermissionRequest(request: PermissionRequest) {
-                    // We only receive remote video, but grant requested WebRTC
-                    // resources if WebView asks during negotiation.
-                    request.grant(request.resources)
+                    // O viewer só recebe mídia remota e nunca precisa de câmera/microfone local.
+                    request.deny()
                 }
             }
             web.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                    val uri = request?.url ?: return true
+                    return uri.scheme != "https" || uri.host != "halla.local"
+                }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     pageReady = true
                     Log.d(TAG, "WebView WebRTC page ready")
@@ -107,6 +114,7 @@ class HallaWebRtcViewer(
         if (type != "webrtc_offer" && type != "webrtc_ice") return
         Log.d(TAG, "Signal to WebView: $type")
         if (!pageReady || webView == null) {
+            if (pendingSignals.size >= 128) pendingSignals.removeAt(0)
             pendingSignals.add(JSONObject(signal.toString()))
             return
         }
@@ -175,15 +183,16 @@ class HallaWebRtcViewer(
     return typeof RTCPeerConnection !== 'undefined' && typeof RTCSessionDescription !== 'undefined';
   }
 
-  async function ensurePc() {
+  async function ensurePc(configuredIceServers) {
     if (pc) return pc;
     if (!supported()) {
       log('WebRTC não disponível no Android System WebView deste aparelho.');
       throw new Error('RTCPeerConnection unavailable');
     }
-    pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+    const iceServers = Array.isArray(configuredIceServers) && configuredIceServers.length
+      ? configuredIceServers
+      : [{ urls: 'stun:stun.l.google.com:19302' }];
+    pc = new RTCPeerConnection({ iceServers });
     pc.onicecandidate = ev => {
       if (!ev.candidate) return;
       try {
@@ -221,7 +230,7 @@ class HallaWebRtcViewer(
 
   window.hallaHandleSignal = async function(signalText) {
     const signal = JSON.parse(signalText);
-    const peer = await ensurePc();
+    const peer = await ensurePc(signal.iceServers);
     if (signal.t === 'webrtc_offer') {
       const sdp = signal.sdp || '';
       log('Offer recebida: video=' + sdp.includes('m=video') + ', VP8=' + /VP8/i.test(sdp));
@@ -248,7 +257,7 @@ class HallaWebRtcViewer(
     currentRemoteStream = null;
   };
 
-  ensurePc().catch(err => log('Erro WebRTC: ' + err.message));
+  log('Aguardando oferta WebRTC...');
 })();
 </script>
 </body>

@@ -30,6 +30,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * Mantém a sessão Halla e o áudio vivos quando a Activity sai da tela.
@@ -318,11 +319,17 @@ class HallaService : Service(), HallaCore.Callbacks {
                else saved.getInt("last_srv_port", 9987)
         nick = intent.getStringExtra(EXTRA_NICK).orEmpty()
             .ifEmpty { saved.getString("last_srv_nick", "").orEmpty() }
+        val legacyPass = saved.getString("last_srv_pass", "").orEmpty()
+        if (legacyPass.isNotEmpty()) {
+            HallaCore.storeSecret(this, "last-server-password", legacyPass)
+            saved.edit().remove("last_srv_pass").apply()
+        }
         pass = intent.getStringExtra(EXTRA_PASS).orEmpty()
-            .ifEmpty { saved.getString("last_srv_pass", "").orEmpty() }
+            .ifEmpty { HallaCore.readSecret(this, "last-server-password") }
         uid = intent.getStringExtra(EXTRA_UID).orEmpty()
             .ifEmpty { saved.getString("client_uid", "").orEmpty() }
-        cachePath = intent.getStringExtra(EXTRA_CACHE).orEmpty().ifEmpty { cacheDir.absolutePath }
+        val pinDirectory = File(noBackupFilesDir, "tls-pins").apply { mkdirs() }
+        cachePath = pinDirectory.absolutePath
         explicitDisconnect = false
         networkWasLost = false
         everConnected = false
@@ -340,7 +347,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         if (!connecting && !sessionActive && host.isNotEmpty()) {
             connecting = true
             HallaCore.prepareIdentity(this, uid)
-            HallaCore.connectToServer(host, port, nick, pass, cachePath, uid)
+            HallaCore.connectToServer(host, port, nick, pass, cachePath, uid, BuildConfig.VERSION_NAME)
         }
     }
 
@@ -641,7 +648,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             }
             connecting = true
             HallaCore.prepareIdentity(this, uid)
-            HallaCore.connectToServer(host, port, nick, pass, cachePath, uid)
+            HallaCore.connectToServer(host, port, nick, pass, cachePath, uid, BuildConfig.VERSION_NAME)
         }
         handler.postDelayed(reconnectRunnable!!, nextDelay)
     }
@@ -951,16 +958,13 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun notifySocial(title: String, text: String) {
         try {
-            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, SOCIAL_CHANNEL_ID)
-        } else Notification.Builder(this)
-        val notification = builder
-            .setSmallIcon(R.drawable.ic_logo_wave)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setAutoCancel(true)
-            .setVibrate(longArrayOf(0, 120, 80, 180))
-            .build()
+            val notification = Notification.Builder(this, SOCIAL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_logo_wave)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setAutoCancel(true)
+                .setVibrate(longArrayOf(0, 120, 80, 180))
+                .build()
             notificationManager.notify((System.currentTimeMillis() and 0x7fffffff).toInt(), notification)
         } catch (_: SecurityException) {
             // Notificações podem estar bloqueadas no Android 13+; a chamada

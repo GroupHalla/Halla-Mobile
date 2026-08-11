@@ -2,10 +2,13 @@ package com.halla.mobile
 
 import android.content.Context
 import android.util.Base64
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import org.json.JSONObject
 import net.i2p.crypto.eddsa.EdDSASecurityProvider
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
 import java.security.KeyFactory
+import java.security.KeyStore
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
@@ -13,6 +16,10 @@ import java.security.Security
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.concurrent.CopyOnWriteArraySet
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 object HallaCore {
     private var appContext: Context? = null
@@ -27,6 +34,53 @@ object HallaCore {
     }
 
     private const val EDDSA_PROVIDER = "EdDSA"
+    private const val IDENTITY_MASTER_KEY_ALIAS = "halla.identity.master.v1"
+
+    private fun identityMasterKey(): SecretKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey(IDENTITY_MASTER_KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(KeyGenParameterSpec.Builder(
+            IDENTITY_MASTER_KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+         .setRandomizedEncryptionRequired(true)
+         .setUserAuthenticationRequired(false)
+         .build())
+        return generator.generateKey()
+    }
+
+    private fun encryptIdentityPrivateKey(encoded: ByteArray): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, identityMasterKey())
+        val iv = Base64.encodeToString(cipher.iv, Base64.NO_WRAP)
+        val ciphertext = Base64.encodeToString(cipher.doFinal(encoded), Base64.NO_WRAP)
+        return "v1:$iv:$ciphertext"
+    }
+
+    private fun decryptIdentityPrivateKey(value: String): ByteArray {
+        val parts = value.split(':', limit = 3)
+        require(parts.size == 3 && parts[0] == "v1") { "Formato de identidade privada inválido" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, identityMasterKey(),
+            GCMParameterSpec(128, Base64.decode(parts[1], Base64.NO_WRAP)))
+        return cipher.doFinal(Base64.decode(parts[2], Base64.NO_WRAP))
+    }
+
+    fun storeSecret(context: Context, key: String, value: String) {
+        val prefs = context.applicationContext.getSharedPreferences("HallaSecrets", Context.MODE_PRIVATE)
+        if (value.isEmpty()) prefs.edit().remove(key).apply()
+        else prefs.edit().putString(key, encryptIdentityPrivateKey(value.toByteArray(Charsets.UTF_8))).apply()
+    }
+
+    fun readSecret(context: Context, key: String): String {
+        return try {
+            val encoded = context.applicationContext.getSharedPreferences("HallaSecrets", Context.MODE_PRIVATE)
+                .getString(key, "").orEmpty()
+            if (encoded.isEmpty()) "" else decryptIdentityPrivateKey(encoded).toString(Charsets.UTF_8)
+        } catch (_: Throwable) { "" }
+    }
 
     private fun ensureEdDsaProvider() {
         if (Security.getProvider(EDDSA_PROVIDER) == null) {
@@ -51,13 +105,24 @@ object HallaCore {
         val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
         val alias = uidAlias.ifEmpty { "default" }
         try {
-            if (prefs.getString("$alias.public", null) == null || prefs.getString("$alias.private", null) == null) {
+            val encryptedName = "$alias.privateEncrypted"
+            val legacyName = "$alias.private"
+            if (prefs.getString(encryptedName, null) == null) {
+                val legacy = prefs.getString(legacyName, null)
+                if (!legacy.isNullOrEmpty()) {
+                    val privateDer = Base64.decode(legacy, Base64.NO_WRAP)
+                    prefs.edit().putString(encryptedName, encryptIdentityPrivateKey(privateDer))
+                        .remove(legacyName).commit()
+                }
+            }
+            if (prefs.getString("$alias.public", null) == null || prefs.getString(encryptedName, null) == null) {
                 val (algorithm, kp) = newEd25519KeyPair()
                 prefs.edit()
                     .putString("$alias.algorithm", algorithm)
                     .putString("$alias.public", Base64.encodeToString(kp.public.encoded, Base64.NO_WRAP))
-                    .putString("$alias.private", Base64.encodeToString(kp.private.encoded, Base64.NO_WRAP))
-                    .apply()
+                    .putString(encryptedName, encryptIdentityPrivateKey(kp.private.encoded))
+                    .remove(legacyName)
+                    .commit()
             }
             val pub = Base64.decode(prefs.getString("$alias.public", "") ?: "", Base64.NO_WRAP)
             return Base64.encodeToString(MessageDigest.getInstance("SHA-256").digest(pub), Base64.NO_WRAP)
@@ -85,7 +150,8 @@ object HallaCore {
             val alias = uidAlias.ifEmpty { "default" }
             val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
             val algorithm = prefs.getString("$alias.algorithm", "Ed25519") ?: "Ed25519"
-            val privDer = Base64.decode(prefs.getString("$alias.private", "") ?: "", Base64.NO_WRAP)
+            val encrypted = prefs.getString("$alias.privateEncrypted", "") ?: ""
+            val privDer = decryptIdentityPrivateKey(encrypted)
             val priv = if (algorithm == "EdDSA") {
                 ensureEdDsaProvider()
                 KeyFactory.getInstance("EdDSA", EDDSA_PROVIDER).generatePrivate(PKCS8EncodedKeySpec(privDer))
@@ -105,7 +171,7 @@ object HallaCore {
 
     // Funções nativas C++ para serem chamadas pelo Kotlin
     @JvmStatic
-    external fun connectToServer(host: String, port: Int, nick: String, pass: String, cachePath: String, uid: String)
+    external fun connectToServer(host: String, port: Int, nick: String, pass: String, cachePath: String, uid: String, version: String)
 
     @JvmStatic
     external fun disconnectFromServer()

@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <vector>
+#include <array>
 #include <map>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -172,6 +173,23 @@ std::string hexEncode(const unsigned char* data, size_t len) {
     for (size_t i = 0; i < len; ++i)
         oss << std::setw(2) << static_cast<int>(data[i]);
     return oss.str();
+}
+
+bool decodeTokenHex128(const std::string& value, std::array<unsigned char, 16>& out) {
+    if (value.size() != out.size() * 2) return false;
+    auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; i < out.size(); ++i) {
+        const int hi = nibble(value[i * 2]);
+        const int lo = nibble(value[i * 2 + 1]);
+        if (hi < 0 || lo < 0) { out.fill(0); return false; }
+        out[i] = static_cast<unsigned char>((hi << 4) | lo);
+    }
+    return true;
 }
 
 std::vector<char> base64DecodeBytes(const std::string& b64) {
@@ -762,13 +780,15 @@ public:
     }
 
     void connectToServer(const std::string& host, int port, const std::string& nick,
-                         const std::string& pass, const std::string& uid) {
+                         const std::string& pass, const std::string& uid,
+                         const std::string& clientVersion) {
         disconnect();
 
         m_host = host;
         m_nick = nick;
         m_pass = pass;
         m_uid = uid;
+        m_clientVersion = clientVersion;
         m_connected = true;
         m_authenticated = false;
         m_pingPending = false;
@@ -837,7 +857,11 @@ public:
             freeTlsLocked();
         }
         m_udpPort.store(0);
-        m_voiceToken.store(0);
+        {
+            std::lock_guard<std::mutex> tokenLock(m_tokenMutex);
+            m_voiceToken.fill(0);
+            m_hasVoiceToken.store(false);
+        }
         m_authenticated = false;
         m_pingPending = false;
 
@@ -953,8 +977,13 @@ public:
         std::lock_guard<std::mutex> udpLock(m_udpMutex);
         const int socketFd = m_udpSocket.load();
         const int udpPort = m_udpPort.load();
-        const uint32_t voiceToken = m_voiceToken.load();
-        if (socketFd == -1 || udpPort == 0 || voiceToken == 0) return;
+        std::array<unsigned char, 16> voiceToken{};
+        {
+            std::lock_guard<std::mutex> tokenLock(m_tokenMutex);
+            if (!m_hasVoiceToken.load()) return;
+            voiceToken = m_voiceToken;
+        }
+        if (socketFd == -1 || udpPort == 0) return;
 
         std::vector<char> payload;
         if (size > 0 && pcm != nullptr) {
@@ -962,12 +991,13 @@ public:
             payload = voiceEncryptAead(pcm, size, m_currentVoiceKey, m_selfId.load(), seq, ++m_cryptoCounter);
         }
 
-        std::vector<char> packet(10 + payload.size());
-        memcpy(packet.data(), "HALL", 4);
-        memcpy(packet.data() + 4, &voiceToken, 4);
-        memcpy(packet.data() + 8, &seq, 2);
+        constexpr size_t headerSize = 4 + 16 + 2;
+        std::vector<char> packet(headerSize + payload.size());
+        memcpy(packet.data(), "HAL4", 4);
+        memcpy(packet.data() + 4, voiceToken.data(), voiceToken.size());
+        memcpy(packet.data() + 20, &seq, 2);
         if (!payload.empty()) {
-            memcpy(packet.data() + 10, payload.data(), payload.size());
+            memcpy(packet.data() + headerSize, payload.data(), payload.size());
         }
 
         m_serverUdpAddr.sin_port = htons(static_cast<uint16_t>(udpPort));
@@ -1007,7 +1037,7 @@ public:
 
     // Codifica PCM bruto de 16-bit Mono @ 48kHz em frames Opus VoIP e transmite
     void encodeAndSendVoice(const int16_t* pcm, int samples) {
-        if (!pcm || samples <= 0 || m_udpPort.load() == 0 || m_voiceToken.load() == 0) return;
+        if (!pcm || samples <= 0 || m_udpPort.load() == 0 || !m_hasVoiceToken.load()) return;
         // AudioRecord normalmente entrega 960 amostras, mas leituras parciais
         // também são possíveis. O Opus só aceita tamanhos de frame válidos;
         // acumular aqui evita descartar justamente a primeira fala.
@@ -1032,7 +1062,7 @@ private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
                          m_authenticated(false), m_pingPending(false),
                          m_lastPingSentMs(0), m_pingTotal(0), m_pingSuccess(0),
-                         m_udpPort(0), m_voiceToken(0), m_selfId(0), m_encoder(nullptr),
+                         m_udpPort(0), m_hasVoiceToken(false), m_selfId(0), m_encoder(nullptr),
                          m_tlsReady(false), m_tlsInited(false), m_cryptoCounter(0) {}
     ~HallaClientCore() {
         disconnect();
@@ -1298,11 +1328,12 @@ private:
 
         const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
         const std::string idPub = callStaticStringString(g_identityPublicKeyMethod, uid);
-        std::string hello = "{\"t\":\"hello\",\"proto\":3,\"uid\":\"" +
+        std::string hello = "{\"t\":\"hello\",\"proto\":4,\"uid\":\"" +
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
-                            "\",\"ver\":\"1.0.32-mobile\",\"platform\":\"Android\"}\n";
+                            "\",\"ver\":\"" + jsonEscape(m_clientVersion) +
+                            "-mobile\",\"platform\":\"Android\"}\n";
         sendTcp(hello);
 
         if (m_pingThread.joinable() && m_pingThread.get_id() != std::this_thread::get_id())
@@ -1422,9 +1453,13 @@ private:
                 if (voicePos != std::string::npos) {
                     std::string voiceObj = line.substr(voicePos);
                     m_udpPort.store(jsonExtractInt(voiceObj, "udp"));
-                    m_voiceToken.store(safeStoul(jsonExtractString(voiceObj, "token")));
+                    std::array<unsigned char, 16> token{};
+                    const bool tokenOk = decodeTokenHex128(jsonExtractString(voiceObj, "token"), token);
+                    std::lock_guard<std::mutex> tokenLock(m_tokenMutex);
+                    m_voiceToken = token;
+                    m_hasVoiceToken.store(tokenOk);
                 }
-                writeLog("welcome: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
+                writeLog("welcome: UDP=" + std::to_string(m_udpPort.load()) + ", token v4=" + std::string(m_hasVoiceToken.load() ? "ok" : "invalido"));
                 installWelcomeKeys(line);
 
                 // Prepara o UDP ANTES de notificar o Kotlin. O callback de
@@ -1443,8 +1478,14 @@ private:
 
             if (t == "voice_token") {
                 m_udpPort.store(jsonExtractInt(line, "udp"));
-                m_voiceToken.store(safeStoul(jsonExtractString(line, "token")));
-                writeLog("voice_token: m_udpPort = " + std::to_string(m_udpPort.load()) + ", m_voiceToken = " + std::to_string(m_voiceToken.load()));
+                std::array<unsigned char, 16> token{};
+                const bool tokenOk = decodeTokenHex128(jsonExtractString(line, "token"), token);
+                {
+                    std::lock_guard<std::mutex> tokenLock(m_tokenMutex);
+                    m_voiceToken = token;
+                    m_hasVoiceToken.store(tokenOk);
+                }
+                writeLog("voice_token: credencial UDP v4 " + std::string(tokenOk ? "aceita" : "invalida"));
                 setupUdpVoice();
                 return;
             }
@@ -1589,8 +1630,7 @@ private:
             sendVoiceRegistration(static_cast<uint16_t>(i + 1));
             usleep(50000);
         }
-        writeLog("Socket UDP configurado na porta " + std::to_string(m_udpPort.load()) +
-                 " com token " + std::to_string(m_voiceToken.load()));
+        writeLog("Socket UDP v4 configurado na porta " + std::to_string(m_udpPort.load()));
 
         m_natThread = std::thread(&HallaClientCore::udpPingLoop, this);
         writeLog("[NAT] Loop de keep-alive UDP iniciado.");
@@ -1601,7 +1641,7 @@ private:
             for (int i = 0; i < 20 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             if (!m_connected || m_udpSocket.load() == -1 || m_udpPort.load() == 0
-                    || m_voiceToken.load() == 0) break;
+                    || !m_hasVoiceToken.load()) break;
             sendVoiceRegistration(1);
         }
         writeLog("[NAT] Loop de keep-alive UDP finalizado.");
@@ -1717,6 +1757,7 @@ private:
     std::string m_nick;
     std::string m_pass;
     std::string m_uid;
+    std::string m_clientVersion;
     int m_tcpSocket;
     std::atomic<int> m_udpSocket;
     std::atomic<bool> m_connected;
@@ -1729,13 +1770,15 @@ private:
     std::mutex m_udpMutex;
     std::mutex m_codecMutex;
     std::mutex m_keyMutex;
+    std::mutex m_tokenMutex;
     std::thread m_tcpThread;
     std::thread m_udpThread;
     std::thread m_pingThread;
     std::thread m_natThread;
 
     std::atomic<int> m_udpPort;
-    std::atomic<uint32_t> m_voiceToken;
+    std::array<unsigned char, 16> m_voiceToken{};
+    std::atomic<bool> m_hasVoiceToken;
     std::atomic<uint32_t> m_selfId;
     struct sockaddr_in m_serverUdpAddr;
     std::vector<int16_t> m_encodePcm;
@@ -1796,23 +1839,25 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath, jstring uid) {
+Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath, jstring uid, jstring version) {
     const char* nativeHost = env->GetStringUTFChars(host, nullptr);
     const char* nativeNick = env->GetStringUTFChars(nick, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
     const char* nativeCache = env->GetStringUTFChars(cachePath, nullptr);
     const char* nativeUid = env->GetStringUTFChars(uid, nullptr);
+    const char* nativeVersion = env->GetStringUTFChars(version, nullptr);
 
     g_cachePath = nativeCache;
     writeLog("connectToServer: g_cachePath configurado para " + g_cachePath);
 
-    HallaClientCore::getInstance().connectToServer(nativeHost, port, nativeNick, nativePass, nativeUid);
+    HallaClientCore::getInstance().connectToServer(nativeHost, port, nativeNick, nativePass, nativeUid, nativeVersion);
 
     env->ReleaseStringUTFChars(host, nativeHost);
     env->ReleaseStringUTFChars(nick, nativeNick);
     env->ReleaseStringUTFChars(pass, nativePass);
     env->ReleaseStringUTFChars(cachePath, nativeCache);
     env->ReleaseStringUTFChars(uid, nativeUid);
+    env->ReleaseStringUTFChars(version, nativeVersion);
 }
 
 JNIEXPORT void JNICALL

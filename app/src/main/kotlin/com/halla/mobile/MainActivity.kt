@@ -1137,11 +1137,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Gestão de Servidores Salvos (Persistência em SharedPreferences)
     // ============================================================================
 
+    private fun serverPasswordKey(server: JSONObject): String =
+        "server-password:${server.optString("host").lowercase()}:${server.optInt("port", 9987)}"
+
     private fun loadSavedServers() {
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         val jsonStr = prefs.getString("saved_servers", "[]")
         try {
             savedServers = JSONArray(jsonStr)
+            for (i in 0 until savedServers.length()) {
+                val server = savedServers.getJSONObject(i)
+                val key = serverPasswordKey(server)
+                val legacy = server.optString("pass", "")
+                if (legacy.isNotEmpty()) HallaCore.storeSecret(this, key, legacy)
+                server.put("pass", HallaCore.readSecret(this, key))
+            }
+            persistServersOnly()
         } catch (e: Exception) {
             savedServers = JSONArray()
         }
@@ -1149,9 +1160,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun persistServersOnly() {
+        val sanitized = JSONArray()
+        for (i in 0 until savedServers.length()) {
+            val server = JSONObject(savedServers.getJSONObject(i).toString())
+            val password = server.optString("pass", "")
+            HallaCore.storeSecret(this, serverPasswordKey(server), password)
+            server.remove("pass")
+            sanitized.put(server)
+        }
         getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
             .edit()
-            .putString("saved_servers", savedServers.toString())
+            .putString("saved_servers", sanitized.toString())
+            .remove("last_srv_pass")
             .apply()
     }
 
@@ -1976,7 +1996,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         prefs.edit().putString("last_srv_host", host)
             .putInt("last_srv_port", port)
             .putString("last_srv_nick", nick)
-            .putString("last_srv_pass", pass).apply()
+            .remove("last_srv_pass").apply()
+        HallaCore.storeSecret(this, "last-server-password", pass)
 
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
@@ -2005,7 +2026,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val host = prefs.getString("last_srv_host", "") ?: ""
         val port = prefs.getInt("last_srv_port", 0)
         val nick = prefs.getString("last_srv_nick", "") ?: ""
-        val pass = prefs.getString("last_srv_pass", "") ?: ""
+        val legacyPass = prefs.getString("last_srv_pass", "").orEmpty()
+        if (legacyPass.isNotEmpty()) {
+            HallaCore.storeSecret(this, "last-server-password", legacyPass)
+            prefs.edit().remove("last_srv_pass").apply()
+        }
+        val pass = HallaCore.readSecret(this, "last-server-password")
 
         if (host.isEmpty() || port == 0 || nick.isEmpty()) {
             Toast.makeText(this, getString(R.string.no_recent_server), Toast.LENGTH_SHORT).show()
@@ -2168,8 +2194,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
         if (modified) {
-            val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-            prefs.edit().putString("saved_servers", savedServers.toString()).apply()
+            persistServersOnly()
         }
     }
 
@@ -2508,7 +2533,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 else -> Color.parseColor("#22C55E")
             }
             val pingText = if (pingMs >= 0) "${pingMs}ms" else "--"
-            txtNetworkQuality.text = getString(R.string.network_quality, pingText, packetLossPercent)
+            txtNetworkQuality.text = getString(R.string.network_quality, pingText, packetLossPercent.toString())
             txtNetworkQuality.setTextColor(color)
         }
     }
@@ -4121,10 +4146,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val info = getString(R.string.user_info_name, name) +
                    getString(R.string.user_info_ip, ip) +
-                   getString(R.string.user_info_ping, ping) +
+                   getString(R.string.user_info_ping, ping.toString()) +
                    getString(R.string.user_info_version, version) +
                    getString(R.string.user_info_platform, platform) +
-                   getString(R.string.user_info_uptime, uptime) +
+                   getString(R.string.user_info_uptime, uptime.toString()) +
                    getString(R.string.user_info_group, group)
 
         AlertDialog.Builder(context)

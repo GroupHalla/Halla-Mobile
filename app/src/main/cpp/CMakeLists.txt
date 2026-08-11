@@ -11,13 +11,13 @@ include(FetchContent)
 FetchContent_Declare(
   opus
   GIT_REPOSITORY https://github.com/xiph/opus.git
-  GIT_TAG        v1.4
+  GIT_TAG        82ac57d9f1aaf575800cf17373348e45b7ce6c0d
 )
 
 FetchContent_Declare(
   mbedtls
   GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-  GIT_TAG        v3.6.2
+  GIT_TAG        107ea89daaefb9867ea9121002fbbdf926780e98
 )
 
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "Build programs" FORCE)

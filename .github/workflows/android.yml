@@ -1,85 +1,127 @@
-name: Build and Release Android APK
+name: Build, test and release Android
 
 on:
   push:
-    tags:
-      - 'v*'
-    branches:
-      - main
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
   build-android:
-    name: Build Android APK
     runs-on: ubuntu-latest
-
+    timeout-minutes: 90
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
 
       - name: Install Android NDK
+        run: sdkmanager --install "ndk;25.2.9519653"
+
+      - name: Validate version/tag
+        shell: bash
         run: |
-          sdkmanager --install "ndk;25.2.9519653"
+          set -euo pipefail
+          version="$(tr -d '\r\n ' < VERSION)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME não corresponde a VERSION=$version" >&2
+            exit 1
+          fi
 
-      - name: Make Gradle Executable
-        run: chmod +x gradlew
+      - name: Unit tests and Android lint
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug
 
-      - name: Build with Gradle
-        run: ./gradlew assembleDebug
-
-      - name: Copy APK to root
+      - name: Build debug artifact
+        if: github.ref_type != 'tag'
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk HallaMobile.apk
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk HallaMobile-debug.apk
+          sha256sum HallaMobile-debug.apk > HallaMobile-debug.apk.sha256
+
+      - name: Decode release keystore
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HALLA_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HALLA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HALLA_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 HALLA_ANDROID_STORE_PASSWORD HALLA_ANDROID_KEY_ALIAS HALLA_ANDROID_KEY_PASSWORD; do
+            [[ -n "${!name:-}" ]] || { echo "GitHub Secret ausente: $name" >&2; exit 1; }
+          done
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/halla-release.jks"
+          chmod 600 "$RUNNER_TEMP/halla-release.jks"
+
+      - name: Build signed release APK
+        if: github.ref_type == 'tag'
+        env:
+          HALLA_ANDROID_KEYSTORE: ${{ runner.temp }}/halla-release.jks
+          HALLA_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HALLA_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HALLA_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon -PrequireReleaseSigning=true assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk HallaMobile.apk
+          apksigner verify --verbose --print-certs HallaMobile.apk
           sha256sum HallaMobile.apk > HallaMobile.apk.sha256
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload CI artifact
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: halla-mobile-apk
+          name: halla-mobile-debug-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            HallaMobile-debug.apk
+            HallaMobile-debug.apk.sha256
+
+      - name: Upload signed release artifact
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: halla-mobile-release
+          if-no-files-found: error
           path: |
             HallaMobile.apk
             HallaMobile.apk.sha256
 
   release:
-    name: Create GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.ref_type == 'tag'
     needs: build-android
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download APK Artifact
-        uses: actions/download-artifact@v4
+      - name: Download signed APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: halla-mobile-apk
+          name: halla-mobile-release
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Halla Mobile ${{ github.ref_name }}
           draft: false
           prerelease: false
+          generate_release_notes: true
           files: |
             HallaMobile.apk
             HallaMobile.apk.sha256
-          body: |
-            ## Halla Mobile ${{ github.ref_name }}
-
-            ### Correção de build
-            * Troca a dependência WebRTC removida org.webrtc:google-webrtc por io.github.webrtc-sdk:android no Maven Central.
-            * Mantém PeerConnection/SurfaceViewRenderer no Mobile para a etapa de viewer WebRTC.
-            * Mantém signaling WebRTC via HallaServer.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

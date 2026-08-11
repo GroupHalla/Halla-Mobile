@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.31
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.41
 </p>
 
 ---
@@ -192,9 +192,12 @@ build.gradle.kts, settings.gradle.kts, gradle.properties, gradlew
 JDK 17, Android SDK 34 e NDK **25.2.9519653** instalados.
 
 ```bash
-./gradlew assembleDebug
-# APK gerado em: app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug   # desenvolvimento, applicationId com sufixo .debug
 ```
+
+Releases oficiais usam `assembleRelease`, keystore estável configurada pelos
+GitHub Secrets documentados em `SECURITY.md`, `apksigner verify`, SHA-256,
+testes unitários e Android lint.
 
 O Gradle, via `externalNativeBuild`, aciona o CMake de
 `app/src/main/cpp/CMakeLists.txt` automaticamente — não é preciso rodar o
@@ -203,10 +206,9 @@ da fonte (requer acesso à internet nesse passo).
 
 ## CI/CD
 
-`.github/workflows/android.yml` builda o APK a cada push na `main` e a cada
-tag `v*` (JDK 17 + Android SDK + NDK 25.2.9519653 via GitHub Actions), e, se
-for uma tag, publica automaticamente uma **Release** no GitHub com o
-`HallaMobile.apk` anexado.
+`.github/workflows/android.yml` executa testes e lint em pushes/PRs, gera um
+APK debug separado apenas para CI e, em tags `v*`, exige a keystore de produção,
+gera `HallaMobile.apk` assinado, valida a assinatura e publica APK + SHA-256.
 
 ## Idiomas
 
