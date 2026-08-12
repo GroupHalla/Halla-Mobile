@@ -5,8 +5,9 @@
 <h1 align="center">Halla Mobile</h1>
 
 <p align="center">
-  Cliente Android nativo do ecossistema <a href="https://github.com/GroupHalla/Halla">Halla</a>.
-  Kotlin na interface e C++/JNI no núcleo de rede e voz.
+  Cliente Android nativo do <a href="https://github.com/GroupHalla/Halla">Halla</a> —
+  o cliente de voz desktop estilo TeamSpeak 3. Kotlin na interface,
+  C++/JNI no núcleo de rede e voz.
 </p>
 
 <p align="center">
@@ -19,6 +20,7 @@
 
 - [Visão geral](#visão-geral)
 - [Principais recursos](#principais-recursos)
+- [Visualizador WebRTC (WebView)](#visualizador-webrtc-webview)
 - [Arquitetura](#arquitetura)
 - [Núcleo nativo (C++/JNI)](#núcleo-nativo-cjni)
 - [Serviço em segundo plano](#serviço-em-segundo-plano)
@@ -65,11 +67,39 @@ acessado via JNI.
 - Reconexão silenciosa ao trocar de rede (Wi-Fi ↔ dados móveis).
 - Notificação persistente com ações rápidas (mudo do microfone, dos
   alto-falantes, desconectar) enquanto conectado.
-- Verificação e download de atualizações dentro do próprio app.
+- Verificação e download de atualizações dentro do próprio app (checksum
+  SHA-256 conferido antes de instalar).
 - Interface com tema claro/escuro (`Theme.AppCompat.DayNight`) e suporte a
   RTL.
 - Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
   não só pelo sistema).
+- **Assistir transmissão de tela** de quem está compartilhando a tela pelo
+  desktop, via WebRTC (veja [Visualizador WebRTC](#visualizador-webrtc-webview)).
+
+**Segurança**
+- Canal de controle em TLS com pinagem TOFU (mesmo esquema do cliente
+  desktop).
+- Identidade Ed25519: usa a API nativa `java.security` (Android 12/API 31+)
+  quando disponível, com `net.i2p.crypto.eddsa` como implementação pura-Java
+  de fallback em aparelhos mais antigos (API 26+). A chave privada é
+  guardada cifrada com uma chave AES do **Android Keystore**, não em texto
+  puro.
+- Voz cifrada com ChaCha20-Poly1305 via **mbedTLS** (a mesma técnica AEAD do
+  cliente desktop, implementação diferente por ser mais leve para Android).
+- Pipeline de release **assinado**: builds de tag exigem a keystore de
+  produção (GitHub Secrets), e o APK final passa por `apksigner verify`
+  antes de publicar.
+
+## Visualizador WebRTC (WebView)
+
+Para assistir a transmissão de tela de alguém (modo WebRTC do cliente
+desktop), o Halla Mobile abre uma `WebView` interna e usa o
+**`RTCPeerConnection` nativo do próprio Android System WebView**, em vez de
+empacotar um AAR nativo do libwebrtc. Essa escolha foi deliberada — algumas
+versões do SDK Android nativo do WebRTC derrubavam o processo principal do
+app em determinados aparelhos; rodar a sinalização/mídia dentro do processo
+isolado da WebView evita esse problema, e ainda usa uma implementação real de
+WebRTC (a do Chromium/WebView), não uma simulação.
 
 ## Arquitetura
 
@@ -112,8 +142,7 @@ acessado via JNI.
 ## Núcleo nativo (C++/JNI)
 
 `app/src/main/cpp/jni_bridge.cpp` implementa a classe `HallaClientCore`,
-autocontida, sem depender de Qt nem de bibliotecas de terceiros além do
-Opus:
+autocontida, sem depender de Qt:
 
 - Conexão de controle via **soquete TCP** cru (BSD sockets/POSIX), com um
   parser de JSON minimalista feito à mão (`jsonExtractString`,
@@ -124,10 +153,14 @@ Opus:
   (`udpPingLoop`).
 - Um `std::thread` próprio para o laço de controle TCP (`tcpLoop`) e outro
   só para medir latência (`pingLoop`).
-- Codificação/decodificação de voz com **libopus**, baixada e compilada na
-  hora do build via `FetchContent` (tag `v1.4` do repositório oficial
-  `xiph/opus`) — assim não é preciso empacotar binários pré-compilados do
-  Opus para cada ABI do Android.
+- Codificação/decodificação de voz com **libopus**, e cifragem AEAD
+  (ChaCha20-Poly1305) com **mbedTLS** — ambos baixados e compilados na hora
+  do build via `FetchContent` (veja `app/src/main/cpp/CMakeLists.txt`), sem
+  precisar empacotar binários pré-compilados por ABI do Android.
+- A geração/assinatura da identidade Ed25519 fica do lado Kotlin
+  (`HallaCore.identityPublicKeyBase64`/`signIdentityNonceBase64`, chamadas de
+  volta via JNI) — mantém o material de chave sob a Keystore do Android em
+  vez de trafegar pelo núcleo C++.
 - Todo evento relevante (conectado, desconectado, boas-vindas, lista de
   canais/usuários, mensagem de chat, quadro de áudio recebido, erro, ping,
   poke...) vira uma chamada JNI de volta para o `HallaCore.Callbacks` do
@@ -173,9 +206,11 @@ app/
     │   ├── CMakeLists.txt         builda libhalla-core.so (busca o Opus via FetchContent)
     │   └── jni_bridge.cpp         núcleo de rede/voz nativo (JNI)
     ├── kotlin/com/halla/mobile/
-    │   ├── HallaCore.kt           fachada JNI (funções externas + callbacks)
+    │   ├── HallaCore.kt           fachada JNI (funções externas + callbacks,
+    │   │                          + geração/assinatura da identidade Ed25519)
     │   ├── HallaAudioManager.kt   captura/reprodução PCM, AEC/NS, gravação local
     │   ├── HallaService.kt        serviço em 1º plano, notificação, overlay de PTT
+    │   ├── HallaWebRtcViewer.kt   visualizador de transmissão de tela (WebView)
     │   ├── LocaleManager.kt       troca de idioma em runtime
     │   └── MainActivity.kt        telas: conexão, canais, chat, opções
     └── res/
@@ -218,7 +253,20 @@ strings traduzidas em cada um. A troca pode ser feita dentro do próprio app
 ## Projetos relacionados
 
 - **[Halla](https://github.com/GroupHalla/Halla)** — cliente desktop
-  (Windows/Linux/, Qt 6) que fala o mesmo protocolo.
+  (Windows/Linux, Qt 6) que fala o mesmo protocolo; é ele quem transmite tela
+  via WebRTC (o Mobile só assiste, pela WebView).
 - **[Halla Server](https://github.com/GroupHalla/HallaServer)** — servidor
-  auto-hospedável.
-  
+  auto-hospedável; veja
+  [`PROTOCOL.md`](https://github.com/GroupHalla/HallaServer/blob/main/PROTOCOL.md)
+  para a especificação completa do protocolo (atualmente v4).
+
+## Observação sobre o `CMakeLists.txt` da raiz
+
+O repositório ainda tem um `CMakeLists.txt` na raiz que referencia um app Qt
+Quick/QML (`HallaMobileApp`, `src/main.cpp`, `src/Main.qml`,
+`src/net/MobileNetSession.*`). Esses arquivos **não existem** na árvore do
+projeto — foi uma abordagem inicial (Qt for Android), substituída pelo app
+Android nativo descrito acima. O build real, local e no CI, usa
+exclusivamente o Gradle (`./gradlew assembleDebug`/`assembleRelease`); esse
+`CMakeLists.txt` da raiz continua sendo código morto e pode ser removido com
+segurança.
