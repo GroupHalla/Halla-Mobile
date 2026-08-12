@@ -3006,7 +3006,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         userRow.addView(avatarContainer)
                         userRow.addView(txtUser)
                         if (showBadges) {
-                            val badgeSize = (20 * resources.displayMetrics.density).toInt()
+                            val badgeSize = (28 * resources.displayMetrics.density).toInt()
                             BadgeRegistry.badgesForUid(usr.optString("uid", ""))
                                 .filter { it.bitmap != null }
                                 .take(4)
