@@ -5,9 +5,8 @@
 <h1 align="center">Halla Mobile</h1>
 
 <p align="center">
-  Cliente Android nativo do <a href="https://github.com/GroupHalla/Halla">Halla</a> —
-  o cliente de voz desktop estilo TeamSpeak 3. Kotlin na interface,
-  C++/JNI no núcleo de rede e voz.
+  Cliente Android nativo do ecossistema <a href="https://github.com/GroupHalla/Halla">Halla</a>.
+  Kotlin na interface e C++/JNI no núcleo de rede e voz.
 </p>
 
 <p align="center">
