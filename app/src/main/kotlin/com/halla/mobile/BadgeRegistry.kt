@@ -256,7 +256,7 @@ object BadgeRegistry {
         if (bytes.size < 8 || !bytes.copyOfRange(0, 8)
                 .contentEquals(byteArrayOf(-119, 80, 78, 71, 13, 10, 26, 10))) return null
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
-        if (bitmap.width !in 1..256 || bitmap.height !in 1..256) return null
+        if (bitmap.width !in 1..512 || bitmap.height !in 1..512) return null
         return bitmap
     }
 
