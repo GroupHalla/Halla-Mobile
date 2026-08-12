@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.42
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.43
 </p>
 
 ---
@@ -61,6 +61,8 @@ acessado via JNI.
   conceito do cliente desktop.
 - Canais, chat de texto (com histórico/rolagem), grupos de servidor/canal,
   permissões granulares, talk power, "cutucar" (poke).
+- Emblemas globais oficiais vinculados à UID, obtidos de um registro Ed25519
+  assinado e mantidos em cache para funcionamento offline.
 - Roteamento de áudio para fone de ouvido/alto-falante/Bluetooth.
 - Gravação local e diagnóstico de áudio (painel com status do pipeline de
   voz, útil para depurar problemas de microfone/alto-falante).

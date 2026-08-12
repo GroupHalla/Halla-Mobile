@@ -207,6 +207,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private val handler = Handler(Looper.getMainLooper())
     private var connectionTimeoutRunnable: Runnable? = null
+    private val badgeRegistryListener: () -> Unit = {
+        runOnUiThread {
+            if (::containerChannels.isInitialized && usersData.length() > 0) rebuildChannelTree()
+        }
+    }
 
     // Servidores salvos persistidos
     private var savedServers = JSONArray()
@@ -266,6 +271,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtNetworkQuality = findViewById(R.id.txtNetworkQuality)
         txtCategoryChannelsCount = findViewById(R.id.txtCategoryChannelsCount)
         btnBannerSettings = findViewById(R.id.btnBannerSettings)
+        BadgeRegistry.addListener(badgeRegistryListener)
+        BadgeRegistry.initialize(applicationContext)
 
         // Módulos do Dock Flutuante Inferior
         btnMuteMicModule = findViewById(R.id.btnMuteMicModule)
@@ -2998,6 +3005,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                         userRow.addView(avatarContainer)
                         userRow.addView(txtUser)
+                        if (showBadges) {
+                            val badgeSize = (20 * resources.displayMetrics.density).toInt()
+                            BadgeRegistry.badgesForUid(usr.optString("uid", ""))
+                                .filter { it.bitmap != null }
+                                .take(4)
+                                .forEach { badge ->
+                                    userRow.addView(ImageView(this).apply {
+                                        setImageBitmap(badge.bitmap)
+                                        contentDescription = "${badge.name}: ${badge.description}"
+                                        tooltipText = contentDescription
+                                        layoutParams = LinearLayout.LayoutParams(badgeSize, badgeSize).apply {
+                                            setMargins(5, 0, 5, 0)
+                                        }
+                                    })
+                                }
+                        }
                         if (usr.optBoolean("screensharing", false)) {
                             val liveBadge = TextView(this).apply {
                                 text = "● LIVE"
@@ -3559,6 +3582,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Destruir/minimizar a Activity não encerra a sessão. A conexão, a
         // captura e o playback pertencem ao foreground service.
         HallaCore.removeCallbacks(this)
+        BadgeRegistry.removeListener(badgeRegistryListener)
         try {
             unregisterReceiver(bluetoothReceiver)
             unregisterReceiver(serviceStateReceiver)
