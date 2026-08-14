@@ -1715,12 +1715,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setTitle(getString(R.string.group_members))
             .setItems(names.toTypedArray()) { _, which ->
                 val member = members.optJSONObject(which) ?: return@setItems
-                if (groupId == 2) return@setItems
+                if (groupId == 2) {
+                    Toast.makeText(this, getString(R.string.base_group_cannot_remove), Toast.LENGTH_SHORT).show()
+                    return@setItems
+                }
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.remove_group_member))
                     .setMessage(member.optString("name", member.optString("uid", "")))
                     .setPositiveButton(getString(R.string.remove)) { _, _ ->
-                        val request = JSONObject().put("t", "client_set_group").put("gid", 2)
+                        val request = JSONObject()
+                            .put("t", "client_set_group")
+                            .put("gid", groupId)
+                            .put("op", "remove")
                         if (member.has("id")) request.put("id", member.optInt("id"))
                         else request.put("uid", member.optString("uid", ""))
                         HallaCore.sendRawJson(request.toString())
@@ -1750,6 +1756,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     .put("t", "client_set_group")
                     .put("id", ids[which])
                     .put("gid", groupId)
+                    .put("op", "add")
                     .toString())
                 Toast.makeText(this, getString(R.string.group_assignment_sent), Toast.LENGTH_SHORT).show()
             }

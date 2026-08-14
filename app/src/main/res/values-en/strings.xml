@@ -309,6 +309,7 @@ Download and install now?</string>
     <string name="no_group_members">No users in this group.</string>
     <string name="manage_group_members">Manage users</string>
     <string name="remove_group_member">Remove user from group</string>
+    <string name="base_group_cannot_remove">Normal is the base group and cannot be removed.</string>
     <string name="remove">Remove</string>
     <string name="talk_power">Talk power</string>
     <string name="remove_ban">Remove ban</string>

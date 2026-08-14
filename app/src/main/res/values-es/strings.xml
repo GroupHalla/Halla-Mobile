@@ -309,6 +309,7 @@ Notas de la versión:
     <string name="no_group_members">No hay usuarios en este grupo.</string>
     <string name="manage_group_members">Gestionar usuarios</string>
     <string name="remove_group_member">Quitar usuario del grupo</string>
+    <string name="base_group_cannot_remove">Normal es el grupo base y no se puede eliminar.</string>
     <string name="remove">Quitar</string>
     <string name="talk_power">Poder de habla</string>
     <string name="remove_ban">Eliminar baneo</string>

@@ -309,6 +309,7 @@ Deseja baixar e instalar agora?</string>
     <string name="no_group_members">Nenhum usuário neste grupo.</string>
     <string name="manage_group_members">Gerenciar usuários</string>
     <string name="remove_group_member">Remover usuário do grupo</string>
+    <string name="base_group_cannot_remove">O grupo Normal é o grupo base e não pode ser removido.</string>
     <string name="remove">Remover</string>
     <string name="talk_power">Poder de fala</string>
     <string name="remove_ban">Remover banimento</string>
