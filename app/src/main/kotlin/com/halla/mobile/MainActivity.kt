@@ -2126,7 +2126,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val port = srv.optInt("port", 9987)
 
             thread {
-                val startTime = System.currentTimeMillis()
                 var socket: SSLSocket? = null
                 try {
                     val trustAll = object : X509TrustManager {
@@ -2155,11 +2154,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         throw SecurityException("Fingerprint TLS mudou")
                     }
 
+                    // O ping exibido deve representar a latência até o servidor,
+                    // não o custo local de DNS, conexão TCP e handshake TLS. O
+                    // cronômetro começa somente com o túnel TLS já estabelecido.
+                    val probeStartedAt = android.os.SystemClock.elapsedRealtimeNanos()
                     socket.getOutputStream().write("{\"t\":\"server_probe\"}\n".toByteArray(Charsets.UTF_8))
                     socket.getOutputStream().flush()
 
                     val line = socket.getInputStream().bufferedReader().readLine()
-                    val elapsed = System.currentTimeMillis() - startTime
+                    val elapsedNanos = android.os.SystemClock.elapsedRealtimeNanos() - probeStartedAt
+                    val elapsed = ((elapsedNanos + 500_000L) / 1_000_000L)
+                        .coerceAtLeast(1L)
                     val response = if (!line.isNullOrBlank()) JSONObject(line) else null
                     val server = response?.optJSONObject("server")
                     val clients = response?.optInt("clients", -1) ?: -1
