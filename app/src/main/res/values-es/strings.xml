@@ -299,7 +299,11 @@ Notas de la versión:
     <string name="server_group_details">%1$s — grupo #%2$d</string>
     <string name="group_name">Nombre del grupo</string>
     <string name="group_sigla">Prefijo/abreviatura (opcional)</string>
-    <string name="group_order">Orden jerárquico</string>
+    <string name="group_sigla_position">Posición de la abreviatura</string>
+    <string name="group_sigla_before">Antes del nombre</string>
+    <string name="group_sigla_after">Después del nombre</string>
+    <string name="group_order">Orden de visualización en la lista de usuarios</string>
+    <string name="group_order_enabled">Usar el orden de este rol en la lista de usuarios</string>
     <string name="group_icon">Icono del grupo (emoji o nombre de archivo)</string>
     <string name="group_members">Usuarios de este grupo</string>
     <string name="no_group_members">No hay usuarios en este grupo.</string>

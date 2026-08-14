@@ -1596,12 +1596,30 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
         }
+        val siglaPlacementLabel = TextView(this).apply {
+            text = getString(R.string.group_sigla_position)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 16, 0, 4)
+        }
+        val siglaPlacement = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@MainActivity,
+                android.R.layout.simple_spinner_item,
+                listOf(getString(R.string.group_sigla_before), getString(R.string.group_sigla_after))
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            setSelection(if (source.optBoolean("siglaAfter", false)) 1 else 0)
+        }
         val order = EditText(this).apply {
             hint = getString(R.string.group_order)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(source.optInt("order", 0).toString())
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val orderEnabled = CheckBox(this).apply {
+            text = getString(R.string.group_order_enabled)
+            setTextColor(Color.WHITE)
+            isChecked = source.optBoolean("orderEnabled", true)
         }
         val icon = EditText(this).apply {
             hint = getString(R.string.group_icon)
@@ -1611,7 +1629,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         layout.addView(name)
         layout.addView(sigla)
+        layout.addView(siglaPlacementLabel)
+        layout.addView(siglaPlacement)
         layout.addView(order)
+        layout.addView(orderEnabled)
         layout.addView(icon)
 
         val perms = source.optJSONObject("perms") ?: JSONObject()
@@ -1671,7 +1692,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     .put("name", groupName)
                     .put("perms", outPerms)
                     .put("sigla", sigla.text.toString().trim())
+                    .put("siglaAfter", siglaPlacement.selectedItemPosition == 1)
                     .put("order", order.text.toString().toIntOrNull() ?: 0)
+                    .put("orderEnabled", orderEnabled.isChecked)
                     .put("icon", icon.text.toString().trim())
                 pendingServerPanel = "groups"
                 HallaCore.sendRawJson(out.toString())
@@ -2717,8 +2740,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (stateObj.has("text")) u.put("desc", stateObj.getString("text"))
                 if (stateObj.has("group")) u.put("group", stateObj.getString("group"))
                 if (stateObj.has("sigla")) u.put("sigla", stateObj.getString("sigla"))
+                if (stateObj.has("siglaSuffix")) u.put("siglaSuffix", stateObj.getString("siglaSuffix"))
                 if (stateObj.has("icon")) u.put("icon", stateObj.getString("icon"))
                 if (stateObj.has("order")) u.put("order", stateObj.getInt("order"))
+                if (stateObj.has("orderEnabled")) u.put("orderEnabled", stateObj.getBoolean("orderEnabled"))
                 break
             }
         }
@@ -2913,16 +2938,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 contentLayout.addView(divider)
 
-                // Renderiza usuários do canal
+                // Renderiza usuários do canal respeitando somente cargos cuja
+                // ordem visual está habilitada. A hierarquia de permissões não
+                // participa desta classificação.
+                val sortedChannelUsers = ArrayList<JSONObject>()
                 for (j in 0 until usersData.length()) {
-                    val usr = usersData.getJSONObject(j)
-                    val userId = usr.getInt("id")
-                    val userChanId = getChannelOfUser(userId)
-                    
-                    if (userChanId == chanId) {
+                    val candidate = usersData.getJSONObject(j)
+                    if (getChannelOfUser(candidate.getInt("id")) == chanId)
+                        sortedChannelUsers.add(candidate)
+                }
+                sortedChannelUsers.sortWith(Comparator { left, right ->
+                    val leftEnabled = left.optBoolean("orderEnabled", true)
+                    val rightEnabled = right.optBoolean("orderEnabled", true)
+                    when {
+                        leftEnabled != rightEnabled -> if (leftEnabled) -1 else 1
+                        leftEnabled && left.optInt("order", 0) != right.optInt("order", 0) ->
+                            left.optInt("order", 0).compareTo(right.optInt("order", 0))
+                        else -> left.optString("name", "").compareTo(
+                            right.optString("name", ""), ignoreCase = true
+                        )
+                    }
+                })
+
+                for (usr in sortedChannelUsers) {
                         val name = usr.getString("name")
                         val sigla = usr.optString("sigla", "").trim()
-                        val displayName = if (sigla.isEmpty()) name else "$sigla $name"
+                        val siglaSuffix = usr.optString("siglaSuffix", "").trim()
+                        val displayName = listOf(sigla, name, siglaSuffix)
+                            .filter { it.isNotEmpty() }
+                            .joinToString(" ")
                         val isTalking = usr.optBoolean("talking", false)
 
                         // Linha do Usuário
@@ -3052,7 +3096,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         }
 
                         contentLayout.addView(userRow)
-                    }
                 }
             }
 

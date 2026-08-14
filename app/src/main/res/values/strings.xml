@@ -299,7 +299,11 @@ Deseja baixar e instalar agora?</string>
     <string name="server_group_details">%1$s — grupo #%2$d</string>
     <string name="group_name">Nome do grupo</string>
     <string name="group_sigla">Prefixo/Sigla (opcional)</string>
-    <string name="group_order">Ordem de hierarquia</string>
+    <string name="group_sigla_position">Posição da sigla</string>
+    <string name="group_sigla_before">Antes do nome</string>
+    <string name="group_sigla_after">Depois do nome</string>
+    <string name="group_order">Ordem de exibição na lista de nomes</string>
+    <string name="group_order_enabled">Usar a ordem deste cargo na lista de nomes</string>
     <string name="group_icon">Ícone do grupo (emoji ou nome de arquivo)</string>
     <string name="group_members">Usuários neste grupo</string>
     <string name="no_group_members">Nenhum usuário neste grupo.</string>

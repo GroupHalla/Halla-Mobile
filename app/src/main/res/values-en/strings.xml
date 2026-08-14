@@ -299,7 +299,11 @@ Download and install now?</string>
     <string name="server_group_details">%1$s — group #%2$d</string>
     <string name="group_name">Group name</string>
     <string name="group_sigla">Prefix/abbreviation (optional)</string>
-    <string name="group_order">Hierarchy order</string>
+    <string name="group_sigla_position">Abbreviation position</string>
+    <string name="group_sigla_before">Before the name</string>
+    <string name="group_sigla_after">After the name</string>
+    <string name="group_order">Display order in the user list</string>
+    <string name="group_order_enabled">Use this role\'s order in the user list</string>
     <string name="group_icon">Group icon (emoji or file name)</string>
     <string name="group_members">Users in this group</string>
     <string name="no_group_members">No users in this group.</string>
