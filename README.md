@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.46
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.47
 </p>
 
 ---
@@ -20,6 +20,7 @@
 
 - [Visão geral](#visão-geral)
 - [Principais recursos](#principais-recursos)
+- [Complementos (plugins)](#complementos-plugins)
 - [Visualizador WebRTC (WebView)](#visualizador-webrtc-webview)
 - [Arquitetura](#arquitetura)
 - [Núcleo nativo (C++/JNI)](#núcleo-nativo-cjni)
@@ -77,6 +78,9 @@ acessado via JNI.
   não só pelo sistema).
 - **Assistir transmissão de tela** de quem está compartilhando a tela pelo
   desktop, via WebRTC (veja [Visualizador WebRTC](#visualizador-webrtc-webview)).
+- **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do
+  Desktop, hooks de áudio, transporte `plugin_data` v5 e o complemento oficial
+  de voz de rádio embutido (veja [Complementos](#complementos-plugins)).
 
 **Segurança**
 - Canal de controle em TLS com pinagem TOFU (mesmo esquema do cliente
@@ -91,6 +95,41 @@ acessado via JNI.
 - Pipeline de release **assinado**: builds de tag exigem a keystore de
   produção (GitHub Secrets), e o APK final passa por `apksigner verify`
   antes de publicar.
+
+## Complementos (plugins)
+
+O sistema de complementos do Halla Desktop agora existe também no Mobile, em
+**Configurações → Complementos**:
+
+- **Mesmo formato de pacote**: arquivos `.halla-addon` (ZIP com
+  `manifest.json`), idênticos aos do Desktop — mesmo manifesto, mesmas
+  capacidades declaradas, mesmo empacotador (`tools/package_plugin.py` do
+  repositório Halla).
+- **Mesma ABI C pública**: o host nativo (`plugin_host.cpp`) implementa a ABI
+  de `halla_plugin_api.h` (ABI-base 1) com as interfaces modulares
+  `halla.core.v1`, `halla.connection.v1`, `halla.audio.v1`, `halla.data.v1` e
+  `halla.ui.v1` via `query_interface()`. Um plugin escrito para o Desktop
+  recompilado para Android (NDK) funciona sem mudanças de código — bibliotecas
+  são declaradas no manifesto sob `android-arm64`, `android-arm`,
+  `android-x86_64` ou `android-x86` e carregadas com `dlopen()`.
+- **Pipeline de áudio**: processadores PCM nos estágios de captura (antes do
+  Opus) e de voz remota (por remetente, após decodificação), além de ganho,
+  atenuação por distância e efeito de rádio por usuário.
+- **Transporte `plugin_data` (protocolo v5)**: complementos trocam payloads
+  binários (≤ 8 KiB) com instâncias do mesmo complemento em outros clientes,
+  pelo canal TLS — o Mobile agora negocia protocolo v5 no `hello`.
+- **Complemento oficial embutido**: **Voz de rádio policial**, o mesmo DSP do
+  Desktop (banda estreita, compressão, chiado configurável), aplicável ao
+  enviar e/ou ao ouvir, sem precisar de `.so` externo.
+- Funções sem equivalente no Android (hotkeys globais, mute local por usuário
+  do lado do host) retornam `HALLA_RESULT_UNAVAILABLE`, conforme previsto pela
+  especificação da ABI — plugins devem tolerar ausências.
+
+> **Segurança:** como no Desktop, uma biblioteca nativa executa no mesmo
+> processo e com os mesmos privilégios do app. As capacidades do manifesto são
+> informativas; instale apenas complementos de fontes confiáveis. A instalação
+> valida o manifesto, limita tamanhos e bloqueia caminhos fora do pacote
+> (zip-slip).
 
 ## Visualizador WebRTC (WebView)
 
@@ -206,7 +245,11 @@ app/
     ├── AndroidManifest.xml
     ├── cpp/
     │   ├── CMakeLists.txt         builda libhalla-core.so (busca o Opus via FetchContent)
-    │   └── jni_bridge.cpp         núcleo de rede/voz nativo (JNI)
+    │   ├── jni_bridge.cpp         núcleo de rede/voz nativo (JNI)
+    │   ├── halla_plugin_api.h     ABI C pública de complementos (a mesma do Desktop)
+    │   ├── plugin_host.h/.cpp     host de complementos: dlopen, interfaces
+    │   │                          halla.core/connection/audio/data/ui v1,
+    │   │                          hooks de PCM e transporte plugin_data (v5)
     ├── kotlin/com/halla/mobile/
     │   ├── HallaCore.kt           fachada JNI (funções externas + callbacks,
     │   │                          + geração/assinatura da identidade Ed25519)
@@ -214,6 +257,8 @@ app/
     │   ├── HallaService.kt        serviço em 1º plano, notificação, overlay de PTT
     │   ├── HallaWebRtcViewer.kt   visualizador de transmissão de tela (WebView)
     │   ├── LocaleManager.kt       troca de idioma em runtime
+    │   ├── PluginManager.kt       complementos: pacotes .halla-addon, manifesto,
+    │   │                          ativar/desativar, configurações por schema
     │   └── MainActivity.kt        telas: conexão, canais, chat, opções
     └── res/
         ├── drawable/              ícones vetoriais e logo

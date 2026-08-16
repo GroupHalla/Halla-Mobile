@@ -846,6 +846,32 @@
                                 android:textSize="16sp" />
                         </LinearLayout>
 
+                        <!-- Item Complementos -->
+                        <LinearLayout
+                            android:id="@+id/btnSubmenuComplementos"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:padding="16dp"
+                            android:background="#151322"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/settings_addons"
+                                android:textColor="#FFFFFF"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="❯"
+                                android:textColor="#94A3B8"
+                                android:textSize="16sp" />
+                        </LinearLayout>
+
                         <!-- Item Sobre -->
                         <LinearLayout
                             android:id="@+id/btnSubmenuSobre"
@@ -1187,6 +1213,60 @@
                                 android:text="@string/check_updates"
                                 android:textColor="#FFFFFF"
                                 android:textStyle="bold" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- ========================================== -->
+                    <!-- DETALHE DA CATEGORIA: COMPLEMENTOS (Oculto) -->
+                    <!-- ========================================== -->
+                    <LinearLayout
+                        android:id="@+id/panelComplementos"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:padding="16dp"
+                            android:background="#151322">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/settings_addons_title"
+                                android:textColor="#8B5CF6"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:layout_marginBottom="12dp" />
+
+                            <LinearLayout
+                                android:id="@+id/containerAddons"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical" />
+
+                            <Button
+                                android:id="@+id/btnInstallAddon"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="16dp"
+                                android:backgroundTint="#8B5CF6"
+                                android:text="@string/addon_install_package"
+                                android:textColor="#FFFFFF"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="@string/addon_hint"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
 
                         </LinearLayout>
 

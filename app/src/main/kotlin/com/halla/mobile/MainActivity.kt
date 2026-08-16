@@ -138,12 +138,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private lateinit var btnSubmenuAudio: LinearLayout
     private lateinit var btnSubmenuAparencia: LinearLayout
     private lateinit var btnSubmenuSobre: LinearLayout
+    private lateinit var btnSubmenuComplementos: LinearLayout
 
     // Painéis de detalhes de cada categoria (Ocultos por padrão)
     private lateinit var panelGeral: LinearLayout
     private lateinit var panelAudio: LinearLayout
     private lateinit var panelAparencia: LinearLayout
     private lateinit var panelSobre: LinearLayout
+    private lateinit var panelComplementos: LinearLayout
+    private lateinit var containerAddons: LinearLayout
 
     // Elementos de controles de opções dentro dos painéis
     private lateinit var switchAutoConnect: Switch
@@ -237,6 +240,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (logFile.exists()) logFile.delete()
         } catch (e: Exception) {}
 
+        // Complementos: recarrega os ativos e liga as notificações de plugin.
+        try {
+            PluginManager.restoreEnabledAddons(this)
+        } catch (e: Exception) { e.printStackTrace() }
+        HallaCore.setPluginUiListener(object : HallaCore.PluginUiListener {
+            override fun onPluginNotification(title: String, message: String) {
+                Toast.makeText(this@MainActivity,
+                    if (title.isEmpty()) message else "$title: $message",
+                    Toast.LENGTH_LONG).show()
+            }
+            override fun onPluginMenuAction(actionId: String, label: String, added: Boolean) {
+                // Ações de menu de complementos aparecem hoje como aviso;
+                // um menu dedicado pode ser adicionado futuramente.
+            }
+        })
+
         // Inicializa Componentes da UI principal
         drawerLayout = findViewById(R.id.drawerLayout)
         navDrawer = findViewById(R.id.navDrawer)
@@ -317,11 +336,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnSubmenuAudio = findViewById(R.id.btnSubmenuAudio)
         btnSubmenuAparencia = findViewById(R.id.btnSubmenuAparencia)
         btnSubmenuSobre = findViewById(R.id.btnSubmenuSobre)
+        btnSubmenuComplementos = findViewById(R.id.btnSubmenuComplementos)
 
         panelGeral = findViewById(R.id.panelGeral)
         panelAudio = findViewById(R.id.panelAudio)
         panelAparencia = findViewById(R.id.panelAparencia)
         panelSobre = findViewById(R.id.panelSobre)
+        panelComplementos = findViewById(R.id.panelComplementos)
+        containerAddons = findViewById(R.id.containerAddons)
 
         switchAutoConnect = findViewById(R.id.switchAutoConnect)
         switchAutoUpdate = findViewById(R.id.switchAutoUpdate)
@@ -768,7 +790,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (panelGeral.visibility == View.VISIBLE ||
                 panelAudio.visibility == View.VISIBLE ||
                 panelAparencia.visibility == View.VISIBLE ||
-                panelSobre.visibility == View.VISIBLE) {
+                panelSobre.visibility == View.VISIBLE ||
+                panelComplementos.visibility == View.VISIBLE) {
                 
                 showSettingsSubmenuPanel()
             } else {
@@ -792,6 +815,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnSubmenuSobre.setOnClickListener {
             showSettingsDetailPanel(panelSobre, getString(R.string.settings_about))
+        }
+
+        btnSubmenuComplementos.setOnClickListener {
+            refreshAddonsPanel()
+            showSettingsDetailPanel(panelComplementos, getString(R.string.settings_addons))
+        }
+
+        findViewById<Button>(R.id.btnInstallAddon).setOnClickListener {
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                type = "*/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }, ADDON_INSTALL_REQUEST)
         }
 
         btnSettingsCheckUpdates.setOnClickListener {
@@ -925,6 +960,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == ADDON_INSTALL_REQUEST && resultCode == RESULT_OK) {
+            val addonUri = data?.data ?: return
+            val error = PluginManager.installPackage(this, addonUri)
+            Toast.makeText(
+                this,
+                error ?: getString(R.string.addon_installed),
+                Toast.LENGTH_LONG
+            ).show()
+            if (error == null) refreshAddonsPanel()
+            return
+        }
         if (requestCode != SPEECH_CUE_REQUEST || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -999,6 +1045,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         panelAudio.visibility = View.GONE
         panelAparencia.visibility = View.GONE
         panelSobre.visibility = View.GONE
+        panelComplementos.visibility = View.GONE
     }
 
     // Auxiliar para exibir um painel específico de detalhes ocultando o submenu principal
@@ -1009,6 +1056,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         panelAudio.visibility = View.GONE
         panelAparencia.visibility = View.GONE
         panelSobre.visibility = View.GONE
+        panelComplementos.visibility = View.GONE
 
         activePanel.visibility = View.VISIBLE
     }
@@ -1016,6 +1064,207 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // ============================================================================
     // Persistência das Opções de Configurações (Ajustes Internos Interativos)
     // ============================================================================
+
+    // ============================================================================
+    // Complementos (sistema de plugins portado do Halla Desktop)
+    // ============================================================================
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun refreshAddonsPanel() {
+        containerAddons.removeAllViews()
+        PluginManager.addons(this).forEach { addon ->
+            containerAddons.addView(createAddonCard(addon))
+        }
+    }
+
+    private fun createAddonCard(addon: PluginManager.AddonInfo): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#1E1B2E"))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(this).apply {
+            text = if (addon.official)
+                "${addon.name}  •  ${getString(R.string.addon_official_badge)}"
+            else addon.name
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            )
+        }
+        val toggle = Switch(this).apply {
+            isChecked = addon.enabled
+            setOnCheckedChangeListener { _, checked ->
+                val error = PluginManager.setEnabled(this@MainActivity, addon.id, checked)
+                if (error != null) {
+                    Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                    isChecked = false
+                }
+            }
+        }
+        header.addView(title)
+        header.addView(toggle)
+        card.addView(header)
+
+        val details = TextView(this).apply {
+            val version = if (addon.version.isNotEmpty()) "v${addon.version}" else ""
+            val author = if (addon.author.isNotEmpty()) " — ${addon.author}" else ""
+            text = "$version$author\n${addon.description}"
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 12f
+            setPadding(0, dp(4), 0, 0)
+        }
+        card.addView(details)
+
+        if (addon.capabilities.isNotEmpty()) {
+            card.addView(TextView(this).apply {
+                text = getString(R.string.addon_capabilities, addon.capabilities.joinToString(", "))
+                setTextColor(Color.parseColor("#64748B"))
+                textSize = 11f
+                setPadding(0, dp(4), 0, 0)
+            })
+        }
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        actions.addView(Button(this).apply {
+            text = getString(R.string.addon_configure)
+            textSize = 12f
+            setOnClickListener { showAddonSettingsDialog(addon) }
+        })
+        if (!addon.official) {
+            actions.addView(Button(this).apply {
+                text = getString(R.string.addon_remove)
+                textSize = 12f
+                setOnClickListener {
+                    PluginManager.removeAddon(this@MainActivity, addon.id)
+                    Toast.makeText(this@MainActivity,
+                        getString(R.string.addon_removed), Toast.LENGTH_SHORT).show()
+                    refreshAddonsPanel()
+                }
+            })
+        }
+        card.addView(actions)
+        return card
+    }
+
+    /** Diálogo de configurações dirigido pelo schema do manifesto (int/bool/choice/string). */
+    private fun showAddonSettingsDialog(addon: PluginManager.AddonInfo) {
+        val schema = addon.settingsSchema
+        if (schema.length() == 0) {
+            Toast.makeText(this, getString(R.string.addon_no_settings), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val current = PluginManager.settings(this, addon.id)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        val readers = mutableListOf<Pair<String, () -> Any?>>()
+
+        for (i in 0 until schema.length()) {
+            val field = schema.optJSONObject(i) ?: continue
+            val key = field.optString("key")
+            if (key.isEmpty()) continue
+            val label = field.optString("label", key)
+
+            container.addView(TextView(this).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                setPadding(0, dp(8), 0, dp(2))
+            })
+
+            when (field.optString("type")) {
+                "int" -> {
+                    val min = field.optInt("min", 0)
+                    val max = field.optInt("max", 100)
+                    val value = current.optInt(key, field.optInt("default", min))
+                    val valueLabel = TextView(this).apply {
+                        text = value.toString()
+                        setTextColor(Color.parseColor("#94A3B8"))
+                        textSize = 12f
+                    }
+                    val seek = SeekBar(this).apply {
+                        this.max = max - min
+                        progress = (value - min).coerceIn(0, max - min)
+                        setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                            override fun onProgressChanged(bar: SeekBar?, p: Int, user: Boolean) {
+                                valueLabel.text = (min + p).toString()
+                            }
+                            override fun onStartTrackingTouch(bar: SeekBar?) {}
+                            override fun onStopTrackingTouch(bar: SeekBar?) {}
+                        })
+                    }
+                    container.addView(seek)
+                    container.addView(valueLabel)
+                    readers.add(key to { min + seek.progress })
+                }
+                "bool" -> {
+                    val check = CheckBox(this).apply {
+                        isChecked = current.optBoolean(key, field.optBoolean("default", false))
+                        setTextColor(Color.WHITE)
+                    }
+                    container.addView(check)
+                    readers.add(key to { check.isChecked })
+                }
+                "choice" -> {
+                    val options = field.optJSONArray("options") ?: JSONArray()
+                    val items = (0 until options.length()).map { options.optString(it) }
+                    val spinner = Spinner(this).apply {
+                        adapter = ArrayAdapter(this@MainActivity,
+                            android.R.layout.simple_spinner_dropdown_item, items)
+                        val selected = current.optString(key, field.optString("default"))
+                        val index = items.indexOf(selected)
+                        if (index >= 0) setSelection(index)
+                    }
+                    container.addView(spinner)
+                    readers.add(key to { spinner.selectedItem?.toString() ?: "" })
+                }
+                else -> {
+                    val edit = EditText(this).apply {
+                        setText(current.optString(key, field.optString("default")))
+                        setTextColor(Color.WHITE)
+                    }
+                    container.addView(edit)
+                    readers.add(key to { edit.text.toString() })
+                }
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(addon.name)
+            .setView(ScrollView(this).apply { addView(container) })
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val result = PluginManager.settings(this, addon.id)
+                readers.forEach { (key, read) ->
+                    when (val value = read()) {
+                        is Boolean -> result.put(key, value)
+                        is Int -> result.put(key, value)
+                        else -> result.put(key, value?.toString() ?: "")
+                    }
+                }
+                PluginManager.saveSettings(this, addon.id, result)
+                Toast.makeText(this, getString(R.string.addon_settings_saved),
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
 
     private fun updateAudioProcessingStatus() {
         val available = getString(R.string.audio_filter_available)
@@ -4376,5 +4625,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     companion object {
         private const val HelperIntSize = 48
         private const val SPEECH_CUE_REQUEST = 7401
+        private const val ADDON_INSTALL_REQUEST = 7402
     }
 }

@@ -41,6 +41,9 @@
 // Inclui a biblioteca oficial Opus para compressão/descompressão VoIP de alta fidelidade
 #include <opus.h>
 
+// Host de complementos (mesma ABI C pública do Halla Desktop)
+#include "plugin_host.h"
+
 #define LOG_TAG "HallaCoreJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -64,6 +67,9 @@ static jmethodID g_onScreenShareFrameMethod = nullptr;
 static jmethodID g_onWebRtcSignalMethod = nullptr;
 static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
+static jmethodID g_onPluginNotificationMethod = nullptr;
+static jmethodID g_onPluginMenuActionMethod = nullptr;
+static jmethodID g_onPluginUiTaskMethod = nullptr;
 
 static std::string g_cachePath = "";
 static constexpr size_t kMaxJsonLineBytes = 2 * 1024 * 1024;
@@ -729,6 +735,55 @@ void invokeOnWebRtcSignal(const std::string& signalJson) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
+// ---- Pontes JNI do host de complementos --------------------------------
+
+void invokeOnPluginNotification(const std::string& title, const std::string& message) {
+    if (!g_vm || !g_coreClass || !g_onPluginNotificationMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    if (env) {
+        jstring jTitle = env->NewStringUTF(title.c_str());
+        jstring jMessage = env->NewStringUTF(message.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onPluginNotificationMethod, jTitle, jMessage);
+        env->DeleteLocalRef(jTitle);
+        env->DeleteLocalRef(jMessage);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+void invokeOnPluginMenuAction(const std::string& actionId, const std::string& label,
+                              bool added) {
+    if (!g_vm || !g_coreClass || !g_onPluginMenuActionMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    if (env) {
+        jstring jId = env->NewStringUTF(actionId.c_str());
+        jstring jLabel = env->NewStringUTF(label.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onPluginMenuActionMethod, jId, jLabel,
+                                  added ? JNI_TRUE : JNI_FALSE);
+        env->DeleteLocalRef(jId);
+        env->DeleteLocalRef(jLabel);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+void invokeOnPluginUiTask(int64_t taskId) {
+    if (!g_vm || !g_coreClass || !g_onPluginUiTaskMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) { g_vm->AttachCurrentThread(&env, nullptr); attached = true; }
+    if (env) {
+        env->CallStaticVoidMethod(g_coreClass, g_onPluginUiTaskMethod,
+                                  static_cast<jlong>(taskId));
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
 std::string callStaticStringString(jmethodID method, const std::string& a) {
     if (!g_vm || !g_coreClass || !method) return "";
     JNIEnv* env = nullptr;
@@ -821,6 +876,9 @@ public:
 
     void disconnect() {
         m_connected = false;
+
+        // Complementos: limpa estado por conexão e emite connection_closed.
+        PluginHost::instance().clearConnection();
 
         // shutdown acorda recv/recvfrom antes do join. O código anterior também
         // tentava dar join na própria thread TCP quando o servidor fechava a
@@ -1046,6 +1104,9 @@ public:
         m_encodePcm.insert(m_encodePcm.end(), pcm, pcm + samples);
         while (m_encodePcm.size() >= 960) {
             unsigned char opusBuf[512];
+            // Complementos: estágio HALLA_AUDIO_CAPTURE (PCM mutável, antes do Opus).
+            PluginHost::instance().processCapture(int(m_selfId.load()),
+                                                  m_encodePcm.data(), 960);
             const int n = opus_encode(m_encoder, m_encodePcm.data(), 960,
                                       opusBuf, sizeof(opusBuf));
             m_encodePcm.erase(m_encodePcm.begin(), m_encodePcm.begin() + 960);
@@ -1272,6 +1333,9 @@ private:
             }
         }
         if (n > 0) {
+            // Complementos: estágio HALLA_AUDIO_REMOTE_BEFORE_SPATIAL
+            // (PCM decodificado, mutável, por remetente).
+            PluginHost::instance().processRemote(int(fromId), pcm, uint32_t(n));
             invokeOnAudioFrame(fromId, reinterpret_cast<const char*>(pcm), n * 2);
         } else {
             writeLog("UDP voz: falha ao decodificar pacote de #" + std::to_string(fromId) +
@@ -1328,7 +1392,8 @@ private:
 
         const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
         const std::string idPub = callStaticStringString(g_identityPublicKeyMethod, uid);
-        std::string hello = "{\"t\":\"hello\",\"proto\":4,\"uid\":\"" +
+        // proto 5: habilita o transporte plugin_data dos complementos.
+        std::string hello = "{\"t\":\"hello\",\"proto\":5,\"uid\":\"" +
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
@@ -1473,6 +1538,9 @@ private:
                 // estão prontos.
                 invokeOnConnected(serverName, motd);
                 invokeOnWelcome(line);
+
+                // Complementos: snapshot inicial da sessão (client_state).
+                PluginHost::instance().setClientState(line);
                 return;
             }
 
@@ -1529,6 +1597,16 @@ private:
                 std::string from = jsonExtractString(line, "fromName");
                 std::string msg = jsonExtractString(line, "msg");
                 invokeOnPoke(from, msg);
+                return;
+            }
+
+            if (t == "plugin_data") {
+                // Transporte v5: encaminha ao host de complementos.
+                const std::string pluginId = jsonExtractString(line, "plugin");
+                const std::string topic = jsonExtractString(line, "topic");
+                const std::string dataB64 = jsonExtractString(line, "data");
+                const int fromId = jsonExtractInt(line, "from");
+                PluginHost::instance().dispatchPluginData(pluginId, fromId, topic, dataB64);
                 return;
             }
 
@@ -1834,6 +1912,35 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onWebRtcSignalMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWebRtcSignal", "(Ljava/lang/String;)V");
     g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
     g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    g_onPluginNotificationMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginNotification", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onPluginMenuActionMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginMenuAction", "(Ljava/lang/String;Ljava/lang/String;Z)V");
+    g_onPluginUiTaskMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginUiTask", "(J)V");
+
+    // Liga o host de complementos ao núcleo e ao Kotlin.
+    PluginHostBridge bridge;
+    bridge.sendRawJson = [](const std::string& json) {
+        HallaClientCore::getInstance().sendRawJson(json);
+    };
+    bridge.playPcm = [](const int16_t* samples, uint32_t frames) {
+        // Reutiliza o caminho de reprodução existente: entrega ao Kotlin como
+        // se fosse voz do usuário 0 (reservado para complementos).
+        invokeOnAudioFrame(0, reinterpret_cast<const char*>(samples),
+                           int(frames) * 2);
+    };
+    bridge.notify = [](const std::string& title, const std::string& message) {
+        invokeOnPluginNotification(title, message);
+    };
+    bridge.menuAction = [](const std::string& actionId, const std::string& label,
+                           bool added) {
+        invokeOnPluginMenuAction(actionId, label, added);
+    };
+    bridge.postUiTask = [](int64_t taskId) {
+        invokeOnPluginUiTask(taskId);
+    };
+    bridge.appVersion = []() -> std::string {
+        return "mobile";
+    };
+    PluginHost::instance().setBridge(std::move(bridge));
 
     return JNI_VERSION_1_6;
 }
@@ -1986,6 +2093,105 @@ Java_com_halla_mobile_HallaCore_sendEditChannel(JNIEnv* env, jclass clazz, jint 
     env->ReleaseStringUTFChars(name, nativeName);
     env->ReleaseStringUTFChars(desc, nativeDesc);
     env->ReleaseStringUTFChars(pass, nativePass);
+}
+
+// ---- Host de complementos (sistema de plugins portado do Desktop) ------
+
+JNIEXPORT jstring JNICALL
+Java_com_halla_mobile_HallaCore_pluginLoadNative(JNIEnv* env, jclass,
+                                                 jstring id, jstring libraryPath) {
+    const char* nativeId = env->GetStringUTFChars(id, nullptr);
+    const char* nativePath = env->GetStringUTFChars(libraryPath, nullptr);
+    const std::string error = PluginHost::instance().loadNative(nativeId, nativePath);
+    env->ReleaseStringUTFChars(id, nativeId);
+    env->ReleaseStringUTFChars(libraryPath, nativePath);
+    return env->NewStringUTF(error.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_pluginUnloadNative(JNIEnv* env, jclass, jstring id) {
+    const char* nativeId = env->GetStringUTFChars(id, nullptr);
+    PluginHost::instance().unloadNative(nativeId);
+    env->ReleaseStringUTFChars(id, nativeId);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_halla_mobile_HallaCore_pluginIsLoaded(JNIEnv* env, jclass, jstring id) {
+    const char* nativeId = env->GetStringUTFChars(id, nullptr);
+    const bool loaded = PluginHost::instance().isLoaded(nativeId);
+    env->ReleaseStringUTFChars(id, nativeId);
+    return loaded ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_pluginSetSettings(JNIEnv* env, jclass,
+                                                  jstring id, jstring settingsJson) {
+    const char* nativeId = env->GetStringUTFChars(id, nullptr);
+    const char* nativeSettings = env->GetStringUTFChars(settingsJson, nullptr);
+    PluginHost::instance().setSettings(nativeId, nativeSettings);
+    env->ReleaseStringUTFChars(id, nativeId);
+    env->ReleaseStringUTFChars(settingsJson, nativeSettings);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_pluginDispatchEvent(JNIEnv* env, jclass,
+                                                    jstring eventJson) {
+    const char* nativeEvent = env->GetStringUTFChars(eventJson, nullptr);
+    PluginHost::instance().dispatchEvent(nativeEvent);
+    env->ReleaseStringUTFChars(eventJson, nativeEvent);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_pluginRunUiTask(JNIEnv*, jclass, jlong taskId) {
+    PluginHost::instance().runTask(static_cast<int64_t>(taskId));
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_pluginSendData(JNIEnv* env, jclass, jstring pluginId,
+                                               jint target, jintArray ids,
+                                               jstring topic, jbyteArray data) {
+    // Caminho auxiliar para complementos "manifest-only" geridos pelo Kotlin.
+    const char* nativePlugin = env->GetStringUTFChars(pluginId, nullptr);
+    const char* nativeTopic = env->GetStringUTFChars(topic, nullptr);
+    std::string idsJson = "[";
+    if (ids) {
+        jsize count = env->GetArrayLength(ids);
+        jint* values = env->GetIntArrayElements(ids, nullptr);
+        for (jsize i = 0; i < count; ++i) {
+            if (i) idsJson += ',';
+            idsJson += std::to_string(values[i]);
+        }
+        env->ReleaseIntArrayElements(ids, values, JNI_ABORT);
+    }
+    idsJson += "]";
+
+    std::string payloadB64;
+    if (data) {
+        jsize size = env->GetArrayLength(data);
+        if (size > 0 && size <= 8192) {
+            std::vector<unsigned char> bytes(static_cast<size_t>(size), 0);
+            env->GetByteArrayRegion(data, 0, size, reinterpret_cast<jbyte*>(bytes.data()));
+            size_t needed = 0;
+            mbedtls_base64_encode(nullptr, 0, &needed, bytes.data(), bytes.size());
+            std::string out(needed, '\0');
+            size_t written = 0;
+            if (mbedtls_base64_encode(reinterpret_cast<unsigned char*>(&out[0]),
+                                      out.size(), &written, bytes.data(),
+                                      bytes.size()) == 0) {
+                out.resize(written);
+                payloadB64 = out;
+            }
+        }
+    }
+
+    std::string json = "{\"t\":\"plugin_data\",\"plugin\":\"" + jsonEscape(nativePlugin)
+        + "\",\"target\":" + std::to_string(int(target));
+    if (int(target) == 1) json += ",\"ids\":" + idsJson;
+    json += ",\"topic\":\"" + jsonEscape(nativeTopic) + "\",\"data\":\"" + payloadB64 + "\"}";
+    HallaClientCore::getInstance().sendRawJson(json);
+
+    env->ReleaseStringUTFChars(pluginId, nativePlugin);
+    env->ReleaseStringUTFChars(topic, nativeTopic);
 }
 
 }

@@ -31,6 +31,7 @@ FetchContent_MakeAvailable(opus mbedtls)
 
 add_library(halla-core SHARED
     jni_bridge.cpp
+    plugin_host.cpp
 )
 
 find_library(log-lib log)

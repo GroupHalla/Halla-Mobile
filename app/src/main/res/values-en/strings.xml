@@ -388,4 +388,26 @@ Download and install now?</string>
     <string name="speech_cue_no_file">No file selected</string>
     <string name="speech_cue_hint">Choose the audio files. “Other users” also plays the cue when someone else speaks.</string>
     <string name="hide_channel_symbol">Hide channel symbol</string>
+    <string name="settings_addons">Add-ons</string>
+    <string name="settings_addons_title">Installed add-ons</string>
+    <string name="addon_install_package">Install package (.halla-addon)</string>
+    <string name="addon_official_badge">Official</string>
+    <string name="addon_configure">Configure</string>
+    <string name="addon_remove">Remove</string>
+    <string name="addon_removed">Add-on removed.</string>
+    <string name="addon_installed">Add-on installed. Enable it in the list.</string>
+    <string name="addon_capabilities">Capabilities: %1$s</string>
+    <string name="addon_no_settings">This add-on has no settings.</string>
+    <string name="addon_settings_saved">Add-on settings saved.</string>
+    <string name="addon_radio_name">Police radio voice</string>
+    <string name="addon_radio_description">Official radio voice filter: narrow band, compression and adjustable static, applied when sending and listening.</string>
+    <string name="addon_error_open">Could not open the selected package.</string>
+    <string name="addon_error_too_big">The package exceeds the maximum allowed size.</string>
+    <string name="addon_error_manifest">The package does not contain a valid manifest.json.</string>
+    <string name="addon_error_id">The add-on ID in the manifest is invalid.</string>
+    <string name="addon_error_api">The add-on uses an API not supported by this release.</string>
+    <string name="addon_error_path">The package contains invalid file paths.</string>
+    <string name="addon_error_abi">The add-on has no library for this device architecture.</string>
+    <string name="addon_error_generic">Failed to install the add-on: %1$s</string>
+    <string name="addon_hint">.halla-addon packages use the same format as Halla Desktop. Native libraries must be built for Android (android-arm64, android-arm, android-x86_64 or android-x86) using the public C ABI of the SDK.</string>
 </resources>

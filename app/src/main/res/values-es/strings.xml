@@ -388,4 +388,26 @@ Notas de la versión:
     <string name="speech_cue_no_file">Ningún archivo seleccionado</string>
     <string name="speech_cue_hint">Selecciona los archivos de audio. “Otros usuarios” también reproduce la señal cuando otra persona habla.</string>
     <string name="hide_channel_symbol">Ocultar símbolo del canal</string>
+    <string name="settings_addons">Complementos</string>
+    <string name="settings_addons_title">Complementos instalados</string>
+    <string name="addon_install_package">Instalar paquete (.halla-addon)</string>
+    <string name="addon_official_badge">Oficial</string>
+    <string name="addon_configure">Configurar</string>
+    <string name="addon_remove">Eliminar</string>
+    <string name="addon_removed">Complemento eliminado.</string>
+    <string name="addon_installed">Complemento instalado. Actívalo en la lista.</string>
+    <string name="addon_capabilities">Capacidades: %1$s</string>
+    <string name="addon_no_settings">Este complemento no tiene ajustes.</string>
+    <string name="addon_settings_saved">Ajustes del complemento guardados.</string>
+    <string name="addon_radio_name">Voz de radio policial</string>
+    <string name="addon_radio_description">Filtro oficial de voz por radio: banda estrecha, compresión y estática ajustable, aplicado al enviar y al escuchar.</string>
+    <string name="addon_error_open">No se pudo abrir el paquete seleccionado.</string>
+    <string name="addon_error_too_big">El paquete supera el tamaño máximo permitido.</string>
+    <string name="addon_error_manifest">El paquete no contiene un manifest.json válido.</string>
+    <string name="addon_error_id">El ID del complemento en el manifiesto es inválido.</string>
+    <string name="addon_error_api">El complemento usa una API no compatible con esta versión.</string>
+    <string name="addon_error_path">El paquete contiene rutas de archivo inválidas.</string>
+    <string name="addon_error_abi">El complemento no tiene biblioteca para la arquitectura de este dispositivo.</string>
+    <string name="addon_error_generic">Error al instalar el complemento: %1$s</string>
+    <string name="addon_hint">Los paquetes .halla-addon usan el mismo formato que Halla Desktop. Las bibliotecas nativas deben compilarse para Android (android-arm64, android-arm, android-x86_64 o android-x86) usando la ABI C pública del SDK.</string>
 </resources>

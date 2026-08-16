@@ -237,6 +237,31 @@ object HallaCore {
     @JvmStatic
     external fun sendEditChannel(channelId: Int, name: String, desc: String, pass: String, bitrate: Int, noSymbol: Boolean)
 
+    // ---- Host de complementos (sistema de plugins portado do Desktop) ----
+
+    /** Carrega uma biblioteca nativa de complemento; retorna "" ou o erro. */
+    @JvmStatic
+    external fun pluginLoadNative(id: String, libraryPath: String): String
+
+    @JvmStatic
+    external fun pluginUnloadNative(id: String)
+
+    @JvmStatic
+    external fun pluginIsLoaded(id: String): Boolean
+
+    @JvmStatic
+    external fun pluginSetSettings(id: String, settingsJson: String)
+
+    @JvmStatic
+    external fun pluginDispatchEvent(eventJson: String)
+
+    @JvmStatic
+    external fun pluginRunUiTask(taskId: Long)
+
+    /** Envia plugin_data (protocolo v5) em nome de um complemento. */
+    @JvmStatic
+    external fun pluginSendData(pluginId: String, target: Int, ids: IntArray?, topic: String, data: ByteArray)
+
     // Interface para escutar eventos vindos do C++ Core
     interface Callbacks {
         fun onConnected(serverName: String, motd: String)
@@ -336,5 +361,38 @@ object HallaCore {
     @JvmStatic
     fun triggerOnWebRtcSignal(signalJson: String) {
         callbacks.forEach { it.onWebRtcSignalReceived(signalJson) }
+    }
+
+    // ---- Callbacks do host de complementos (chamados pelo C++) ----
+
+    /** Ouvinte opcional dos eventos de UI produzidos por complementos. */
+    interface PluginUiListener {
+        fun onPluginNotification(title: String, message: String)
+        fun onPluginMenuAction(actionId: String, label: String, added: Boolean)
+    }
+
+    @Volatile
+    private var pluginUiListener: PluginUiListener? = null
+
+    fun setPluginUiListener(listener: PluginUiListener?) {
+        pluginUiListener = listener
+    }
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    @JvmStatic
+    fun triggerOnPluginNotification(title: String, message: String) {
+        mainHandler.post { pluginUiListener?.onPluginNotification(title, message) }
+    }
+
+    @JvmStatic
+    fun triggerOnPluginMenuAction(actionId: String, label: String, added: Boolean) {
+        mainHandler.post { pluginUiListener?.onPluginMenuAction(actionId, label, added) }
+    }
+
+    @JvmStatic
+    fun triggerOnPluginUiTask(taskId: Long) {
+        // post_to_ui da ABI: executa a tarefa do plugin na thread principal.
+        mainHandler.post { pluginRunUiTask(taskId) }
     }
 }
