@@ -1208,9 +1208,9 @@ private:
             std::string saved;
             if (in.good()) std::getline(in, saved);
             if (saved.empty()) {
-                std::ofstream out(pinPath, std::ios::trunc);
-                out << fingerprint;
-                writeLog("TLS: fingerprint salvo (TOFU)");
+                writeLog("TLS: fingerprint ainda não confirmado pela interface");
+                invokeOnConnectionFailed("Certificado TLS ainda não foi confirmado pelo usuário.");
+                return false;
             } else if (saved != fingerprint) {
                 writeLog("TLS: fingerprint mudou; conexão recusada");
                 invokeOnConnectionFailed("ALERTA DE SEGURANÇA: o fingerprint TLS do servidor mudou.");
@@ -1304,34 +1304,8 @@ private:
             if (n > 0) break;
         }
 
-        // Compatibilidade com Desktop <= v1.0.37: voz cifrada pelo antigo XOR
-        // usando os 16 primeiros bytes da chave do canal. Usa decoder temporário
-        // para não corromper o decoder principal caso a tentativa esteja errada.
-        if (n <= 0) {
-            for (const auto& key : candidateKeys) {
-                std::vector<char> legacy = voiceDecryptLegacyXor(opusData, size, key, seq);
-                if (legacy.empty()) continue;
-                int trialErr = 0;
-                OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
-                if (!trial) continue;
-                n = opus_decode(trial, reinterpret_cast<const unsigned char*>(legacy.data()),
-                                legacy.size(), pcm, 960, 0);
-                opus_decoder_destroy(trial);
-                if (n > 0) break;
-            }
-        }
-
-        // Último fallback: alguns desktops/intermediários podem ainda enviar
-        // Opus puro mesmo com chaves presentes. Usa decoder temporário para
-        // não danificar o estado do decoder principal se for ciphertext.
-        if (n <= 0) {
-            int trialErr = 0;
-            OpusDecoder* trial = opus_decoder_create(48000, 1, &trialErr);
-            if (trial) {
-                n = opus_decode(trial, reinterpret_cast<const unsigned char*>(opusData), size, pcm, 960, 0);
-                opus_decoder_destroy(trial);
-            }
-        }
+        // Protocolo v4+: falha de autenticação é terminal. Não aceite XOR
+        // legado nem Opus puro depois que uma chave de canal foi negociada.
         if (n > 0) {
             // Complementos: estágio HALLA_AUDIO_REMOTE_BEFORE_SPATIAL
             // (PCM decodificado, mutável, por remetente).
@@ -1750,17 +1724,9 @@ private:
             if (!plain.empty()) return plain;
         }
 
-        // Desktop antigo: cada chunk era XOR legado. Não valide JPEG aqui, pois
-        // o JPEG completo só existe após juntar todos os chunks. Esse caminho é
-        // o comportamento que já mostrava imagem antes; o congelamento era no
-        // Desktop não enviando frames, não neste fallback.
-        for (const auto& key : keys) {
-            std::vector<char> plain = voiceDecryptLegacyXor(data, size, key, seq);
-            if (!plain.empty()) return plain;
-        }
-
-        // Sem chaves ainda: aceita puro para compatibilidade/diagnóstico.
-        return keys.empty() ? std::vector<char>(data, data + size) : std::vector<char>();
+        // Falha de autenticação é terminal; ciphertext não autenticado nunca é
+        // reinterpretado como XOR legado ou frame puro.
+        return {};
     }
 
     void handleScreenDatagram(uint32_t fromId, uint16_t seq, const char* data, int size) {
@@ -1777,7 +1743,18 @@ private:
             return;
         }
 
+        size_t pendingFrames = 0;
+        for (const auto& user : m_screenReassembly) pendingFrames += user.second.size();
+        if (m_screenReassembly[fromId].count(seq) == 0 && pendingFrames >= 128) return;
+
         auto& bySeq = m_screenReassembly[fromId][seq];
+        size_t frameBytes = chunk.size();
+        for (const auto& part : bySeq) frameBytes += part.second.size();
+        if (frameBytes > 4u * 1024u * 1024u) {
+            m_screenReassembly[fromId].erase(seq);
+            if (m_screenReassembly[fromId].empty()) m_screenReassembly.erase(fromId);
+            return;
+        }
         bySeq[chunkIdx] = std::move(chunk);
         if (bySeq.size() != chunkCount) return;
 
@@ -1810,6 +1787,10 @@ private:
             int n = recvfrom(socketFd, buf, sizeof(buf), 0,
                              (struct sockaddr*)&sender, &len);
             if (n <= 0) continue; // timeout de 1 s ou socket sendo encerrado
+            if (sender.sin_addr.s_addr != m_serverUdpAddr.sin_addr.s_addr
+                    || sender.sin_port != m_serverUdpAddr.sin_port) {
+                continue; // bloqueia injeção UDP direta fora do relay autenticado
+            }
 
             if (n < 10) continue;
             const bool isVoice = memcmp(buf, "HALL", 4) == 0;

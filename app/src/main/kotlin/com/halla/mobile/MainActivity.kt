@@ -2330,6 +2330,73 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         dialog.show()
     }
 
+    private fun tlsPinFile(host: String, port: Int): File {
+        val safeHost = host.map { ch ->
+            if (ch.isLetterOrDigit() || ch == '.' || ch == '-' || ch == '_') ch else '_'
+        }.joinToString("")
+        return File(File(noBackupFilesDir, "tls-pins").apply { mkdirs() },
+            "tls_fingerprint_${safeHost}_${port}.txt")
+    }
+
+    private fun connectAfterTlsConfirmation(host: String, port: Int, connect: () -> Unit) {
+        thread {
+            var socket: SSLSocket? = null
+            try {
+                val trustAll = object : X509TrustManager {
+                    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+                    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+                }
+                val context = SSLContext.getInstance("TLS")
+                context.init(null, arrayOf(trustAll), SecureRandom())
+                socket = context.socketFactory.createSocket() as SSLSocket
+                socket.soTimeout = 5000
+                socket.connect(java.net.InetSocketAddress(host, port), 5000)
+                socket.startHandshake()
+                val cert = socket.session.peerCertificates.firstOrNull()?.encoded
+                    ?: throw SecurityException("Servidor sem certificado TLS")
+                val fingerprint = MessageDigest.getInstance("SHA-256").digest(cert)
+                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                runOnUiThread {
+                    val pinFile = tlsPinFile(host, port)
+                    val legacyPins = getSharedPreferences("HallaTlsPins", Context.MODE_PRIVATE)
+                    val saved = pinFile.takeIf { it.isFile }?.readText()?.trim()
+                        .orEmpty().ifEmpty { legacyPins.getString("$host:$port", "").orEmpty() }
+                    if (saved.isNotEmpty() && !saved.equals(fingerprint, ignoreCase = true)) {
+                        btnConnectStatusNormal()
+                        txtError.text = "ALERTA: o fingerprint TLS de $host:$port mudou. Conexão recusada."
+                        txtError.visibility = View.VISIBLE
+                        return@runOnUiThread
+                    }
+                    if (saved.equals(fingerprint, ignoreCase = true)) {
+                        if (!pinFile.isFile) pinFile.writeText(fingerprint)
+                        connect()
+                        return@runOnUiThread
+                    }
+                    val display = fingerprint.uppercase().chunked(2).joinToString(":")
+                    AlertDialog.Builder(this)
+                        .setTitle("Confirmar certificado TLS")
+                        .setMessage("Primeiro contato com $host:$port. Compare o SHA-256 com o administrador antes de confiar:\n\n$display")
+                        .setNegativeButton(android.R.string.cancel) { _, _ -> btnConnectStatusNormal() }
+                        .setPositiveButton("Confiar") { _, _ ->
+                            pinFile.writeText(fingerprint)
+                            legacyPins.edit().putString("$host:$port", fingerprint).apply()
+                            connect()
+                        }
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    btnConnectStatusNormal()
+                    txtError.text = "Falha ao validar TLS: ${e.message ?: "erro desconhecido"}"
+                    txtError.visibility = View.VISIBLE
+                }
+            } finally {
+                try { socket?.close() } catch (_: Exception) { }
+            }
+        }
+    }
+
     private fun connectToSavedServer(srv: JSONObject) {
         val host = srv.getString("host")
         val port = srv.getInt("port")
@@ -2351,7 +2418,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         } else {
             getOrCreateClientUid()
         }
-        HallaService.start(this, host, port, nick, pass, uid)
+        connectAfterTlsConfirmation(host, port) {
+            HallaService.start(this, host, port, nick, pass, uid)
+        }
 
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         connectionTimeoutRunnable = Runnable {
@@ -2395,7 +2464,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
-        HallaService.start(this, host, port, nick, pass, uid)
+        connectAfterTlsConfirmation(host, port) {
+            HallaService.start(this, host, port, nick, pass, uid)
+        }
     }
 
     private fun btnConnectStatusNormal() {
@@ -2456,7 +2527,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val pinKey = "$host:$port"
                     val saved = pins.getString(pinKey, null)
                     if (saved == null) {
-                        pins.edit().putString(pinKey, fp).apply()
+                        // Uma consulta automática nunca deve decidir a confiança
+                        // do primeiro contato. O pin só é criado após confirmação.
+                        throw SecurityException("Certificado TLS ainda não confirmado")
                     } else if (saved != fp) {
                         throw SecurityException("Fingerprint TLS mudou")
                     }

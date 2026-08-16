@@ -44,6 +44,8 @@ object PluginManager {
     private const val MAX_MANIFEST_BYTES = 256 * 1024
     private const val MAX_PACKAGE_BYTES = 64L * 1024L * 1024L
     private const val MAX_ENTRY_BYTES = 32L * 1024L * 1024L
+    private const val MAX_EXTRACTED_BYTES = 128L * 1024L * 1024L
+    private const val MAX_ENTRIES = 2048
 
     private val idPattern = Regex("^[a-z0-9._-]{3,64}$")
 
@@ -187,8 +189,15 @@ object PluginManager {
 
             val targetRoot = target.canonicalFile
             val entries = zip.entries()
+            var entryCount = 0
+            var extractedTotal = 0L
+            val buffer = ByteArray(64 * 1024)
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
+                if (++entryCount > MAX_ENTRIES) {
+                    target.deleteRecursively()
+                    return context.getString(R.string.addon_error_too_big)
+                }
                 if (entry.isDirectory) continue
                 if (entry.size > MAX_ENTRY_BYTES) {
                     target.deleteRecursively()
@@ -201,8 +210,21 @@ object PluginManager {
                     return context.getString(R.string.addon_error_path)
                 }
                 out.parentFile?.mkdirs()
+                var entryBytes = 0L
                 zip.getInputStream(entry).use { input ->
-                    out.outputStream().use { output -> input.copyTo(output) }
+                    out.outputStream().use { output ->
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            entryBytes += read
+                            extractedTotal += read
+                            if (entryBytes > MAX_ENTRY_BYTES || extractedTotal > MAX_EXTRACTED_BYTES) {
+                                target.deleteRecursively()
+                                return context.getString(R.string.addon_error_too_big)
+                            }
+                            output.write(buffer, 0, read)
+                        }
+                    }
                 }
             }
             return null

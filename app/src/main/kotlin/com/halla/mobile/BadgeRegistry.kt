@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
-import net.i2p.crypto.eddsa.EdDSASecurityProvider
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -15,7 +15,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.KeyFactory
 import java.security.MessageDigest
-import java.security.Security
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.CopyOnWriteArraySet
@@ -218,9 +217,9 @@ object BadgeRegistry {
                 KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(publicDer)) to
                     Signature.getInstance("Ed25519")
             } catch (_: Throwable) {
-                if (Security.getProvider("EdDSA") == null) Security.addProvider(EdDSASecurityProvider())
-                KeyFactory.getInstance("EdDSA", "EdDSA").generatePublic(X509EncodedKeySpec(publicDer)) to
-                    Signature.getInstance("NONEwithEdDSA", "EdDSA")
+                val provider = BouncyCastleProvider()
+                KeyFactory.getInstance("Ed25519", provider).generatePublic(X509EncodedKeySpec(publicDer)) to
+                    Signature.getInstance("Ed25519", provider)
             }
             pair.second.initVerify(pair.first)
             pair.second.update(message)

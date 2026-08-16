@@ -5,14 +5,12 @@ import android.util.Base64
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import org.json.JSONObject
-import net.i2p.crypto.eddsa.EdDSASecurityProvider
-import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
-import java.security.Security
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.concurrent.CopyOnWriteArraySet
@@ -33,8 +31,8 @@ object HallaCore {
         return ensureIdentity(uidAlias)
     }
 
-    private const val EDDSA_PROVIDER = "EdDSA"
     private const val IDENTITY_MASTER_KEY_ALIAS = "halla.identity.master.v1"
+    private val fallbackEd25519Provider by lazy { BouncyCastleProvider() }
 
     private fun identityMasterKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -82,21 +80,12 @@ object HallaCore {
         } catch (_: Throwable) { "" }
     }
 
-    private fun ensureEdDsaProvider() {
-        if (Security.getProvider(EDDSA_PROVIDER) == null) {
-            Security.addProvider(EdDSASecurityProvider())
-        }
-    }
-
     private fun newEd25519KeyPair(): Pair<String, KeyPair> {
         return try {
             "Ed25519" to KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
         } catch (_: Throwable) {
-            ensureEdDsaProvider()
-            val params = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
-            val kpg = KeyPairGenerator.getInstance("EdDSA", EDDSA_PROVIDER)
-            kpg.initialize(params)
-            "EdDSA" to kpg.generateKeyPair()
+            "BC-Ed25519" to KeyPairGenerator.getInstance(
+                "Ed25519", fallbackEd25519Provider).generateKeyPair()
         }
     }
 
@@ -152,14 +141,15 @@ object HallaCore {
             val algorithm = prefs.getString("$alias.algorithm", "Ed25519") ?: "Ed25519"
             val encrypted = prefs.getString("$alias.privateEncrypted", "") ?: ""
             val privDer = decryptIdentityPrivateKey(encrypted)
-            val priv = if (algorithm == "EdDSA") {
-                ensureEdDsaProvider()
-                KeyFactory.getInstance("EdDSA", EDDSA_PROVIDER).generatePrivate(PKCS8EncodedKeySpec(privDer))
+            val priv = if (algorithm == "BC-Ed25519" || algorithm == "EdDSA") {
+                KeyFactory.getInstance("Ed25519", fallbackEd25519Provider)
+                    .generatePrivate(PKCS8EncodedKeySpec(privDer))
             } else {
                 KeyFactory.getInstance("Ed25519").generatePrivate(PKCS8EncodedKeySpec(privDer))
             }
-            val sig = if (algorithm == "EdDSA") Signature.getInstance("NONEwithEdDSA", EDDSA_PROVIDER)
-                      else Signature.getInstance("Ed25519")
+            val sig = if (algorithm == "BC-Ed25519" || algorithm == "EdDSA")
+                Signature.getInstance("Ed25519", fallbackEd25519Provider)
+            else Signature.getInstance("Ed25519")
             sig.initSign(priv)
             sig.update(Base64.decode(nonceB64, Base64.NO_WRAP))
             Base64.encodeToString(sig.sign(), Base64.NO_WRAP)

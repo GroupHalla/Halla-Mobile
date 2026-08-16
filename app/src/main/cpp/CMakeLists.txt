@@ -17,7 +17,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   mbedtls
   GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-  GIT_TAG        107ea89daaefb9867ea9121002fbbdf926780e98
+  GIT_TAG        0bebf8b8c7f07abe3571ded48a11aa907a1ffb20 # Mbed TLS 3.6.6
 )
 
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "Build programs" FORCE)

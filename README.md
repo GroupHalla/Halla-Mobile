@@ -86,7 +86,7 @@ acessado via JNI.
 - Canal de controle em TLS com pinagem TOFU (mesmo esquema do cliente
   desktop).
 - Identidade Ed25519: usa a API nativa `java.security` (Android 12/API 31+)
-  quando disponível, com `net.i2p.crypto.eddsa` como implementação pura-Java
+  quando disponível, com Bouncy Castle atualizado como implementação compatível
   de fallback em aparelhos mais antigos (API 26+). A chave privada é
   guardada cifrada com uma chave AES do **Android Keystore**, não em texto
   puro.
