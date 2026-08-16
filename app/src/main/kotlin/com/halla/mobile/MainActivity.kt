@@ -1172,9 +1172,21 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val current = PluginManager.settings(this, addon.id)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(12), dp(20), dp(4))
+            // Fundo escuro fixo: garante contraste do texto claro em qualquer
+            // tema do aparelho (o AlertDialog padrão pode ser claro).
+            setBackgroundColor(Color.parseColor("#151322"))
+            setPadding(dp(20), dp(12), dp(20), dp(16))
         }
         val readers = mutableListOf<Pair<String, () -> Any?>>()
+
+        if (addon.description.isNotEmpty()) {
+            container.addView(TextView(this).apply {
+                text = addon.description
+                setTextColor(Color.parseColor("#94A3B8"))
+                textSize = 12f
+                setPadding(0, 0, 0, dp(4))
+            })
+        }
 
         for (i in 0 until schema.length()) {
             val field = schema.optJSONObject(i) ?: continue
@@ -1185,8 +1197,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             container.addView(TextView(this).apply {
                 text = label
                 setTextColor(Color.WHITE)
-                textSize = 13f
-                setPadding(0, dp(8), 0, dp(2))
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, dp(12), 0, dp(4))
             })
 
             when (field.optString("type")) {
@@ -1194,11 +1207,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val min = field.optInt("min", 0)
                     val max = field.optInt("max", 100)
                     val value = current.optInt(key, field.optInt("default", min))
+                    // Valor atual exibido na mesma linha do rótulo, à direita.
+                    val labelView = container.getChildAt(container.childCount - 1) as TextView
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                    }
+                    container.removeView(labelView)
+                    labelView.layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     val valueLabel = TextView(this).apply {
                         text = value.toString()
-                        setTextColor(Color.parseColor("#94A3B8"))
-                        textSize = 12f
+                        setTextColor(Color.parseColor("#8B5CF6"))
+                        textSize = 14f
+                        setTypeface(typeface, Typeface.BOLD)
                     }
+                    row.addView(labelView)
+                    row.addView(valueLabel)
+                    container.addView(row)
                     val seek = SeekBar(this).apply {
                         this.max = max - min
                         progress = (value - min).coerceIn(0, max - min)
@@ -1211,34 +1237,66 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         })
                     }
                     container.addView(seek)
-                    container.addView(valueLabel)
                     readers.add(key to { min + seek.progress })
                 }
                 "bool" -> {
+                    // O rótulo já foi adicionado acima; o texto do checkbox
+                    // repete o rótulo para a área de toque ficar maior.
+                    val labelView = container.getChildAt(container.childCount - 1) as TextView
+                    container.removeView(labelView)
                     val check = CheckBox(this).apply {
+                        text = label
                         isChecked = current.optBoolean(key, field.optBoolean("default", false))
                         setTextColor(Color.WHITE)
+                        buttonTintList = ColorStateList.valueOf(Color.parseColor("#8B5CF6"))
+                        setPadding(0, dp(8), 0, dp(4))
                     }
                     container.addView(check)
                     readers.add(key to { check.isChecked })
                 }
                 "choice" -> {
                     val options = field.optJSONArray("options") ?: JSONArray()
-                    val items = (0 until options.length()).map { options.optString(it) }
+                    val values = (0 until options.length()).map { options.optString(it) }
+                    // "optionLabels" (opcional no schema) fornece o texto amigável
+                    // exibido para cada valor técnico; sem ele, mostra o valor cru.
+                    val optionLabels = field.optJSONArray("optionLabels")
+                    val display = values.mapIndexed { idx, value ->
+                        optionLabels?.optString(idx)?.takeIf { it.isNotEmpty() } ?: value
+                    }
+                    val adapter = object : ArrayAdapter<String>(this@MainActivity,
+                        android.R.layout.simple_spinner_item, display) {
+                        override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                            return (super.getView(position, convertView, parent) as TextView).apply {
+                                setTextColor(Color.WHITE)
+                            }
+                        }
+                        override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                            return (super.getDropDownView(position, convertView, parent) as TextView).apply {
+                                setTextColor(Color.WHITE)
+                                setBackgroundColor(Color.parseColor("#1E1B2E"))
+                                setPadding(dp(16), dp(12), dp(16), dp(12))
+                            }
+                        }
+                    }
+                    adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     val spinner = Spinner(this).apply {
-                        adapter = ArrayAdapter(this@MainActivity,
-                            android.R.layout.simple_spinner_dropdown_item, items)
+                        this.adapter = adapter
                         val selected = current.optString(key, field.optString("default"))
-                        val index = items.indexOf(selected)
+                        val index = values.indexOf(selected)
                         if (index >= 0) setSelection(index)
                     }
                     container.addView(spinner)
-                    readers.add(key to { spinner.selectedItem?.toString() ?: "" })
+                    readers.add(key to {
+                        val pos = spinner.selectedItemPosition
+                        if (pos in values.indices) values[pos] else ""
+                    })
                 }
                 else -> {
                     val edit = EditText(this).apply {
                         setText(current.optString(key, field.optString("default")))
                         setTextColor(Color.WHITE)
+                        setHintTextColor(Color.parseColor("#64748B"))
+                        hint = label
                     }
                     container.addView(edit)
                     readers.add(key to { edit.text.toString() })

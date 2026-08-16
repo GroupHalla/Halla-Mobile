@@ -410,4 +410,12 @@ Notas de la versión:
     <string name="addon_error_abi">El complemento no tiene biblioteca para la arquitectura de este dispositivo.</string>
     <string name="addon_error_generic">Error al instalar el complemento: %1$s</string>
     <string name="addon_hint">Los paquetes .halla-addon usan el mismo formato que Halla Desktop. Las bibliotecas nativas deben compilarse para Android (android-arm64, android-arm, android-x86_64 o android-x86) usando la ABI C pública del SDK.</string>
+    <string name="addon_setting_send_mode">Aplicar al enviar (tu voz)</string>
+    <string name="addon_setting_receive_mode">Aplicar al escuchar (voz de los demás)</string>
+    <string name="addon_setting_intensity">Intensidad del efecto (%)</string>
+    <string name="addon_setting_noise">Estática de fondo (%)</string>
+    <string name="addon_setting_gain">Volumen de salida (%)</string>
+    <string name="addon_mode_whisper">Solo en susurro</string>
+    <string name="addon_mode_normal">Solo en voz normal</string>
+    <string name="addon_mode_both">Susurro y voz normal</string>
 </resources>

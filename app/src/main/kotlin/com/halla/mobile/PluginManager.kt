@@ -93,18 +93,28 @@ object PluginManager {
     }
 
     private fun officialRadioInfo(context: Context): AddonInfo {
+        val modeOptions = JSONArray().put("whisper").put("normal").put("both")
+        val modeLabels = JSONArray()
+            .put(context.getString(R.string.addon_mode_whisper))
+            .put(context.getString(R.string.addon_mode_normal))
+            .put(context.getString(R.string.addon_mode_both))
         val schema = JSONArray()
             .put(JSONObject().put("key", "sendMode").put("type", "choice")
-                .put("options", JSONArray().put("whisper").put("normal").put("both"))
+                .put("label", context.getString(R.string.addon_setting_send_mode))
+                .put("options", modeOptions).put("optionLabels", modeLabels)
                 .put("default", "whisper"))
             .put(JSONObject().put("key", "receiveMode").put("type", "choice")
-                .put("options", JSONArray().put("whisper").put("normal").put("both"))
+                .put("label", context.getString(R.string.addon_setting_receive_mode))
+                .put("options", modeOptions).put("optionLabels", modeLabels)
                 .put("default", "whisper"))
             .put(JSONObject().put("key", "intensity").put("type", "int")
+                .put("label", context.getString(R.string.addon_setting_intensity))
                 .put("default", 90).put("min", 0).put("max", 100))
             .put(JSONObject().put("key", "noise").put("type", "int")
+                .put("label", context.getString(R.string.addon_setting_noise))
                 .put("default", 10).put("min", 0).put("max", 100))
             .put(JSONObject().put("key", "gain").put("type", "int")
+                .put("label", context.getString(R.string.addon_setting_gain))
                 .put("default", 105).put("min", 50).put("max", 150))
         return AddonInfo(
             id = OFFICIAL_RADIO_ID,

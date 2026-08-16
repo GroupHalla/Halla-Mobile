@@ -410,4 +410,12 @@ Download and install now?</string>
     <string name="addon_error_abi">The add-on has no library for this device architecture.</string>
     <string name="addon_error_generic">Failed to install the add-on: %1$s</string>
     <string name="addon_hint">.halla-addon packages use the same format as Halla Desktop. Native libraries must be built for Android (android-arm64, android-arm, android-x86_64 or android-x86) using the public C ABI of the SDK.</string>
+    <string name="addon_setting_send_mode">Apply when sending (your voice)</string>
+    <string name="addon_setting_receive_mode">Apply when listening (other voices)</string>
+    <string name="addon_setting_intensity">Effect intensity (%)</string>
+    <string name="addon_setting_noise">Background static (%)</string>
+    <string name="addon_setting_gain">Output volume (%)</string>
+    <string name="addon_mode_whisper">Whisper only</string>
+    <string name="addon_mode_normal">Normal voice only</string>
+    <string name="addon_mode_both">Whisper and normal voice</string>
 </resources>
