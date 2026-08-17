@@ -81,5 +81,6 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.82")
+    implementation("io.github.webrtc-sdk:android:144.7559.09")
     testImplementation("junit:junit:4.13.2")
 }

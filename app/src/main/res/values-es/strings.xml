@@ -418,4 +418,12 @@ Notas de la versión:
     <string name="addon_mode_whisper">Solo en susurro</string>
     <string name="addon_mode_normal">Solo en voz normal</string>
     <string name="addon_mode_both">Susurro y voz normal</string>
+    <string name="start_screen_share">Compartir pantalla</string>
+    <string name="stop_screen_share">Detener transmisión</string>
+    <string name="screen_share_starting">Iniciando transmisión de pantalla…</string>
+    <string name="screen_share_stopped">Transmisión de pantalla finalizada</string>
+    <string name="screen_share_permission_denied">Permiso de captura de pantalla denegado</string>
+    <string name="screen_share_requires_connection">Conéctate a un servidor antes de transmitir</string>
+    <string name="notification_screen_sharing">Compartiendo la pantalla por WebRTC</string>
+    <string name="screen_share_failed">Error al compartir pantalla: %1$s</string>
 </resources>

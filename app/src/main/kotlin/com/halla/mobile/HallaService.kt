@@ -50,6 +50,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
         const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
         const val ACTION_REFRESH_WHISPER_OVERLAYS = "com.halla.mobile.action.REFRESH_WHISPER_OVERLAYS"
+        const val ACTION_START_SCREEN_SHARE = "com.halla.mobile.action.START_SCREEN_SHARE"
+        const val ACTION_STOP_SCREEN_SHARE = "com.halla.mobile.action.STOP_SCREEN_SHARE"
         const val ACTION_STATE_CHANGED = "com.halla.mobile.action.STATE_CHANGED"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
@@ -63,11 +65,13 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_ECHO_CANCELLATION = "echo_cancellation"
         const val EXTRA_ENABLED = "enabled"
         const val EXTRA_POSITION = "position"
+        const val EXTRA_PROJECTION_DATA = "projection_data"
 
         const val PREF_MIC_MUTED = "service_mic_muted"
         const val PREF_SPK_MUTED = "service_spk_muted"
         const val PREF_AWAY = "service_away"
         const val PREF_COMMANDER = "service_commander"
+        const val PREF_SCREEN_SHARING = "service_screen_sharing"
         const val PREF_OVERLAY = "overlay_ptt"
         const val PREF_OVERLAY_POSITION = "overlay_ptt_position"
 
@@ -78,6 +82,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         @Volatile private var instance: HallaService? = null
         @Volatile private var sessionActive = false
         @Volatile private var reconnecting = false
+        @Volatile private var screenSharing = false
         @Volatile private var lastServerName = ""
         @Volatile private var lastMotd = ""
         @Volatile private var lastWelcomeJson = ""
@@ -103,6 +108,21 @@ class HallaService : Service(), HallaCore.Callbacks {
                 HallaCore.disconnectFromServer()
             }
         }
+
+        fun startScreenShare(context: Context, permissionData: Intent) {
+            ContextCompat.startForegroundService(context, Intent(context, HallaService::class.java).apply {
+                action = ACTION_START_SCREEN_SHARE
+                putExtra(EXTRA_PROJECTION_DATA, permissionData)
+            })
+        }
+
+        fun stopScreenShare(context: Context) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_STOP_SCREEN_SHARE
+            })
+        }
+
+        fun isScreenSharing(): Boolean = screenSharing
 
         fun setMicMuted(context: Context, muted: Boolean) {
             context.startService(Intent(context, HallaService::class.java).apply {
@@ -177,6 +197,7 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var audio: HallaAudioManager
+    private var screenBroadcaster: HallaWebRtcBroadcaster? = null
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivity: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -307,6 +328,8 @@ class HallaService : Service(), HallaCore.Callbacks {
                     showWhisperOverlays()
                 }
             }
+            ACTION_START_SCREEN_SHARE -> startScreenShare(intent)
+            ACTION_STOP_SCREEN_SHARE -> stopScreenShare(true)
         }
         return START_STICKY
     }
@@ -359,6 +382,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     private fun stopSession() {
+        stopScreenShare(true)
         explicitDisconnect = true
         reconnecting = false
         reconnectRunnable?.let { handler.removeCallbacks(it) }
@@ -507,6 +531,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         sendBroadcast(Intent(ACTION_STATE_CHANGED).setPackage(packageName).apply {
             putExtra(PREF_MIC_MUTED, prefs.getBoolean(PREF_MIC_MUTED, false))
             putExtra(PREF_SPK_MUTED, prefs.getBoolean(PREF_SPK_MUTED, false))
+            putExtra(PREF_SCREEN_SHARING, screenSharing)
             if (talking != null) putExtra("talking", talking)
         })
     }
@@ -593,6 +618,47 @@ class HallaService : Service(), HallaCore.Callbacks {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+    }
+
+    private fun startScreenShare(intent: Intent) {
+        if (!sessionActive || screenBroadcaster?.isRunning() == true) return
+        val permissionData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_PROJECTION_DATA, Intent::class.java)
+        } else {
+            @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_PROJECTION_DATA)
+        } ?: return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                startForeground(NOTIFICATION_ID,
+                    buildNotification(t(R.string.notification_screen_sharing)), types)
+            }
+            screenBroadcaster = HallaWebRtcBroadcaster(this, permissionData) {
+                handler.post {
+                    screenSharing = false
+                    screenBroadcaster = null
+                    updateNotification()
+                    broadcastState()
+                }
+            }
+            screenSharing = true
+            updateNotification(t(R.string.notification_screen_sharing))
+            broadcastState()
+        } catch (error: Throwable) {
+            screenSharing = false
+            screenBroadcaster = null
+            updateNotification(t(R.string.screen_share_failed, error.message ?: error.javaClass.simpleName))
+        }
+    }
+
+    private fun stopScreenShare(notifyServer: Boolean) {
+        val broadcaster = screenBroadcaster
+        screenBroadcaster = null
+        screenSharing = false
+        broadcaster?.stop(notifyServer)
+        updateNotification()
+        broadcastState()
     }
 
     private fun updateNotification(text: String? = null) {
@@ -1104,6 +1170,9 @@ class HallaService : Service(), HallaCore.Callbacks {
             explicitDisconnect = true
             reconnecting = false
         }
+        if (code == "screenshare_disabled") {
+            handler.post { stopScreenShare(false) }
+        }
     }
 
     override fun onPingUpdated(pingMs: Int, packetLossPercent: Int) {
@@ -1115,7 +1184,9 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) = Unit
-    override fun onWebRtcSignalReceived(signalJson: String) = Unit
+    override fun onWebRtcSignalReceived(signalJson: String) {
+        screenBroadcaster?.handleSignal(signalJson)
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // O usuário pode remover a Activity da tela de recentes sem derrubar
@@ -1130,6 +1201,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         }
         hidePttOverlay()
         hideWhisperOverlays()
+        stopScreenShare(false)
         stopAudio()
         speechCuePlayer?.release()
         speechCuePlayer = null

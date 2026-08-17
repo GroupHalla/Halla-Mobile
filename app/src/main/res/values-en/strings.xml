@@ -418,4 +418,12 @@ Download and install now?</string>
     <string name="addon_mode_whisper">Whisper only</string>
     <string name="addon_mode_normal">Normal voice only</string>
     <string name="addon_mode_both">Whisper and normal voice</string>
+    <string name="start_screen_share">Share screen</string>
+    <string name="stop_screen_share">Stop sharing</string>
+    <string name="screen_share_starting">Starting screen sharing…</string>
+    <string name="screen_share_stopped">Screen sharing stopped</string>
+    <string name="screen_share_permission_denied">Screen capture permission denied</string>
+    <string name="screen_share_requires_connection">Connect to a server before sharing</string>
+    <string name="notification_screen_sharing">Sharing the screen over WebRTC</string>
+    <string name="screen_share_failed">Screen sharing failed: %1$s</string>
 </resources>

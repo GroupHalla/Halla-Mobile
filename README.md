@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.48
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.50
 </p>
 
 ---
@@ -76,8 +76,9 @@ acessado via JNI.
   RTL.
 - Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
   não só pelo sistema).
-- **Assistir transmissão de tela** de quem está compartilhando a tela pelo
-  desktop, via WebRTC (veja [Visualizador WebRTC](#visualizador-webrtc-webview)).
+- **Transmitir a própria tela** pelo WebRTC usando a autorização oficial
+  `MediaProjection` do Android, além de assistir transmissões do Desktop ou
+  de outro celular (veja [Visualizador WebRTC](#visualizador-webrtc-webview)).
 - **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do
   Desktop, hooks de áudio, transporte `plugin_data` v5 e o complemento oficial
   de voz de rádio embutido (veja [Complementos](#complementos-plugins)).
@@ -300,8 +301,9 @@ strings traduzidas em cada um. A troca pode ser feita dentro do próprio app
 ## Projetos relacionados
 
 - **[Halla](https://github.com/GroupHalla/Halla)** — cliente desktop
-  (Windows/Linux, Qt 6) que fala o mesmo protocolo; é ele quem transmite tela
-  via WebRTC (o Mobile só assiste, pela WebView).
+  (Windows/Linux, Qt 6) que fala o mesmo protocolo. Desktop e Mobile podem
+  transmitir tela via WebRTC; o Mobile usa MediaProjection para publicar e
+  WebView/Chromium para assistir.
 - **[Halla Server](https://github.com/GroupHalla/HallaServer)** — servidor
   auto-hospedável; veja
   [`PROTOCOL.md`](https://github.com/GroupHalla/HallaServer/blob/main/PROTOCOL.md)

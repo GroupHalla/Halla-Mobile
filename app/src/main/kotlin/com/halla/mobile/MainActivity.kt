@@ -35,6 +35,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.media.AudioManager
+import android.media.projection.MediaProjectionManager
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.RingtoneManager
@@ -960,6 +961,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SCREEN_SHARE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                HallaService.startScreenShare(this, data)
+                Toast.makeText(this, getString(R.string.screen_share_starting), Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, getString(R.string.screen_share_permission_denied), Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         if (requestCode == ADDON_INSTALL_REQUEST && resultCode == RESULT_OK) {
             val addonUri = data?.data ?: return
             val error = PluginManager.installPackage(this, addonUri)
@@ -4320,6 +4330,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (userId == selfId) {
             options.add("💤 $awayLabel")
             if (canSetSelfCommander()) options.add("👑 $ownCommanderLabel")
+            options.add(if (HallaService.isScreenSharing())
+                "⏹️ ${getString(R.string.stop_screen_share)}"
+                else "📱 ${getString(R.string.start_screen_share)}")
             options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
             options.add("👉 ${getString(R.string.poke)}")
@@ -4359,6 +4372,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     HallaCore.sendSetCommander(userId, next)
                     Toast.makeText(context, getString(R.string.commander_status,
                         if (next) getString(R.string.yes) else getString(R.string.no)), Toast.LENGTH_SHORT).show()
+                } else if (choice.contains(getString(R.string.start_screen_share))
+                    || choice.contains(getString(R.string.stop_screen_share))) {
+                    toggleOwnScreenShare()
                 } else if (choice.contains(getString(R.string.change_nickname))) {
                     showChangeNicknameDialog()
                 } else if (choice.contains(getString(R.string.poke))) {
@@ -4380,6 +4396,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
             }
             .show()
+    }
+
+    private fun toggleOwnScreenShare() {
+        if (HallaService.isScreenSharing()) {
+            HallaService.stopScreenShare(this)
+            Toast.makeText(this, getString(R.string.screen_share_stopped), Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!HallaService.isSessionActive()) {
+            Toast.makeText(this, getString(R.string.screen_share_requires_connection), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val projection = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(projection.createScreenCaptureIntent(), SCREEN_SHARE_REQUEST)
     }
 
     private fun startWatchingScreenShare(userId: Int, name: String) {
@@ -4757,5 +4787,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         private const val HelperIntSize = 48
         private const val SPEECH_CUE_REQUEST = 7401
         private const val ADDON_INSTALL_REQUEST = 7402
+        private const val SCREEN_SHARE_REQUEST = 7403
     }
 }
