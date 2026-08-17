@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.51
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.52
 </p>
 
 ---
@@ -76,9 +76,10 @@ acessado via JNI.
   RTL.
 - Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
   não só pelo sistema).
-- **Transmitir a própria tela** pelo WebRTC usando a autorização oficial
-  `MediaProjection` do Android, além de assistir transmissões do Desktop ou
-  de outro celular (veja [Visualizador WebRTC](#visualizador-webrtc-webview)).
+- **Transmitir a própria tela e o áudio interno capturável** usando a autorização
+  oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O UID do Halla é
+  excluído para que as vozes da chamada não retornem na live. Também é possível
+  assistir transmissões do Desktop ou de outro celular.
 - **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do
   Desktop, hooks de áudio, transporte `plugin_data` v5 e o complemento oficial
   de voz de rádio embutido (veja [Complementos](#complementos-plugins)).

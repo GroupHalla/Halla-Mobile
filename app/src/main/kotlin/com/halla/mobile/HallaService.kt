@@ -198,6 +198,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var audio: HallaAudioManager
     private var screenBroadcaster: HallaWebRtcBroadcaster? = null
+    private var screenAudioCapture: HallaPlaybackAudioCapture? = null
     private lateinit var notificationManager: NotificationManager
     private lateinit var connectivity: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -634,13 +635,19 @@ class HallaService : Service(), HallaCore.Callbacks {
                 startForeground(NOTIFICATION_ID,
                     buildNotification(t(R.string.notification_screen_sharing)), types)
             }
-            screenBroadcaster = HallaWebRtcBroadcaster(this, permissionData) {
+            val broadcaster = HallaWebRtcBroadcaster(this, permissionData) {
                 handler.post {
+                    screenAudioCapture?.stop()
+                    screenAudioCapture = null
                     screenSharing = false
                     screenBroadcaster = null
                     updateNotification()
                     broadcastState()
                 }
+            }
+            screenBroadcaster = broadcaster
+            broadcaster.mediaProjection()?.let { projection ->
+                screenAudioCapture = HallaPlaybackAudioCapture(this, projection).also { it.start() }
             }
             screenSharing = true
             updateNotification(t(R.string.notification_screen_sharing))
@@ -656,6 +663,8 @@ class HallaService : Service(), HallaCore.Callbacks {
     private fun stopScreenShare(notifyServer: Boolean) {
         val broadcaster = screenBroadcaster
         screenBroadcaster = null
+        screenAudioCapture?.stop()
+        screenAudioCapture = null
         screenSharing = false
         broadcaster?.stop(notifyServer)
         updateNotification()

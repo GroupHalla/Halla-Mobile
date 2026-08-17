@@ -870,6 +870,13 @@ public:
         } else {
             writeLog("Erro ao inicializar Opus Encoder nativo!");
         }
+        int screenErr = 0;
+        m_screenEncoder = opus_encoder_create(48000, 1, OPUS_APPLICATION_AUDIO, &screenErr);
+        if (m_screenEncoder) {
+            opus_encoder_ctl(m_screenEncoder, OPUS_SET_BITRATE(64000));
+            opus_encoder_ctl(m_screenEncoder, OPUS_SET_VBR(1));
+            opus_encoder_ctl(m_screenEncoder, OPUS_SET_DTX(1));
+        }
 
         m_tcpThread = std::thread(&HallaClientCore::tcpLoop, this, host, port);
     }
@@ -932,12 +939,18 @@ public:
                 opus_encoder_destroy(m_encoder);
                 m_encoder = nullptr;
             }
+            if (m_screenEncoder) {
+                opus_encoder_destroy(m_screenEncoder);
+                m_screenEncoder = nullptr;
+            }
             for (auto& pair : m_decoders) {
                 opus_decoder_destroy(pair.second);
             }
             m_decoders.clear();
             m_encodePcm.clear();
+            m_screenEncodePcm.clear();
             m_voiceSeq = 0;
+            m_screenAudioSeq = 0;
         }
         writeLog("Recursos do Codec Opus liberados.");
     }
@@ -1067,6 +1080,51 @@ public:
         }
     }
 
+    void sendScreenAudioOpus(const char* opus, int size, uint16_t seq) {
+        if (!opus || size <= 0) return;
+        std::lock_guard<std::mutex> udpLock(m_udpMutex);
+        const int socketFd = m_udpSocket.load();
+        const int udpPort = m_udpPort.load();
+        if (socketFd == -1 || udpPort == 0) return;
+        std::array<unsigned char, 16> voiceToken{};
+        {
+            std::lock_guard<std::mutex> tokenLock(m_tokenMutex);
+            if (!m_hasVoiceToken.load()) return;
+            voiceToken = m_voiceToken;
+        }
+        std::vector<char> payload;
+        {
+            std::lock_guard<std::mutex> keyLock(m_keyMutex);
+            if (m_currentVoiceKey.size() < 32) return;
+            payload = voiceEncryptAead(opus, size, m_currentVoiceKey,
+                                       m_selfId.load(), seq, ++m_cryptoCounter);
+        }
+        if (payload.empty()) return;
+        constexpr size_t headerSize = 4 + 16 + 2;
+        std::vector<char> packet(headerSize + payload.size());
+        memcpy(packet.data(), "HAG4", 4);
+        memcpy(packet.data() + 4, voiceToken.data(), voiceToken.size());
+        memcpy(packet.data() + 20, &seq, 2);
+        memcpy(packet.data() + headerSize, payload.data(), payload.size());
+        m_serverUdpAddr.sin_port = htons(static_cast<uint16_t>(udpPort));
+        sendto(socketFd, packet.data(), packet.size(), 0,
+               reinterpret_cast<struct sockaddr*>(&m_serverUdpAddr), sizeof(m_serverUdpAddr));
+    }
+
+    void encodeAndSendScreenAudio(const int16_t* pcm, int samples) {
+        if (!pcm || samples <= 0 || !m_screenEncoder) return;
+        std::lock_guard<std::mutex> codecLock(m_codecMutex);
+        m_screenEncodePcm.insert(m_screenEncodePcm.end(), pcm, pcm + samples);
+        while (m_screenEncodePcm.size() >= 960) {
+            unsigned char opusBuf[1024];
+            const int encoded = opus_encode(m_screenEncoder, m_screenEncodePcm.data(), 960,
+                                             opusBuf, sizeof(opusBuf));
+            m_screenEncodePcm.erase(m_screenEncodePcm.begin(), m_screenEncodePcm.begin() + 960);
+            if (encoded > 0)
+                sendScreenAudioOpus(reinterpret_cast<const char*>(opusBuf), encoded, ++m_screenAudioSeq);
+        }
+    }
+
     // Envia um frame Opus de silêncio válido para registrar o endpoint UDP.
     // Alguns servidores/relays antigos ignoram o datagrama HALL de 10 bytes
     // usado apenas como keep-alive; nesse caso o destinatário só passa a ser
@@ -1124,7 +1182,8 @@ private:
                          m_authenticated(false), m_pingPending(false),
                          m_lastPingSentMs(0), m_pingTotal(0), m_pingSuccess(0),
                          m_udpPort(0), m_hasVoiceToken(false), m_selfId(0), m_encoder(nullptr),
-                         m_tlsReady(false), m_tlsInited(false), m_cryptoCounter(0) {}
+                         m_screenEncoder(nullptr), m_tlsReady(false), m_tlsInited(false),
+                         m_cryptoCounter(0) {}
     ~HallaClientCore() {
         disconnect();
         std::lock_guard<std::mutex> tcpLock(m_tcpMutex);
@@ -1272,8 +1331,10 @@ private:
         return dec;
     }
 
-    void decodeAndNotifyVoice(uint32_t fromId, uint16_t seq, const char* opusData, int size) {
+    void decodeAndNotifyVoice(uint32_t fromId, uint16_t seq, const char* opusData, int size,
+                              uint32_t cryptoSenderId = 0) {
         OpusDecoder* dec = getOrCreateDecoder(fromId);
+        const uint32_t nonceSenderId = cryptoSenderId ? cryptoSenderId : fromId;
         if (!dec || !opusData || size <= 0) return;
 
         int16_t pcm[960]; // Amortiza em blocos padrão de 20ms @ 48kHz
@@ -1297,7 +1358,7 @@ private:
             }
         }
         for (const auto& key : candidateKeys) {
-            std::vector<char> decrypted = voiceDecryptAead(opusData, size, key, fromId, seq);
+            std::vector<char> decrypted = voiceDecryptAead(opusData, size, key, nonceSenderId, seq);
             if (decrypted.empty()) continue;
             n = opus_decode(dec, reinterpret_cast<const unsigned char*>(decrypted.data()),
                             decrypted.size(), pcm, 960, 0);
@@ -1795,7 +1856,8 @@ private:
             if (n < 10) continue;
             const bool isVoice = memcmp(buf, "HALL", 4) == 0;
             const bool isScreen = memcmp(buf, "HALF", 4) == 0;
-            if (!isVoice && !isScreen) continue;
+            const bool isScreenAudio = memcmp(buf, "HAGA", 4) == 0;
+            if (!isVoice && !isScreen && !isScreenAudio) continue;
 
             uint32_t fromId;
             uint16_t seq;
@@ -1805,6 +1867,10 @@ private:
             if (isVoice) {
                 // Descompacta áudio Opus recebido e avisa o Kotlin.
                 decodeAndNotifyVoice(fromId, seq, buf + 10, n - 10);
+            } else if (isScreenAudio) {
+                // ID lógico separado evita compartilhar estado do decoder com
+                // o microfone do mesmo usuário.
+                decodeAndNotifyVoice(fromId | 0x80000000u, seq, buf + 10, n - 10, fromId);
             } else {
                 handleScreenDatagram(fromId, seq, buf + 10, n - 10);
             }
@@ -1858,6 +1924,9 @@ private:
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;
+    OpusEncoder* m_screenEncoder;
+    std::vector<int16_t> m_screenEncodePcm;
+    uint16_t m_screenAudioSeq = 0;
     std::map<uint32_t, OpusDecoder*> m_decoders;
 };
 
@@ -2003,6 +2072,16 @@ Java_com_halla_mobile_HallaCore_sendVoiceFrame(JNIEnv* env, jclass clazz, jbyteA
     // Envia PCM de 16-bit cru capturado do mic para ser codificado nativamente com Opus
     HallaClientCore::getInstance().encodeAndSendVoice(reinterpret_cast<const int16_t*>(body), len / 2);
 
+    env->ReleaseByteArrayElements(pcmData, body, JNI_ABORT);
+}
+
+JNIEXPORT void JNICALL
+Java_com_halla_mobile_HallaCore_sendScreenAudioFrame(JNIEnv* env, jclass, jbyteArray pcmData) {
+    if (!pcmData) return;
+    const jsize len = env->GetArrayLength(pcmData);
+    jbyte* body = env->GetByteArrayElements(pcmData, nullptr);
+    HallaClientCore::getInstance().encodeAndSendScreenAudio(
+        reinterpret_cast<const int16_t*>(body), len / 2);
     env->ReleaseByteArrayElements(pcmData, body, JNI_ABORT);
 }
 

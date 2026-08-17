@@ -82,6 +82,9 @@ class HallaWebRtcBroadcaster(
 
     fun isRunning(): Boolean = running.get()
 
+    fun mediaProjection(): MediaProjection? =
+        (capturer as? ScreenCapturerAndroid)?.mediaProjection
+
     fun handleSignal(raw: String) {
         if (!running.get()) return
         val signal = try { JSONObject(raw) } catch (_: Exception) { return }
