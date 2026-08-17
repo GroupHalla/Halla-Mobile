@@ -1,6 +1,8 @@
 package com.halla.mobile
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
@@ -9,6 +11,7 @@ import android.media.projection.MediaProjection
 import android.os.Build
 import android.os.Process
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -31,6 +34,11 @@ class HallaPlaybackAudioCapture(
     fun start(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !running.compareAndSet(false, true))
             return false
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            running.set(false)
+            return false
+        }
         return try {
             val capture = AudioPlaybackCaptureConfiguration.Builder(projection)
                 .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
