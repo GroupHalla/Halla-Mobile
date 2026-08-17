@@ -649,6 +649,7 @@ class HallaService : Service(), HallaCore.Callbacks {
             screenSharing = false
             screenBroadcaster = null
             updateNotification(t(R.string.screen_share_failed, error.message ?: error.javaClass.simpleName))
+            broadcastState()
         }
     }
 

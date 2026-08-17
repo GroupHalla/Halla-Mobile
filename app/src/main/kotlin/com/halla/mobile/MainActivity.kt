@@ -107,9 +107,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private lateinit var btnOpenChatModule: LinearLayout
 
-    private lateinit var btnRecordModule: LinearLayout
-    private lateinit var imgRecordIcon: ImageView
-    private lateinit var txtRecordText: TextView
+    private lateinit var btnScreenShareModule: LinearLayout
+    private lateinit var imgScreenShareIcon: ImageView
+    private lateinit var txtScreenShareText: TextView
 
     // Painel Deslizante de Chat (Overlay Bottom Sheet)
     private lateinit var layoutChatOverlay: RelativeLayout
@@ -182,6 +182,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
+    private lateinit var btnRecordTop: Button
     private var isSpeakerPhone = true
     private var sensorManager: SensorManager? = null
     private var proximitySensor: Sensor? = null
@@ -278,6 +279,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnInviteMembers = findViewById(R.id.btnInviteMembers)
         btnDisconnect = findViewById(R.id.btnDisconnect)
         btnAudioRoute = findViewById(R.id.btnAudioRoute)
+        btnRecordTop = findViewById(R.id.btnRecordTop)
 
         btnNavSettings = findViewById(R.id.btnNavSettings)
         btnNavHelp = findViewById(R.id.btnNavHelp)
@@ -308,9 +310,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnOpenChatModule = findViewById(R.id.btnOpenChatModule)
 
-        btnRecordModule = findViewById(R.id.btnRecordModule)
-        imgRecordIcon = findViewById(R.id.imgRecordIcon)
-        txtRecordText = findViewById(R.id.txtRecordText)
+        btnScreenShareModule = findViewById(R.id.btnScreenShareModule)
+        imgScreenShareIcon = findViewById(R.id.imgScreenShareIcon)
+        txtScreenShareText = findViewById(R.id.txtScreenShareText)
 
         // Painel Deslizante de Chat (Bottom Sheet)
         chatTabLabels["server"] = getString(R.string.server_chat)
@@ -580,7 +582,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnMuteMicModule.background = bubbleShape()
         btnDeafenModule.background = bubbleShape()
         btnOpenChatModule.background = bubbleShape()
-        btnRecordModule.background = bubbleShape()
+        btnScreenShareModule.background = bubbleShape()
 
         // Estiliza o botão PTT central com cantos arredondados.
         val pttShape = GradientDrawable().apply {
@@ -750,6 +752,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             toggleAudioRoute()
         }
 
+        btnRecordTop.setOnClickListener {
+            toggleLocalRecording()
+        }
+
         btnOpenChatModule.setOnClickListener {
             layoutChatOverlay.visibility = View.VISIBLE
         }
@@ -758,20 +764,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutChatOverlay.visibility = View.GONE
         }
 
-        btnRecordModule.setOnClickListener {
-            if (audioManager.isLocalRecording()) {
-                val path = audioManager.stopLocalRecording()
-                txtRecordText.text = getString(R.string.record)
-                btnRecordModule.background = bubbleShape()
-                appendChatText(getString(R.string.system), getString(R.string.recording_saved, path))
-            } else {
-                val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
-                if (started) {
-                    txtRecordText.text = getString(R.string.recording)
-                    btnRecordModule.background = bubbleShape()
-                    appendChatText(getString(R.string.system), getString(R.string.recording_started))
-                }
-            }
+        btnScreenShareModule.setOnClickListener {
+            toggleOwnScreenShare()
         }
 
         // Itens da Gaveta Lateral (Drawer)
@@ -838,6 +832,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onResume() {
         super.onResume()
         syncAudioUiFromPreferences()
+        updateScreenShareButton()
         if (HallaService.isSessionActive() && layoutServer.visibility != View.VISIBLE) {
             val welcome = HallaService.currentWelcomeJson()
             if (welcome.isNotEmpty()) {
@@ -2536,11 +2531,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val pins = getSharedPreferences("HallaTlsPins", Context.MODE_PRIVATE)
                     val pinKey = "$host:$port"
                     val saved = pins.getString(pinKey, null)
-                    if (saved == null) {
-                        // Uma consulta automática nunca deve decidir a confiança
-                        // do primeiro contato. O pin só é criado após confirmação.
-                        throw SecurityException("Certificado TLS ainda não confirmado")
-                    } else if (saved != fp) {
+                    // O probe não envia credenciais e não fixa confiança. No
+                    // primeiro contato ele pode confirmar que o serviço está
+                    // online; a entrada continua exigindo confirmação explícita
+                    // do fingerprint. Pins já conhecidos ainda são verificados.
+                    if (saved != null && saved != fp) {
                         throw SecurityException("Fingerprint TLS mudou")
                     }
 
@@ -2727,6 +2722,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnDisconnect.visibility = View.VISIBLE
             btnInviteMembers.visibility = View.VISIBLE
             btnAudioRoute.visibility = View.VISIBLE
+            btnRecordTop.visibility = View.VISIBLE
             btnAddServer.visibility = View.GONE
             btnQuickConnect.visibility = View.GONE
 
@@ -2753,6 +2749,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnDisconnect.visibility = View.GONE
             btnInviteMembers.visibility = View.GONE
             btnAudioRoute.visibility = View.GONE
+            btnRecordTop.visibility = View.GONE
             btnAddServer.visibility = View.VISIBLE
             btnQuickConnect.visibility = View.VISIBLE
 
@@ -4003,6 +4000,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
             runOnUiThread {
                 syncAudioUiFromPreferences()
+                updateScreenShareButton()
                 if (talking != null) updateTalkingUi(talking)
             }
         }
@@ -4398,9 +4396,34 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
+    private fun toggleLocalRecording() {
+        if (audioManager.isLocalRecording()) {
+            val path = audioManager.stopLocalRecording()
+            btnRecordTop.alpha = 1f
+            btnRecordTop.contentDescription = getString(R.string.record)
+            appendChatText(getString(R.string.system), getString(R.string.recording_saved, path))
+        } else {
+            val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
+            if (started) {
+                btnRecordTop.alpha = 0.55f
+                btnRecordTop.contentDescription = getString(R.string.recording)
+                appendChatText(getString(R.string.system), getString(R.string.recording_started))
+            }
+        }
+    }
+
+    private fun updateScreenShareButton() {
+        if (!::txtScreenShareText.isInitialized) return
+        val sharing = HallaService.isScreenSharing()
+        txtScreenShareText.text = getString(if (sharing) R.string.stop_screen_share else R.string.transmit)
+        imgScreenShareIcon.alpha = if (sharing) 0.55f else 1f
+        btnScreenShareModule.isActivated = sharing
+    }
+
     private fun toggleOwnScreenShare() {
         if (HallaService.isScreenSharing()) {
             HallaService.stopScreenShare(this)
+            txtScreenShareText.text = getString(R.string.transmit)
             Toast.makeText(this, getString(R.string.screen_share_stopped), Toast.LENGTH_SHORT).show()
             return
         }
