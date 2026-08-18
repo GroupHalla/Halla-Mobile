@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.58
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.59
 </p>
 
 ---
@@ -79,9 +79,11 @@ acessado via JNI.
 - **Transmitir a própria tela em até 30 FPS e o áudio interno capturável** usando
   a autorização oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O PCM interno alimenta
   uma `AudioTrack` WebRTC real usada exclusivamente por viewers Mobile e Desktop.
-  O AAR do libwebrtc é fixado e corrigido para validar
-  corretamente o buffer direto do ADM; o vídeo usa teto adaptativo de 1,2 Mbps. O UID do Halla é
-  excluído para que as vozes da chamada não retornem na live. Também é possível
+  A track recebe PCM contínuo e desativa AEC/AGC/NS de microfone para preservar música,
+  jogos e vídeos. O AAR do libwebrtc é fixado e corrigido para validar corretamente o
+  buffer direto do ADM; o vídeo usa teto adaptativo de 2,5 Mbps sem suspender a track
+  em quedas momentâneas de rede. O UID do Halla é excluído para que as vozes da
+  chamada não retornem na live. Também é possível
   assistir transmissões do Desktop ou de outro celular.
 - **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do
   Desktop, hooks de áudio, transporte `plugin_data` v5 e o complemento oficial

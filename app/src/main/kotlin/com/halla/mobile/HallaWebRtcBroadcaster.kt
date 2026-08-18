@@ -47,9 +47,10 @@ class HallaWebRtcBroadcaster(
         // Preserve largura de banda e CPU para voz/controle. 720p30 de tela
         // continua legível nessa faixa e o WebRTC pode reduzir sob congestão.
         // RTCConfiguration usa kbps; RtpParameters.Encoding usa bps.
-        private const val SCREENCAST_MIN_BITRATE_KBPS = 250
-        private const val MIN_VIDEO_BITRATE_BPS = 250_000
-        private const val MAX_VIDEO_BITRATE = 1_200_000
+        private const val SCREENCAST_MIN_BITRATE_KBPS = 300
+        private const val MIN_VIDEO_BITRATE_BPS = 300_000
+        private const val MAX_VIDEO_BITRATE = 2_500_000
+        private const val MAX_AUDIO_BITRATE = 128_000
     }
 
     private val appContext = context.applicationContext
@@ -89,7 +90,16 @@ class HallaWebRtcBroadcaster(
         capturer.initialize(surfaceHelper, appContext, videoSource.capturerObserver)
         capturer.startCapture(WIDTH, HEIGHT, FPS)
         videoTrack = factory.createVideoTrack("halla-screen-video", videoSource)
-        audioSource = factory.createAudioSource(MediaConstraints())
+        val screenAudioConstraints = MediaConstraints().apply {
+            // Áudio de reprodução não é microfone: AEC/AGC/NS/high-pass
+            // distorcem música, jogos e vídeos e ainda podem causar pumping.
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "false"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "false"))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "false"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "false"))
+            mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "false"))
+        }
+        audioSource = factory.createAudioSource(screenAudioConstraints)
         audioTrack = factory.createAudioTrack("halla-screen-audio", audioSource)
         running.set(true)
         HallaCore.sendRawJson(JSONObject().put("t", "webrtc_stream_start").toString())
@@ -148,7 +158,9 @@ class HallaWebRtcBroadcaster(
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             enableCpuOveruseDetection = true
-            suspendBelowMinBitrate = true
+            // Continue adaptando resolução/FPS em redes ruins, sem congelar a
+            // track inteira quando o bitrate cai abaixo do mínimo sugerido.
+            suspendBelowMinBitrate = false
             screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS
         }
         val connection = factory.createPeerConnection(config, object : PeerConnection.Observer {
@@ -177,7 +189,7 @@ class HallaWebRtcBroadcaster(
             encoding.maxFramerate = FPS
             encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS
             encoding.maxBitrateBps = MAX_VIDEO_BITRATE
-            encoding.bitratePriority = 0.5
+            encoding.bitratePriority = 1.0
         }
         if (!sender.setParameters(parameters)) {
             Log.w(TAG, "Could not apply 30 FPS sender parameters")
@@ -185,8 +197,8 @@ class HallaWebRtcBroadcaster(
         val audioSender = connection.addTrack(audioTrack, listOf("halla-screen-stream"))
         val audioParameters = audioSender.parameters
         audioParameters.encodings.forEach { encoding ->
-            encoding.maxBitrateBps = 96_000
-            encoding.bitratePriority = 2.0
+            encoding.maxBitrateBps = MAX_AUDIO_BITRATE
+            encoding.bitratePriority = 3.0
         }
         if (!audioSender.setParameters(audioParameters)) {
             Log.w(TAG, "Could not apply screen-audio sender parameters")

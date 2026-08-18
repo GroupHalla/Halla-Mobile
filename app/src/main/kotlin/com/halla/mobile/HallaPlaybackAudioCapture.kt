@@ -97,10 +97,11 @@ class HallaPlaybackAudioCapture(
                     mono[index * 2 + 1] = ((mixed ushr 8) and 0xff).toByte()
                 }
                 capturedFrames++
-                if (peak > 8) {
-                    nonSilentFrames++
-                    onPcm(mono)
-                }
+                if (peak > 8) nonSilentFrames++
+                // Mantenha o relógio da track contínuo inclusive no silêncio.
+                // Interromper o PCM fazia o ADM alternar entre underrun e áudio
+                // a cada retomada, produzindo cortes no receptor Desktop.
+                onPcm(mono)
                 if (!silenceReported && capturedFrames >= 100L && nonSilentFrames == 0L) {
                     silenceReported = true
                     onProlongedSilence()

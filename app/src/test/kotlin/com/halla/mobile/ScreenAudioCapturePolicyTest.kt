@@ -47,17 +47,18 @@ class ScreenAudioCapturePolicyTest {
     }
 
     @Test
-    fun videoLeavesBandwidthForCallMedia() {
+    fun videoUsesAdaptiveQualityWithoutSuspendingTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
         assertTrue(broadcaster.contains("FPS = 30"))
-        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 250"))
-        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 250_000"))
+        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 300"))
+        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 300_000"))
         assertTrue(broadcaster.contains("screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS"))
         assertTrue(broadcaster.contains("encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS"))
-        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 1_200_000"))
+        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 2_500_000"))
+        assertTrue(broadcaster.contains("encoding.bitratePriority = 1.0"))
         assertTrue(broadcaster.contains("DegradationPreference.BALANCED"))
-        assertTrue(broadcaster.contains("suspendBelowMinBitrate = true"))
+        assertTrue(broadcaster.contains("suspendBelowMinBitrate = false"))
     }
 
     @Test
@@ -72,7 +73,12 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(broadcaster.contains("setAudioDeviceModule"))
         assertTrue(broadcaster.contains("createAudioTrack"))
         assertTrue(broadcaster.contains("connection.addTrack(audioTrack"))
+        assertTrue(broadcaster.contains("googEchoCancellation\", \"false"))
+        assertTrue(broadcaster.contains("googAutoGainControl\", \"false"))
+        assertTrue(broadcaster.contains("googNoiseSuppression\", \"false"))
+        assertTrue(broadcaster.contains("MAX_AUDIO_BITRATE = 128_000"))
         assertTrue(capture.contains("onPcm(mono)"))
+        assertTrue(capture.contains("if (peak > 8) nonSilentFrames++"))
         // O mesmo caminho WebRTC atende viewers Mobile e Desktop; não deve
         // existir um transporte UDP paralelo para o áudio da transmissão.
         assertTrue(service.contains("onPcm = broadcaster::pushExternalAudio"))
