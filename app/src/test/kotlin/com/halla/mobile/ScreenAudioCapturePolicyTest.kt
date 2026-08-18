@@ -57,15 +57,21 @@ class ScreenAudioCapturePolicyTest {
     }
 
     @Test
-    fun screenAudioIsARealWebRtcTrack() {
+    fun screenAudioUsesWebRtcAndDesktopHagaCompatibilityPaths() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
         val capture = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaPlaybackAudioCapture.kt")
+        val service = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/HallaService.kt")
         assertTrue(broadcaster.contains("HallaExternalAudioDeviceModule"))
         assertTrue(broadcaster.contains("setAudioDeviceModule"))
         assertTrue(broadcaster.contains("createAudioTrack"))
         assertTrue(broadcaster.contains("connection.addTrack(audioTrack"))
         assertTrue(capture.contains("onPcm(mono)"))
+        // A track atende viewers Mobile; HAG4/HAGA é o caminho de áudio do
+        // Desktop documentado no protocolo e não pode voltar a ficar morto.
+        assertTrue(service.contains("broadcaster.pushExternalAudio(pcm)"))
+        assertTrue(service.contains("HallaCore.sendScreenAudioFrame(pcm)"))
     }
 }
