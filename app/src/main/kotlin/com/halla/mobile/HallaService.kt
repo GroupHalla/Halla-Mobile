@@ -647,7 +647,12 @@ class HallaService : Service(), HallaCore.Callbacks {
             }
             screenBroadcaster = broadcaster
             broadcaster.mediaProjection()?.let { projection ->
-                screenAudioCapture = HallaPlaybackAudioCapture(this, projection).also { it.start() }
+                val capture = HallaPlaybackAudioCapture(this, projection)
+                if (capture.start()) screenAudioCapture = capture
+                else {
+                    capture.stop()
+                    android.util.Log.w("HallaScreenAudio", "Internal audio capture did not start")
+                }
             }
             screenSharing = true
             updateNotification(t(R.string.notification_screen_sharing))

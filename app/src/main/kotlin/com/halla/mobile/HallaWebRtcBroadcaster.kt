@@ -40,7 +40,8 @@ class HallaWebRtcBroadcaster(
         private const val TAG = "HallaWebRTCSender"
         private const val WIDTH = 1280
         private const val HEIGHT = 720
-        private const val FPS = 15
+        private const val FPS = 30
+        private const val MAX_VIDEO_BITRATE = 4_000_000
     }
 
     private val appContext = context.applicationContext
@@ -148,7 +149,16 @@ class HallaWebRtcBroadcaster(
             override fun onRenegotiationNeeded() = Unit
             override fun onAddTrack(receiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) = Unit
         }) ?: return null
-        connection.addTrack(videoTrack, listOf("halla-screen-stream"))
+        val sender = connection.addTrack(videoTrack, listOf("halla-screen-stream"))
+        val parameters = sender.parameters
+        parameters.degradationPreference = org.webrtc.RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+        parameters.encodings.forEach { encoding ->
+            encoding.maxFramerate = FPS
+            encoding.maxBitrateBps = MAX_VIDEO_BITRATE
+        }
+        if (!sender.setParameters(parameters)) {
+            Log.w(TAG, "Could not apply 30 FPS sender parameters")
+        }
         peers[peerId] = connection
         return connection
     }

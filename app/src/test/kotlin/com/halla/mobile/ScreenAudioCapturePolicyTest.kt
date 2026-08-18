@@ -21,8 +21,7 @@ class ScreenAudioCapturePolicyTest {
             "app/src/main/kotlin/com/halla/mobile/HallaPlaybackAudioCapture.kt")
         assertTrue(capture.contains("AudioPlaybackCaptureConfiguration.Builder"))
         assertTrue(capture.contains("excludeUid(Process.myUid())"))
-        assertTrue(capture.contains("USAGE_MEDIA"))
-        assertTrue(capture.contains("USAGE_GAME"))
+        assertTrue(!capture.contains("addMatchingUsage"))
     }
 
     @Test

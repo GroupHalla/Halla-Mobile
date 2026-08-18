@@ -3,7 +3,6 @@ package com.halla.mobile
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
@@ -30,6 +29,8 @@ class HallaPlaybackAudioCapture(
     private val running = AtomicBoolean(false)
     private var recorder: AudioRecord? = null
     private var worker: Thread? = null
+    private var capturedFrames = 0L
+    private var nonSilentFrames = 0L
 
     fun start(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !running.compareAndSet(false, true))
@@ -41,11 +42,10 @@ class HallaPlaybackAudioCapture(
         }
         return try {
             val capture = AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-                // Impede que voz, efeitos e qualquer outro áudio do próprio
-                // Halla retornem para quem está assistindo à transmissão.
+                // Uma regra de exclusão por UID deixa o Android selecionar todo
+                // áudio de reprodução capturável dos demais apps. Restringir por
+                // usage fazia alguns jogos/OEMs entregarem apenas silêncio.
+                // O próprio Halla permanece completamente fora da mistura.
                 .excludeUid(Process.myUid())
                 .build()
             val format = AudioFormat.Builder()
@@ -83,13 +83,20 @@ class HallaPlaybackAudioCapture(
             if (read >= 4) {
                 val frames = read / 4
                 val mono = ByteArray(frames * 2)
+                var peak = 0
                 for (index in 0 until frames) {
                     val offset = index * 4
                     val left = (stereo[offset].toInt() and 0xff) or (stereo[offset + 1].toInt() shl 8)
                     val right = (stereo[offset + 2].toInt() and 0xff) or (stereo[offset + 3].toInt() shl 8)
                     val mixed = ((left.toShort().toInt() + right.toShort().toInt()) / 2).toShort().toInt()
+                    peak = maxOf(peak, kotlin.math.abs(mixed))
                     mono[index * 2] = (mixed and 0xff).toByte()
                     mono[index * 2 + 1] = ((mixed ushr 8) and 0xff).toByte()
+                }
+                capturedFrames++
+                if (peak > 16) nonSilentFrames++
+                if (capturedFrames % 100L == 0L) {
+                    Log.i(TAG, "capture frames=$capturedFrames nonSilent=$nonSilentFrames peak=$peak")
                 }
                 HallaCore.sendScreenAudioFrame(mono)
             } else if (read < 0) {
