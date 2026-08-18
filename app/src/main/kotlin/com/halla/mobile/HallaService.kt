@@ -650,15 +650,9 @@ class HallaService : Service(), HallaCore.Callbacks {
                 val capture = HallaPlaybackAudioCapture(
                     context = this,
                     projection = projection,
-                    // Mantém os dois transportes deliberadamente: Mobile→Mobile
-                    // usa a track de áudio WebRTC; Mobile→Desktop usa o fluxo
-                    // HAG4/HAGA autenticado que o Server registra por watcher.
-                    // Desde 1.0.55 apenas pushExternalAudio era chamado e o
-                    // caminho HAG4 ficava morto, deixando o PC sem áudio.
-                    onPcm = { pcm ->
-                        broadcaster.pushExternalAudio(pcm)
-                        HallaCore.sendScreenAudioFrame(pcm)
-                    },
+                    // O áudio interno capturado alimenta exclusivamente a
+                    // track WebRTC, tanto para viewers Mobile quanto Desktop.
+                    onPcm = broadcaster::pushExternalAudio,
                     onProlongedSilence = {
                         handler.post {
                             updateNotification(t(R.string.notification_screen_audio_silent))

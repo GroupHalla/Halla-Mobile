@@ -188,9 +188,6 @@ object HallaCore {
     external fun sendVoiceFrame(pcmData: ByteArray)
 
     @JvmStatic
-    external fun sendScreenAudioFrame(pcmData: ByteArray)
-
-    @JvmStatic
     external fun sendRawJson(json: String)
 
     fun sendWebRtcWatchRequest(userId: Int) = sendRawJson(JSONObject().put("t", "webrtc_watch_request").put("to", userId).toString())

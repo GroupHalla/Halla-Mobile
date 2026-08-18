@@ -51,13 +51,17 @@ class ScreenAudioCapturePolicyTest {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
         assertTrue(broadcaster.contains("FPS = 30"))
+        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 250"))
+        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 250_000"))
+        assertTrue(broadcaster.contains("screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS"))
+        assertTrue(broadcaster.contains("encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS"))
         assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 1_200_000"))
         assertTrue(broadcaster.contains("DegradationPreference.BALANCED"))
         assertTrue(broadcaster.contains("suspendBelowMinBitrate = true"))
     }
 
     @Test
-    fun screenAudioUsesWebRtcAndDesktopHagaCompatibilityPaths() {
+    fun screenAudioUsesOnlyWebRtcTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
         val capture = projectFile(
@@ -69,9 +73,8 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(broadcaster.contains("createAudioTrack"))
         assertTrue(broadcaster.contains("connection.addTrack(audioTrack"))
         assertTrue(capture.contains("onPcm(mono)"))
-        // A track atende viewers Mobile; HAG4/HAGA é o caminho de áudio do
-        // Desktop documentado no protocolo e não pode voltar a ficar morto.
-        assertTrue(service.contains("broadcaster.pushExternalAudio(pcm)"))
-        assertTrue(service.contains("HallaCore.sendScreenAudioFrame(pcm)"))
+        // O mesmo caminho WebRTC atende viewers Mobile e Desktop; não deve
+        // existir um transporte UDP paralelo para o áudio da transmissão.
+        assertTrue(service.contains("onPcm = broadcaster::pushExternalAudio"))
     }
 }

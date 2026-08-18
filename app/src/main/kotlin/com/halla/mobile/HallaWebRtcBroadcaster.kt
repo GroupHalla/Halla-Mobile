@@ -46,7 +46,9 @@ class HallaWebRtcBroadcaster(
         private const val FPS = 30
         // Preserve largura de banda e CPU para voz/controle. 720p30 de tela
         // continua legível nessa faixa e o WebRTC pode reduzir sob congestão.
-        private const val MIN_VIDEO_BITRATE = 250_000
+        // RTCConfiguration usa kbps; RtpParameters.Encoding usa bps.
+        private const val SCREENCAST_MIN_BITRATE_KBPS = 250
+        private const val MIN_VIDEO_BITRATE_BPS = 250_000
         private const val MAX_VIDEO_BITRATE = 1_200_000
     }
 
@@ -147,7 +149,7 @@ class HallaWebRtcBroadcaster(
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             enableCpuOveruseDetection = true
             suspendBelowMinBitrate = true
-            screencastMinBitrate = MIN_VIDEO_BITRATE
+            screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS
         }
         val connection = factory.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
@@ -173,7 +175,7 @@ class HallaWebRtcBroadcaster(
         parameters.degradationPreference = org.webrtc.RtpParameters.DegradationPreference.BALANCED
         parameters.encodings.forEach { encoding ->
             encoding.maxFramerate = FPS
-            encoding.minBitrateBps = MIN_VIDEO_BITRATE
+            encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS
             encoding.maxBitrateBps = MAX_VIDEO_BITRATE
             encoding.bitratePriority = 0.5
         }
