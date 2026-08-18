@@ -41,15 +41,15 @@ class HallaWebRtcBroadcaster(
 ) {
     companion object {
         private const val TAG = "HallaWebRTCSender"
-        private const val WIDTH = 1280
-        private const val HEIGHT = 720
+        private const val WIDTH = 1920
+        private const val HEIGHT = 1080
         private const val FPS = 30
-        // Preserve largura de banda e CPU para voz/controle. 720p30 de tela
-        // continua legível nessa faixa e o WebRTC pode reduzir sob congestão.
+        // 1080p30 preserva texto e detalhes da tela. Em redes limitadas, a
+        // preferência mantém a resolução e reduz FPS antes de pixelizar.
         // RTCConfiguration usa kbps; RtpParameters.Encoding usa bps.
-        private const val SCREENCAST_MIN_BITRATE_KBPS = 300
-        private const val MIN_VIDEO_BITRATE_BPS = 300_000
-        private const val MAX_VIDEO_BITRATE = 2_500_000
+        private const val SCREENCAST_MIN_BITRATE_KBPS = 800
+        private const val MIN_VIDEO_BITRATE_BPS = 800_000
+        private const val MAX_VIDEO_BITRATE = 6_000_000
         private const val MAX_AUDIO_BITRATE = 128_000
     }
 
@@ -184,12 +184,13 @@ class HallaWebRtcBroadcaster(
         }) ?: return null
         val sender = connection.addTrack(videoTrack, listOf("halla-screen-stream"))
         val parameters = sender.parameters
-        parameters.degradationPreference = org.webrtc.RtpParameters.DegradationPreference.BALANCED
+        parameters.degradationPreference =
+            org.webrtc.RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
         parameters.encodings.forEach { encoding ->
             encoding.maxFramerate = FPS
             encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS
             encoding.maxBitrateBps = MAX_VIDEO_BITRATE
-            encoding.bitratePriority = 1.0
+            encoding.bitratePriority = 2.0
         }
         if (!sender.setParameters(parameters)) {
             Log.w(TAG, "Could not apply 30 FPS sender parameters")

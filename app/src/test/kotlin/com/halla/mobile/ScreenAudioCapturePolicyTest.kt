@@ -50,14 +50,16 @@ class ScreenAudioCapturePolicyTest {
     fun videoUsesAdaptiveQualityWithoutSuspendingTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
+        assertTrue(broadcaster.contains("WIDTH = 1920"))
+        assertTrue(broadcaster.contains("HEIGHT = 1080"))
         assertTrue(broadcaster.contains("FPS = 30"))
-        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 300"))
-        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 300_000"))
+        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 800"))
+        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 800_000"))
         assertTrue(broadcaster.contains("screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS"))
         assertTrue(broadcaster.contains("encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS"))
-        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 2_500_000"))
-        assertTrue(broadcaster.contains("encoding.bitratePriority = 1.0"))
-        assertTrue(broadcaster.contains("DegradationPreference.BALANCED"))
+        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 6_000_000"))
+        assertTrue(broadcaster.contains("encoding.bitratePriority = 2.0"))
+        assertTrue(broadcaster.contains("DegradationPreference.MAINTAIN_RESOLUTION"))
         assertTrue(broadcaster.contains("suspendBelowMinBitrate = false"))
     }
 
