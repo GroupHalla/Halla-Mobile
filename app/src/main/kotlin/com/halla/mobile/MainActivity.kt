@@ -205,6 +205,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenShareVideoHost: FrameLayout? = null
     private var webRtcViewer: HallaWebRtcViewer? = null
     private var screenShareTitle: TextView? = null
+    private var screenShareViewerControls: LinearLayout? = null
+    private var screenShareMuteButton: Button? = null
+    private var screenShareAudioMuted = false
     private var screenShareFrameCount = 0
     private var isChannelCommander = false
     private var isAway = false
@@ -4442,6 +4445,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         watchingStreamUserId = userId
         screenShareFrameCount = 0
+        screenShareAudioMuted = false
         if (screenShareOverlay?.visibility != View.VISIBLE) {
             screenSharePreviousOrientation = requestedOrientation
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -4474,7 +4478,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 setTextColor(Color.WHITE)
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
-                setPadding(24, 24, 96, 16)
+                setPadding(24, 24, 24, 16)
                 setBackgroundColor(0x99000000.toInt())
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
@@ -4482,27 +4486,78 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     Gravity.TOP
                 )
             }
-            val close = Button(this).apply {
-                text = "X"
+            val density = resources.displayMetrics.density
+            fun dp(value: Int) = (value * density).toInt()
+            fun roundedButton(color: String) = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.parseColor(color))
+                setStroke(dp(1), 0x33FFFFFF)
+            }
+            val viewerControls = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(18).toFloat()
+                    setColor(0xE612141F.toInt())
+                    setStroke(dp(1), 0x33FFFFFF)
+                }
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    dp(64), Gravity.BOTTOM
+                ).apply {
+                    setMargins(dp(20), 0, dp(20), dp(24))
+                }
+            }
+            val muteLive = Button(this).apply {
+                text = "🔇  ${getString(R.string.mute_live_audio)}"
+                isAllCaps = false
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
-                setBackgroundColor(Color.parseColor("#7C3AED"))
-                layoutParams = FrameLayout.LayoutParams(72, 72, Gravity.TOP or Gravity.RIGHT).apply {
-                    setMargins(0, 16, 16, 0)
+                background = roundedButton("#343746")
+                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    marginEnd = dp(8)
+                }
+                setOnClickListener {
+                    screenShareAudioMuted = !screenShareAudioMuted
+                    webRtcViewer?.setMuted(screenShareAudioMuted)
+                    text = if (screenShareAudioMuted)
+                        "🔊  ${getString(R.string.unmute_live_audio)}"
+                    else "🔇  ${getString(R.string.mute_live_audio)}"
+                }
+            }
+            val stopLive = Button(this).apply {
+                text = "⏹  ${getString(R.string.stop_watching_live)}"
+                isAllCaps = false
+                textSize = 14f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = roundedButton("#D83B4D")
+                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+                    marginStart = dp(8)
                 }
                 setOnClickListener { stopWatchingScreenShare() }
             }
+            viewerControls.addView(muteLive)
+            viewerControls.addView(stopLive)
             overlay.addView(image)
             overlay.addView(videoHost)
             overlay.addView(title)
-            overlay.addView(close)
+            overlay.addView(viewerControls)
             drawerLayout.addView(overlay)
             screenShareOverlay = overlay
             screenShareImage = image
             screenShareVideoHost = videoHost
             screenShareTitle = title
+            screenShareViewerControls = viewerControls
+            screenShareMuteButton = muteLive
         } else {
             screenShareOverlay?.visibility = View.VISIBLE
             screenShareTitle?.text = "Transmissão de $name"
+            screenShareMuteButton?.text = "🔇  ${getString(R.string.mute_live_audio)}"
         }
         screenShareOverlay?.bringToFront()
         // A rotação pode relayoutar a árvore de views; reaplica a camada logo
@@ -4517,13 +4572,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         screenShareVideoHost?.bringToFront()
         screenShareVideoHost?.let { host ->
             try {
-                webRtcViewer = HallaWebRtcViewer(this, userId, host)
+                webRtcViewer = HallaWebRtcViewer(
+                    this, userId, host, screenShareAudioMuted)
             } catch (t: Throwable) {
                 android.util.Log.e("HallaWebRTC", "viewer init failed", t)
                 Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
                 return
             }
         }
+        screenShareTitle?.bringToFront()
+        screenShareViewerControls?.bringToFront()
         HallaCore.sendWebRtcWatchRequest(userId)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
     }
@@ -4534,6 +4592,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         webRtcViewer?.close()
         webRtcViewer = null
         watchingStreamUserId = 0
+        screenShareAudioMuted = false
+        screenShareMuteButton?.text = "🔇  ${getString(R.string.mute_live_audio)}"
         screenShareOverlay?.visibility = View.GONE
         screenShareImage?.setImageDrawable(null)
         screenShareVideoHost?.removeAllViews()
@@ -4550,7 +4610,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 if (webRtcViewer == null && watchingStreamUserId != 0) {
                     screenShareVideoHost?.let { host ->
                         try {
-                            webRtcViewer = HallaWebRtcViewer(this, watchingStreamUserId, host)
+                            webRtcViewer = HallaWebRtcViewer(
+                                this, watchingStreamUserId, host, screenShareAudioMuted)
                         } catch (t: Throwable) {
                             android.util.Log.e("HallaWebRTC", "viewer init failed from signal", t)
                             Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()

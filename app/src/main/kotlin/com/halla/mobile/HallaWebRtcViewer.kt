@@ -23,7 +23,8 @@ import org.json.JSONObject
 class HallaWebRtcViewer(
     private val activity: Activity,
     private val remoteUserId: Int,
-    private val container: FrameLayout
+    private val container: FrameLayout,
+    initialMuted: Boolean = false
 ) {
     companion object {
         private const val TAG = "HallaWebRTC"
@@ -32,6 +33,7 @@ class HallaWebRtcViewer(
     private val pendingSignals = mutableListOf<JSONObject>()
     private var pageReady = false
     private var webView: WebView? = null
+    @Volatile private var audioMuted = initialMuted
 
     private inner class Bridge {
         @JavascriptInterface
@@ -84,6 +86,7 @@ class HallaWebRtcViewer(
                     pageReady = true
                     Log.d(TAG, "WebView WebRTC page ready")
                     flushPendingSignals()
+                    applyMutedState()
                 }
             }
             web.addJavascriptInterface(Bridge(), "HallaAndroid")
@@ -134,6 +137,20 @@ class HallaWebRtcViewer(
         }
     }
 
+    fun setMuted(muted: Boolean) {
+        audioMuted = muted
+        applyMutedState()
+    }
+
+    private fun applyMutedState() {
+        if (!pageReady) return
+        val value = if (audioMuted) "true" else "false"
+        activity.runOnUiThread {
+            webView?.evaluateJavascript(
+                "window.hallaSetMuted && window.hallaSetMuted($value);", null)
+        }
+    }
+
     fun close() {
         activity.runOnUiThread {
             try {
@@ -160,7 +177,8 @@ class HallaWebRtcViewer(
   <style>
     html, body { margin:0; width:100%; height:100%; background:#000; overflow:hidden; }
     #video { position:fixed; inset:0; width:100%; height:100%; background:#000; object-fit:contain; }
-    #status { position:fixed; left:12px; right:12px; bottom:12px; padding:8px 10px; color:#fff; background:rgba(0,0,0,.55); font:13px sans-serif; border-radius:8px; }
+    #status { position:fixed; left:12px; right:12px; bottom:12px; padding:8px 10px; color:#fff; background:rgba(0,0,0,.55); font:13px sans-serif; border-radius:8px; transition:opacity .15s; }
+    #status.hidden { opacity:0; pointer-events:none; }
   </style>
 </head>
 <body>
@@ -173,10 +191,16 @@ class HallaWebRtcViewer(
   let pc = null;
   let fallbackStream = null;
   let currentRemoteStream = null;
+  let audioMuted = false;
+
+  function debug(msg) {
+    try { HallaAndroid.log(String(msg)); } catch (e) {}
+  }
 
   function log(msg) {
+    status.classList.remove('hidden');
     status.textContent = msg;
-    try { HallaAndroid.log(String(msg)); } catch (e) {}
+    debug(msg);
   }
 
   function supported() {
@@ -204,9 +228,9 @@ class HallaWebRtcViewer(
       } catch (e) {}
     };
     video.volume = 1.0;
-    video.muted = false;
+    video.muted = audioMuted;
     pc.ontrack = ev => {
-      log('Track recebida: ' + ev.track.kind);
+      debug('Track recebida: ' + ev.track.kind);
       if (ev.streams && ev.streams[0]) {
         // Preferir o MediaStream negociado pelo WebRTC. Quando o Desktop envia
         // áudio+vídeo com o mesmo stream id, este stream carrega as duas tracks.
@@ -219,11 +243,18 @@ class HallaWebRtcViewer(
         }
         video.srcObject = fallbackStream;
       }
-      video.play().catch(err => log('Falha ao iniciar mídia: ' + err.message));
+      video.play().then(() => status.classList.add('hidden'))
+        .catch(err => log('Falha ao iniciar mídia: ' + err.message));
     };
-    pc.oniceconnectionstatechange = () => log('ICE: ' + pc.iceConnectionState);
-    pc.onconnectionstatechange = () => log('Conexão: ' + pc.connectionState);
-    pc.onsignalingstatechange = () => { try { HallaAndroid.log('Signaling: ' + pc.signalingState); } catch(e) {} };
+    pc.oniceconnectionstatechange = () => debug('ICE: ' + pc.iceConnectionState);
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      debug('WebRTC connection state: ' + state);
+      if (state === 'connected') status.classList.add('hidden');
+      else if (state === 'failed' || state === 'disconnected')
+        log('Falha na conexão WebRTC');
+    };
+    pc.onsignalingstatechange = () => debug('Signaling: ' + pc.signalingState);
     log('PeerConnection pronta');
     return pc;
   }
@@ -247,6 +278,12 @@ class HallaWebRtcViewer(
         sdpMLineIndex: signal.sdpMLineIndex == null ? 0 : signal.sdpMLineIndex
       });
     }
+  };
+
+  window.hallaSetMuted = function(muted) {
+    audioMuted = !!muted;
+    video.muted = audioMuted;
+    debug('Live audio muted=' + audioMuted);
   };
 
   window.hallaClose = function() {

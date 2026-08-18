@@ -428,4 +428,7 @@ Deseja baixar e instalar agora?</string>
     <string name="notification_screen_sharing">Transmitindo a tela por WebRTC</string>
     <string name="notification_screen_audio_silent">Vídeo ativo, mas nenhum áudio interno capturável. Em “Um único app”, tente “Tela inteira”.</string>
     <string name="screen_share_failed">Falha ao transmitir tela: %1$s</string>
+    <string name="mute_live_audio">Mutar áudio</string>
+    <string name="unmute_live_audio">Ativar áudio</string>
+    <string name="stop_watching_live">Parar de assistir</string>
 </resources>

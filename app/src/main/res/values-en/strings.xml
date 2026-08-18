@@ -428,4 +428,7 @@ Download and install now?</string>
     <string name="notification_screen_sharing">Sharing the screen over WebRTC</string>
     <string name="notification_screen_audio_silent">Video is active, but no capturable internal audio was detected. If sharing one app, try the entire screen.</string>
     <string name="screen_share_failed">Screen sharing failed: %1$s</string>
+    <string name="mute_live_audio">Mute audio</string>
+    <string name="unmute_live_audio">Unmute audio</string>
+    <string name="stop_watching_live">Stop watching</string>
 </resources>

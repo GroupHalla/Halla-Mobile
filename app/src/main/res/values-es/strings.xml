@@ -428,4 +428,7 @@ Notas de la versión:
     <string name="notification_screen_sharing">Compartiendo la pantalla por WebRTC</string>
     <string name="notification_screen_audio_silent">El vídeo está activo, pero no se detectó audio interno capturable. Si compartes una app, prueba la pantalla completa.</string>
     <string name="screen_share_failed">Error al compartir pantalla: %1$s</string>
+    <string name="mute_live_audio">Silenciar audio</string>
+    <string name="unmute_live_audio">Activar audio</string>
+    <string name="stop_watching_live">Dejar de ver</string>
 </resources>

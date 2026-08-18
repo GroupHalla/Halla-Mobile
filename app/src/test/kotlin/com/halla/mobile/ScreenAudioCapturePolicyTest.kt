@@ -64,6 +64,23 @@ class ScreenAudioCapturePolicyTest {
     }
 
     @Test
+    fun mobileViewerHasLiveControlsWithoutConnectedBanner() {
+        val viewer = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/HallaWebRtcViewer.kt")
+        val activity = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
+        assertTrue(!viewer.contains("Conexão: ' + pc.connectionState"))
+        assertTrue(viewer.contains("status.classList.add('hidden')"))
+        assertTrue(viewer.contains("window.hallaSetMuted"))
+        assertTrue(viewer.contains("fun setMuted(muted: Boolean)"))
+        assertTrue(activity.contains("R.string.mute_live_audio"))
+        assertTrue(activity.contains("R.string.unmute_live_audio"))
+        assertTrue(activity.contains("R.string.stop_watching_live"))
+        assertTrue(activity.contains("webRtcViewer?.setMuted(screenShareAudioMuted)"))
+        assertTrue(activity.contains("stopWatchingScreenShare()"))
+    }
+
+    @Test
     fun screenAudioUsesOnlyWebRtcTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
