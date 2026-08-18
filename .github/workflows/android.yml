@@ -42,6 +42,9 @@ jobs:
             exit 1
           fi
 
+      - name: Fetch and verify patched Halla WebRTC Android SDK
+        run: ./tools/fetch_webrtc_android.sh
+
       - name: Unit tests and Android lint
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug
 

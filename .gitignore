@@ -16,6 +16,8 @@ __pycache__/
 .gradle/
 app/.cxx/
 app/build/
+app/libs/halla-webrtc-android-*.aar
+app/libs/*.tmp
 local.properties
 *.jks
 *.keystore

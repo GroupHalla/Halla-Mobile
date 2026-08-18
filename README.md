@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.55
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.56
 </p>
 
 ---
@@ -78,7 +78,8 @@ acessado via JNI.
   não só pelo sistema).
 - **Transmitir a própria tela em até 30 FPS e o áudio interno capturável** usando
   a autorização oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O PCM interno alimenta
-  uma `AudioTrack` WebRTC real pelo SDK externo do Halla; áudio e vídeo compartilham DTLS-SRTP e
+  uma `AudioTrack` WebRTC real pelo SDK externo do Halla 0.1.1. O AAR do libwebrtc é fixado e
+  corrigido para validar corretamente o buffer direto do ADM; áudio e vídeo compartilham DTLS-SRTP e
   controle de congestionamento. O vídeo usa teto adaptativo de 1,2 Mbps. O UID do Halla é
   excluído para que as vozes da chamada não retornem na live. Também é possível
   assistir transmissões do Desktop ou de outro celular.

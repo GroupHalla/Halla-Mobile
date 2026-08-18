@@ -28,10 +28,13 @@ class ScreenAudioCapturePolicyTest {
 
     @Test
     fun externalAudioSdkMatchesPublishedChecksum() {
-        val bytes = projectBinary("app/libs/external-audio-android-0.1.0.aar")
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        fun digest(path: String) = MessageDigest.getInstance("SHA-256")
+            .digest(projectBinary(path))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        assertTrue(digest == "da1f25949003a7b6bf83aad01d2cbb2709633a05af2fc03dbb625aa0a8ab62f9")
+        assertTrue(digest("app/libs/external-audio-android-0.1.1.aar") ==
+            "da1f25949003a7b6bf83aad01d2cbb2709633a05af2fc03dbb625aa0a8ab62f9")
+        assertTrue(digest("app/libs/halla-webrtc-android-144.7559.09-p1.aar") ==
+            "456f5c7a30c2047e01608df52bcbb76a5bdfff2cb14401961c3b4d15fd01e162")
     }
 
     @Test
