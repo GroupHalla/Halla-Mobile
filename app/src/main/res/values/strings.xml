@@ -426,5 +426,6 @@ Deseja baixar e instalar agora?</string>
     <string name="screen_share_permission_denied">Permissão de captura de tela negada</string>
     <string name="screen_share_requires_connection">Conecte-se a um servidor antes de transmitir</string>
     <string name="notification_screen_sharing">Transmitindo a tela por WebRTC</string>
+    <string name="notification_screen_audio_silent">Vídeo ativo, mas nenhum áudio interno capturável. Em “Um único app”, tente “Tela inteira”.</string>
     <string name="screen_share_failed">Falha ao transmitir tela: %1$s</string>
 </resources>

@@ -426,5 +426,6 @@ Download and install now?</string>
     <string name="screen_share_permission_denied">Screen capture permission denied</string>
     <string name="screen_share_requires_connection">Connect to a server before sharing</string>
     <string name="notification_screen_sharing">Sharing the screen over WebRTC</string>
+    <string name="notification_screen_audio_silent">Video is active, but no capturable internal audio was detected. If sharing one app, try the entire screen.</string>
     <string name="screen_share_failed">Screen sharing failed: %1$s</string>
 </resources>

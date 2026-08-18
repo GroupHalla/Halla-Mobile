@@ -17,7 +17,8 @@ import kotlin.concurrent.thread
 /** Captura áudio reproduzido por outros apps, excluindo todo o UID do Halla. */
 class HallaPlaybackAudioCapture(
     private val context: Context,
-    private val projection: MediaProjection
+    private val projection: MediaProjection,
+    private val onProlongedSilence: () -> Unit = {}
 ) {
     companion object {
         private const val TAG = "HallaScreenAudio"
@@ -31,6 +32,7 @@ class HallaPlaybackAudioCapture(
     private var worker: Thread? = null
     private var capturedFrames = 0L
     private var nonSilentFrames = 0L
+    private var silenceReported = false
 
     fun start(): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !running.compareAndSet(false, true))
@@ -94,11 +96,17 @@ class HallaPlaybackAudioCapture(
                     mono[index * 2 + 1] = ((mixed ushr 8) and 0xff).toByte()
                 }
                 capturedFrames++
-                if (peak > 16) nonSilentFrames++
+                if (peak > 8) {
+                    nonSilentFrames++
+                    HallaCore.sendScreenAudioFrame(mono)
+                }
+                if (!silenceReported && capturedFrames >= 100L && nonSilentFrames == 0L) {
+                    silenceReported = true
+                    onProlongedSilence()
+                }
                 if (capturedFrames % 100L == 0L) {
                     Log.i(TAG, "capture frames=$capturedFrames nonSilent=$nonSilentFrames peak=$peak")
                 }
-                HallaCore.sendScreenAudioFrame(mono)
             } else if (read < 0) {
                 try { Thread.sleep(10) } catch (_: InterruptedException) { break }
             }

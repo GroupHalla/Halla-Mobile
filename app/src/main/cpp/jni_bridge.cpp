@@ -1693,6 +1693,10 @@ private:
             writeLog("Erro: setupUdpVoice nao conseguiu criar socket UDP");
             return;
         }
+        // Prioriza voz e áudio da transmissão sobre o vídeo WebRTC quando o
+        // uplink está congestionado (DSCP Expedited Forwarding, se a rede aceitar).
+        const int mediaTos = 0xB8;
+        setsockopt(socketFd, IPPROTO_IP, IP_TOS, &mediaTos, sizeof(mediaTos));
 
         // Timeout curto permite que a thread UDP observe desconexões sem ficar
         // bloqueada indefinidamente em recvfrom.

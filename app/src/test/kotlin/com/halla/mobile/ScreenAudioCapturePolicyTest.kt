@@ -25,6 +25,16 @@ class ScreenAudioCapturePolicyTest {
     }
 
     @Test
+    fun videoLeavesBandwidthForCallMedia() {
+        val broadcaster = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
+        assertTrue(broadcaster.contains("FPS = 30"))
+        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 1_200_000"))
+        assertTrue(broadcaster.contains("DegradationPreference.BALANCED"))
+        assertTrue(broadcaster.contains("suspendBelowMinBitrate = true"))
+    }
+
+    @Test
     fun screenAudioUsesDedicatedEncryptedMediaType() {
         val native = projectFile("app/src/main/cpp/jni_bridge.cpp")
         assertTrue(native.contains("HAG4"))

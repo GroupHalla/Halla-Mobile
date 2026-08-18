@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.53
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.54
 </p>
 
 ---
@@ -77,7 +77,8 @@ acessado via JNI.
 - Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
   não só pelo sistema).
 - **Transmitir a própria tela em até 30 FPS e o áudio interno capturável** usando
-  a autorização oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O UID do Halla é
+  a autorização oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O vídeo usa bitrate
+  adaptativo com teto de 1,2 Mbps para preservar ping e voz. O UID do Halla é
   excluído para que as vozes da chamada não retornem na live. Também é possível
   assistir transmissões do Desktop ou de outro celular.
 - **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do

@@ -41,7 +41,10 @@ class HallaWebRtcBroadcaster(
         private const val WIDTH = 1280
         private const val HEIGHT = 720
         private const val FPS = 30
-        private const val MAX_VIDEO_BITRATE = 4_000_000
+        // Preserve largura de banda e CPU para voz/controle. 720p30 de tela
+        // continua legível nessa faixa e o WebRTC pode reduzir sob congestão.
+        private const val MIN_VIDEO_BITRATE = 250_000
+        private const val MAX_VIDEO_BITRATE = 1_200_000
     }
 
     private val appContext = context.applicationContext
@@ -129,6 +132,9 @@ class HallaWebRtcBroadcaster(
         val config = PeerConnection.RTCConfiguration(parseIceServers(iceServers)).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            enableCpuOveruseDetection = true
+            suspendBelowMinBitrate = true
+            screencastMinBitrate = MIN_VIDEO_BITRATE
         }
         val connection = factory.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
@@ -151,10 +157,12 @@ class HallaWebRtcBroadcaster(
         }) ?: return null
         val sender = connection.addTrack(videoTrack, listOf("halla-screen-stream"))
         val parameters = sender.parameters
-        parameters.degradationPreference = org.webrtc.RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+        parameters.degradationPreference = org.webrtc.RtpParameters.DegradationPreference.BALANCED
         parameters.encodings.forEach { encoding ->
             encoding.maxFramerate = FPS
+            encoding.minBitrateBps = MIN_VIDEO_BITRATE
             encoding.maxBitrateBps = MAX_VIDEO_BITRATE
+            encoding.bitratePriority = 0.5
         }
         if (!sender.setParameters(parameters)) {
             Log.w(TAG, "Could not apply 30 FPS sender parameters")
