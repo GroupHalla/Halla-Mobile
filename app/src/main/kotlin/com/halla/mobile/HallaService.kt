@@ -647,11 +647,16 @@ class HallaService : Service(), HallaCore.Callbacks {
             }
             screenBroadcaster = broadcaster
             broadcaster.mediaProjection()?.let { projection ->
-                val capture = HallaPlaybackAudioCapture(this, projection) {
-                    handler.post {
-                        updateNotification(t(R.string.notification_screen_audio_silent))
+                val capture = HallaPlaybackAudioCapture(
+                    context = this,
+                    projection = projection,
+                    onPcm = broadcaster::pushExternalAudio,
+                    onProlongedSilence = {
+                        handler.post {
+                            updateNotification(t(R.string.notification_screen_audio_silent))
+                        }
                     }
-                }
+                )
                 if (capture.start()) screenAudioCapture = capture
                 else {
                     capture.stop()

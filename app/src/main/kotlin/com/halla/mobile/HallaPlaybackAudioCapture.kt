@@ -18,6 +18,7 @@ import kotlin.concurrent.thread
 class HallaPlaybackAudioCapture(
     private val context: Context,
     private val projection: MediaProjection,
+    private val onPcm: (ByteArray) -> Unit,
     private val onProlongedSilence: () -> Unit = {}
 ) {
     companion object {
@@ -98,7 +99,7 @@ class HallaPlaybackAudioCapture(
                 capturedFrames++
                 if (peak > 8) {
                     nonSilentFrames++
-                    HallaCore.sendScreenAudioFrame(mono)
+                    onPcm(mono)
                 }
                 if (!silenceReported && capturedFrames >= 100L && nonSilentFrames == 0L) {
                     silenceReported = true

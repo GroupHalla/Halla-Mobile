@@ -82,5 +82,6 @@ dependencies {
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.82")
     implementation("io.github.webrtc-sdk:android:144.7559.09")
+    implementation(files("libs/external-audio-android-0.1.0.aar"))
     testImplementation("junit:junit:4.13.2")
 }

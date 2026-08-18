@@ -4,8 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjection
 import android.util.Log
+import com.halla.webrtc.audio.HallaExternalAudioDeviceModule
 import org.json.JSONArray
 import org.json.JSONObject
+import org.webrtc.AudioSource
+import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
@@ -53,11 +56,14 @@ class HallaWebRtcBroadcaster(
     private val pendingIce = ConcurrentHashMap<Int, MutableList<IceCandidate>>()
     private val running = AtomicBoolean(false)
 
+    private val externalAudio = HallaExternalAudioDeviceModule.create(appContext)
     private val factory: PeerConnectionFactory
     private val capturer: VideoCapturer
     private val surfaceHelper: SurfaceTextureHelper
     private val videoSource: VideoSource
     private val videoTrack: VideoTrack
+    private val audioSource: AudioSource
+    private val audioTrack: AudioTrack
 
     init {
         PeerConnectionFactory.initialize(
@@ -66,6 +72,7 @@ class HallaWebRtcBroadcaster(
                 .createInitializationOptions()
         )
         factory = PeerConnectionFactory.builder()
+            .setAudioDeviceModule(externalAudio.audioDeviceModule())
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
             .createPeerConnectionFactory()
@@ -80,6 +87,8 @@ class HallaWebRtcBroadcaster(
         capturer.initialize(surfaceHelper, appContext, videoSource.capturerObserver)
         capturer.startCapture(WIDTH, HEIGHT, FPS)
         videoTrack = factory.createVideoTrack("halla-screen-video", videoSource)
+        audioSource = factory.createAudioSource(MediaConstraints())
+        audioTrack = factory.createAudioTrack("halla-screen-audio", audioSource)
         running.set(true)
         HallaCore.sendRawJson(JSONObject().put("t", "webrtc_stream_start").toString())
     }
@@ -88,6 +97,10 @@ class HallaWebRtcBroadcaster(
 
     fun mediaProjection(): MediaProjection? =
         (capturer as? ScreenCapturerAndroid)?.mediaProjection
+
+    fun pushExternalAudio(pcm16Mono48k: ByteArray) {
+        if (running.get()) externalAudio.pushPcm16Mono48k(pcm16Mono48k)
+    }
 
     fun handleSignal(raw: String) {
         if (!running.get()) return
@@ -167,6 +180,15 @@ class HallaWebRtcBroadcaster(
         if (!sender.setParameters(parameters)) {
             Log.w(TAG, "Could not apply 30 FPS sender parameters")
         }
+        val audioSender = connection.addTrack(audioTrack, listOf("halla-screen-stream"))
+        val audioParameters = audioSender.parameters
+        audioParameters.encodings.forEach { encoding ->
+            encoding.maxBitrateBps = 96_000
+            encoding.bitratePriority = 2.0
+        }
+        if (!audioSender.setParameters(audioParameters)) {
+            Log.w(TAG, "Could not apply screen-audio sender parameters")
+        }
         peers[peerId] = connection
         return connection
     }
@@ -229,8 +251,11 @@ class HallaWebRtcBroadcaster(
         try { capturer.dispose() } catch (_: Exception) { }
         try { videoTrack.dispose() } catch (_: Exception) { }
         try { videoSource.dispose() } catch (_: Exception) { }
+        try { audioTrack.dispose() } catch (_: Exception) { }
+        try { audioSource.dispose() } catch (_: Exception) { }
         try { surfaceHelper.dispose() } catch (_: Exception) { }
         try { factory.dispose() } catch (_: Exception) { }
+        try { externalAudio.close() } catch (_: Exception) { }
         try { egl.release() } catch (_: Exception) { }
     }
 
