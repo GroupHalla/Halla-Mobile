@@ -63,6 +63,8 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(activity.contains("screenShareMaxBitrateKbps"))
         assertTrue(activity.contains("Base(3840, 2160, 18000, 32000)"))
         assertTrue(activity.contains("screenShareMaxWidth"))
+        assertTrue(activity.contains("exactStandard"))
+        assertTrue(activity.contains("screen_quality_custom_option"))
         assertTrue(activity.contains("showScreenShareQualityDialog"))
         val service = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaService.kt")

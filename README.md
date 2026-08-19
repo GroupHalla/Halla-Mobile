@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.66
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.67
 </p>
 
 ---
@@ -86,8 +86,9 @@ acessado via JNI.
   jogos e vídeos. O AAR do libwebrtc é fixado e corrigido para validar corretamente o
   buffer direto do ADM; antes de transmitir, o usuário escolhe entre presets
   720p/1080p/1440p/2160p e 30/60 FPS filtrados pelos máximos de resolução, FPS e
-  bitrate anunciados pelo HallaServer. A preferência mantém resolução, reduzindo
-  FPS antes de pixelizar, e a track não é suspensa em quedas momentâneas de rede. O UID do Halla é excluído para que as vozes da
+  bitrate anunciados pelo HallaServer. Limites fora do padrão, como 1440×1080,
+  viram uma opção própria. A preferência mantém resolução, reduzindo FPS antes
+  de pixelizar, e a track não é suspensa em quedas momentâneas de rede. O UID do Halla é excluído para que as vozes da
   chamada não retornem na live. Também é possível assistir transmissões do
   Desktop ou de outro celular; o viewer possui controles próprios para mutar o
   áudio e parar de assistir, sem exibir o estado técnico “Conexão: connected”.

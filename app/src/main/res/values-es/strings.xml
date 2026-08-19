@@ -455,4 +455,5 @@ Notas de la versión:
     <string name="screen_quality_option">%1$dp — %2$d FPS — %3$s Mbps</string>
     <string name="screen_quality_server_limit">Límite del servidor: %1$dx%2$d, %3$d FPS, %4$d kbps</string>
     <string name="screen_share_starting_quality">Iniciando transmisión en %1$dp a %2$d FPS…</string>
+    <string name="screen_quality_custom_option">%1$dx%2$d — %3$d FPS — %4$s Mbps</string>
 </resources>

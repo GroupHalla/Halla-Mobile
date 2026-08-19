@@ -4609,6 +4609,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     profiles += ScreenShareQualityProfile(base.width, base.height, fps, bitrate)
             }
         }
+        val exactStandard = bases.any {
+            it.width == screenShareMaxWidth && it.height == screenShareMaxHeight
+        }
+        if (!exactStandard) {
+            for (fps in rates) {
+                val reference = if (fps <= 30) 4500L else
+                    4500L + (8000L - 4500L) * (fps - 30) / 30
+                var bitrate = (reference * screenShareMaxWidth * screenShareMaxHeight /
+                    (1920L * 1080L)).toInt()
+                bitrate = maxOf(500, ((bitrate + 50) / 100) * 100)
+                if (bitrate <= screenShareMaxBitrateKbps) {
+                    profiles += ScreenShareQualityProfile(
+                        screenShareMaxWidth, screenShareMaxHeight, fps, bitrate)
+                }
+            }
+        }
         if (profiles.isEmpty()) {
             profiles += ScreenShareQualityProfile(
                 screenShareMaxWidth, screenShareMaxHeight,
@@ -4623,7 +4639,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val mbps = if (profile.bitrateKbps % 1000 == 0)
                 (profile.bitrateKbps / 1000).toString()
             else String.format(java.util.Locale.US, "%.1f", profile.bitrateKbps / 1000.0)
-            getString(R.string.screen_quality_option, profile.height, profile.fps, mbps)
+            val standard = (profile.width == 1280 && profile.height == 720)
+                || (profile.width == 1920 && profile.height == 1080)
+                || (profile.width == 2560 && profile.height == 1440)
+                || (profile.width == 3840 && profile.height == 2160)
+            if (standard) getString(
+                R.string.screen_quality_option, profile.height, profile.fps, mbps)
+            else getString(R.string.screen_quality_custom_option,
+                profile.width, profile.height, profile.fps, mbps)
         }.toTypedArray()
         var selected = profiles.lastIndex
         AlertDialog.Builder(this)
