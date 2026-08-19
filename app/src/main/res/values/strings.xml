@@ -451,4 +451,8 @@ Deseja baixar e instalar agora?</string>
     <string name="max_clients_hint">Máximo de clientes (-1 = ilimitado)</string>
     <string name="password_leave_unchanged">Nova senha (vazio mantém a atual)</string>
     <string name="remove_channel_password">Remover senha atual</string>
+    <string name="choose_screen_quality">Escolher qualidade da transmissão</string>
+    <string name="screen_quality_option">%1$dp — %2$d FPS — %3$s Mbps</string>
+    <string name="screen_quality_server_limit">Limite do servidor: %1$dx%2$d, %3$d FPS, %4$d kbps</string>
+    <string name="screen_share_starting_quality">Iniciando transmissão em %1$dp a %2$d FPS…</string>
 </resources>

@@ -37,23 +37,23 @@ import java.util.concurrent.atomic.AtomicBoolean
 class HallaWebRtcBroadcaster(
     context: Context,
     private val permissionData: Intent,
+    captureWidth: Int,
+    captureHeight: Int,
+    captureFps: Int,
+    captureBitrateBps: Int,
     private val onStopped: () -> Unit
 ) {
     companion object {
         private const val TAG = "HallaWebRTCSender"
-        private const val WIDTH = 1920
-        private const val HEIGHT = 1080
-        private const val FPS = 30
-        // 1080p30 preserva texto e detalhes da tela. Em redes limitadas, a
-        // preferência mantém a resolução e reduz FPS antes de pixelizar.
-        // RTCConfiguration usa kbps; RtpParameters.Encoding usa bps.
-        private const val SCREENCAST_MIN_BITRATE_KBPS = 800
-        private const val MIN_VIDEO_BITRATE_BPS = 800_000
-        private const val MAX_VIDEO_BITRATE = 6_000_000
         private const val MAX_AUDIO_BITRATE = 128_000
     }
 
     private val appContext = context.applicationContext
+    private val videoWidth = captureWidth.coerceIn(640, 3840)
+    private val videoHeight = captureHeight.coerceIn(360, 2160)
+    private val videoFps = captureFps.coerceIn(1, 60)
+    private val videoBitrateBps = captureBitrateBps.coerceIn(500_000, 50_000_000)
+    private val minVideoBitrateBps = (videoBitrateBps / 5).coerceIn(300_000, 2_000_000)
     private val egl = EglBase.create()
     private val peers = ConcurrentHashMap<Int, PeerConnection>()
     private val pendingIce = ConcurrentHashMap<Int, MutableList<IceCandidate>>()
@@ -88,7 +88,7 @@ class HallaWebRtcBroadcaster(
         surfaceHelper = SurfaceTextureHelper.create("HallaScreenCapture", egl.eglBaseContext)
         videoSource = factory.createVideoSource(true)
         capturer.initialize(surfaceHelper, appContext, videoSource.capturerObserver)
-        capturer.startCapture(WIDTH, HEIGHT, FPS)
+        capturer.startCapture(videoWidth, videoHeight, videoFps)
         videoTrack = factory.createVideoTrack("halla-screen-video", videoSource)
         val screenAudioConstraints = MediaConstraints().apply {
             // Áudio de reprodução não é microfone: AEC/AGC/NS/high-pass
@@ -102,7 +102,14 @@ class HallaWebRtcBroadcaster(
         audioSource = factory.createAudioSource(screenAudioConstraints)
         audioTrack = factory.createAudioTrack("halla-screen-audio", audioSource)
         running.set(true)
-        HallaCore.sendRawJson(JSONObject().put("t", "webrtc_stream_start").toString())
+        HallaCore.sendRawJson(JSONObject()
+            .put("t", "webrtc_stream_start")
+            .put("width", videoWidth)
+            .put("height", videoHeight)
+            .put("fps", videoFps)
+            .put("bitrate", videoBitrateBps / 1000)
+            .toString())
+        Log.i(TAG, "Screen share ${videoWidth}x$videoHeight ${videoFps}fps ${videoBitrateBps}bps")
     }
 
     fun isRunning(): Boolean = running.get()
@@ -161,7 +168,7 @@ class HallaWebRtcBroadcaster(
             // Continue adaptando resolução/FPS em redes ruins, sem congelar a
             // track inteira quando o bitrate cai abaixo do mínimo sugerido.
             suspendBelowMinBitrate = false
-            screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS
+            screencastMinBitrate = minVideoBitrateBps / 1000
         }
         val connection = factory.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onSignalingChange(state: PeerConnection.SignalingState?) = Unit
@@ -187,13 +194,13 @@ class HallaWebRtcBroadcaster(
         parameters.degradationPreference =
             org.webrtc.RtpParameters.DegradationPreference.MAINTAIN_RESOLUTION
         parameters.encodings.forEach { encoding ->
-            encoding.maxFramerate = FPS
-            encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS
-            encoding.maxBitrateBps = MAX_VIDEO_BITRATE
+            encoding.maxFramerate = videoFps
+            encoding.minBitrateBps = minVideoBitrateBps
+            encoding.maxBitrateBps = videoBitrateBps
             encoding.bitratePriority = 2.0
         }
         if (!sender.setParameters(parameters)) {
-            Log.w(TAG, "Could not apply 30 FPS sender parameters")
+            Log.w(TAG, "Could not apply screen sender parameters")
         }
         val audioSender = connection.addTrack(audioTrack, listOf("halla-screen-stream"))
         val audioParameters = audioSender.parameters

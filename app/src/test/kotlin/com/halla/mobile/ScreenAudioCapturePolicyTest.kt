@@ -50,17 +50,24 @@ class ScreenAudioCapturePolicyTest {
     fun videoUsesAdaptiveQualityWithoutSuspendingTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
-        assertTrue(broadcaster.contains("WIDTH = 1920"))
-        assertTrue(broadcaster.contains("HEIGHT = 1080"))
-        assertTrue(broadcaster.contains("FPS = 30"))
-        assertTrue(broadcaster.contains("SCREENCAST_MIN_BITRATE_KBPS = 800"))
-        assertTrue(broadcaster.contains("MIN_VIDEO_BITRATE_BPS = 800_000"))
-        assertTrue(broadcaster.contains("screencastMinBitrate = SCREENCAST_MIN_BITRATE_KBPS"))
-        assertTrue(broadcaster.contains("encoding.minBitrateBps = MIN_VIDEO_BITRATE_BPS"))
-        assertTrue(broadcaster.contains("MAX_VIDEO_BITRATE = 6_000_000"))
+        val activity = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
+        assertTrue(broadcaster.contains("videoWidth = captureWidth.coerceIn(640, 3840)"))
+        assertTrue(broadcaster.contains("videoFps = captureFps.coerceIn(1, 60)"))
+        assertTrue(broadcaster.contains("encoding.minBitrateBps = minVideoBitrateBps"))
+        assertTrue(broadcaster.contains("encoding.maxBitrateBps = videoBitrateBps"))
         assertTrue(broadcaster.contains("encoding.bitratePriority = 2.0"))
         assertTrue(broadcaster.contains("DegradationPreference.MAINTAIN_RESOLUTION"))
         assertTrue(broadcaster.contains("suspendBelowMinBitrate = false"))
+        assertTrue(activity.contains("availableScreenShareProfiles"))
+        assertTrue(activity.contains("screenShareMaxBitrateKbps"))
+        assertTrue(activity.contains("Base(3840, 2160, 18000, 32000)"))
+        assertTrue(activity.contains("screenShareMaxWidth"))
+        assertTrue(activity.contains("showScreenShareQualityDialog"))
+        val service = projectFile(
+            "app/src/main/kotlin/com/halla/mobile/HallaService.kt")
+        assertTrue(service.contains("EXTRA_SCREEN_BITRATE"))
+        assertTrue(service.contains("width, height, fps, bitrateBps"))
     }
 
     @Test

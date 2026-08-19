@@ -62,6 +62,13 @@ import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicInteger
 
+private data class ScreenShareQualityProfile(
+    val width: Int,
+    val height: Int,
+    val fps: Int,
+    val bitrateKbps: Int
+)
+
 class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private lateinit var drawerLayout: DrawerLayout
@@ -200,6 +207,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private val collapsedChannels = HashSet<Int>()
     private var selfId = 0
     private var activeMaxClients = 32
+    private var screenShareMaxWidth = 1920
+    private var screenShareMaxHeight = 1080
+    private var screenShareMaxFps = 60
+    private var screenShareMaxBitrateKbps = 8000
+    private var pendingScreenShareProfile = ScreenShareQualityProfile(1280, 720, 30, 2500)
     private var watchingStreamUserId = 0
     private var screenSharePreviousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var screenShareOverlay: FrameLayout? = null
@@ -997,8 +1009,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == SCREEN_SHARE_REQUEST) {
             if (resultCode == RESULT_OK && data != null) {
-                HallaService.startScreenShare(this, data)
-                Toast.makeText(this, getString(R.string.screen_share_starting), Toast.LENGTH_SHORT).show()
+                val profile = pendingScreenShareProfile
+                HallaService.startScreenShare(
+                    this, data, profile.width, profile.height, profile.fps,
+                    profile.bitrateKbps * 1000)
+                Toast.makeText(this,
+                    getString(R.string.screen_share_starting_quality,
+                        profile.height, profile.fps), Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, getString(R.string.screen_share_permission_denied), Toast.LENGTH_SHORT).show()
             }
@@ -2795,6 +2812,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
 
                 val serverObj = obj.optJSONObject("server")
+                screenShareMaxWidth = (serverObj?.optInt("screenshare_w", 1920) ?: 1920)
+                    .coerceIn(640, 3840)
+                screenShareMaxHeight = (serverObj?.optInt("screenshare_h", 1080) ?: 1080)
+                    .coerceIn(360, 2160)
+                screenShareMaxFps = (serverObj?.optInt("screenshare_fps", 60) ?: 60)
+                    .coerceIn(1, 60)
+                screenShareMaxBitrateKbps =
+                    (serverObj?.optInt("screenshare_bitrate", 8000) ?: 8000)
+                        .coerceIn(500, 50000)
                 applyServerBanner(serverObj?.optString("banner", ""))
                 val maxClients = (serverObj?.optInt("maxClients", -1) ?: -1)
                     .takeIf { it > 0 }
@@ -4563,6 +4589,60 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnScreenShareModule.isActivated = sharing
     }
 
+    private fun availableScreenShareProfiles(): List<ScreenShareQualityProfile> {
+        data class Base(val width: Int, val height: Int, val bitrate30: Int, val bitrate60: Int)
+        val bases = listOf(
+            Base(1280, 720, 2500, 4500),
+            Base(1920, 1080, 4500, 8000),
+            Base(2560, 1440, 9000, 16000),
+            Base(3840, 2160, 18000, 32000)
+        )
+        val rates = if (screenShareMaxFps < 30) listOf(screenShareMaxFps)
+            else listOf(30, screenShareMaxFps).distinct()
+        val profiles = ArrayList<ScreenShareQualityProfile>()
+        for (base in bases) {
+            if (base.width > screenShareMaxWidth || base.height > screenShareMaxHeight) continue
+            for (fps in rates) {
+                val bitrate = if (fps <= 30) base.bitrate30 else
+                    base.bitrate30 + (base.bitrate60 - base.bitrate30) * (fps - 30) / 30
+                if (bitrate <= screenShareMaxBitrateKbps)
+                    profiles += ScreenShareQualityProfile(base.width, base.height, fps, bitrate)
+            }
+        }
+        if (profiles.isEmpty()) {
+            profiles += ScreenShareQualityProfile(
+                screenShareMaxWidth, screenShareMaxHeight,
+                screenShareMaxFps, screenShareMaxBitrateKbps)
+        }
+        return profiles
+    }
+
+    private fun showScreenShareQualityDialog() {
+        val profiles = availableScreenShareProfiles()
+        val labels = profiles.map { profile ->
+            val mbps = if (profile.bitrateKbps % 1000 == 0)
+                (profile.bitrateKbps / 1000).toString()
+            else String.format(java.util.Locale.US, "%.1f", profile.bitrateKbps / 1000.0)
+            getString(R.string.screen_quality_option, profile.height, profile.fps, mbps)
+        }.toTypedArray()
+        var selected = profiles.lastIndex
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.choose_screen_quality))
+            .setSingleChoiceItems(labels, selected) { _, which -> selected = which }
+            .setMessage(getString(R.string.screen_quality_server_limit,
+                screenShareMaxWidth, screenShareMaxHeight,
+                screenShareMaxFps, screenShareMaxBitrateKbps))
+            .setPositiveButton(getString(R.string.transmit)) { _, _ ->
+                pendingScreenShareProfile = profiles[selected.coerceIn(profiles.indices)]
+                val projection = getSystemService(
+                    Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(
+                    projection.createScreenCaptureIntent(), SCREEN_SHARE_REQUEST)
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
     private fun toggleOwnScreenShare() {
         if (HallaService.isScreenSharing()) {
             HallaService.stopScreenShare(this)
@@ -4574,8 +4654,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             Toast.makeText(this, getString(R.string.screen_share_requires_connection), Toast.LENGTH_SHORT).show()
             return
         }
-        val projection = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(projection.createScreenCaptureIntent(), SCREEN_SHARE_REQUEST)
+        showScreenShareQualityDialog()
     }
 
     private fun startWatchingScreenShare(userId: Int, name: String) {

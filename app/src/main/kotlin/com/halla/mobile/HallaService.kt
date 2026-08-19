@@ -66,6 +66,10 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_ENABLED = "enabled"
         const val EXTRA_POSITION = "position"
         const val EXTRA_PROJECTION_DATA = "projection_data"
+        const val EXTRA_SCREEN_WIDTH = "screen_width"
+        const val EXTRA_SCREEN_HEIGHT = "screen_height"
+        const val EXTRA_SCREEN_FPS = "screen_fps"
+        const val EXTRA_SCREEN_BITRATE = "screen_bitrate_bps"
 
         const val PREF_MIC_MUTED = "service_mic_muted"
         const val PREF_SPK_MUTED = "service_spk_muted"
@@ -109,10 +113,15 @@ class HallaService : Service(), HallaCore.Callbacks {
             }
         }
 
-        fun startScreenShare(context: Context, permissionData: Intent) {
+        fun startScreenShare(context: Context, permissionData: Intent,
+                             width: Int, height: Int, fps: Int, bitrateBps: Int) {
             ContextCompat.startForegroundService(context, Intent(context, HallaService::class.java).apply {
                 action = ACTION_START_SCREEN_SHARE
                 putExtra(EXTRA_PROJECTION_DATA, permissionData)
+                putExtra(EXTRA_SCREEN_WIDTH, width)
+                putExtra(EXTRA_SCREEN_HEIGHT, height)
+                putExtra(EXTRA_SCREEN_FPS, fps)
+                putExtra(EXTRA_SCREEN_BITRATE, bitrateBps)
             })
         }
 
@@ -628,6 +637,11 @@ class HallaService : Service(), HallaCore.Callbacks {
         } else {
             @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_PROJECTION_DATA)
         } ?: return
+        val width = intent.getIntExtra(EXTRA_SCREEN_WIDTH, 1280).coerceIn(640, 3840)
+        val height = intent.getIntExtra(EXTRA_SCREEN_HEIGHT, 720).coerceIn(360, 2160)
+        val fps = intent.getIntExtra(EXTRA_SCREEN_FPS, 30).coerceIn(1, 60)
+        val bitrateBps = intent.getIntExtra(EXTRA_SCREEN_BITRATE, 2_500_000)
+            .coerceIn(500_000, 50_000_000)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
@@ -635,7 +649,8 @@ class HallaService : Service(), HallaCore.Callbacks {
                 startForeground(NOTIFICATION_ID,
                     buildNotification(t(R.string.notification_screen_sharing)), types)
             }
-            val broadcaster = HallaWebRtcBroadcaster(this, permissionData) {
+            val broadcaster = HallaWebRtcBroadcaster(
+                this, permissionData, width, height, fps, bitrateBps) {
                 handler.post {
                     screenAudioCapture?.stop()
                     screenAudioCapture = null
