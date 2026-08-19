@@ -22,7 +22,7 @@ class InputContrastPolicyTest {
             "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
         val input = File(root(),
             "app/src/main/kotlin/com/halla/mobile/HallaInputEditText.kt").readText()
-        assertTrue(activity.count("HallaInputEditText(") >= 30)
+        assertTrue(Regex("HallaInputEditText\\(").findAll(activity).count() >= 30)
         assertFalse(activity.contains("= EditText("))
         assertTrue(input.contains("setTextColor(Color.BLACK)"))
         assertTrue(input.contains("setHintTextColor(Color.parseColor(\"#475569\"))"))
