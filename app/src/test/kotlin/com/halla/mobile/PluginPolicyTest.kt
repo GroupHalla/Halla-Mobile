@@ -41,6 +41,16 @@ class PluginPolicyTest {
     }
 
     @Test
+    fun pluginDataPermissionsAreExposedToAdministrators() {
+        val activity = File(repositoryRoot(),
+            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
+        assertTrue(activity.contains("\"pluginData\" to getString(R.string.permission_plugin_data)"))
+        assertTrue(activity.contains("\"pluginDataGlobal\" to getString(R.string.permission_plugin_data_global)"))
+        assertTrue(activity.contains("key == \"pluginDataGlobal\""))
+        assertTrue(activity.contains("!hasPermission(\"*\")"))
+    }
+
+    @Test
     fun helloNegotiatesProtocolV5() {
         val bridge = File(repositoryRoot(), "app/src/main/cpp/jni_bridge.cpp").readText()
         assertTrue(bridge.contains("\\\"proto\\\":5"))

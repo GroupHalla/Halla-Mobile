@@ -330,6 +330,8 @@ Deseja baixar e instalar agora?</string>
     <string name="permission_edit_groups">Editar grupos e atribuições</string>
     <string name="permission_ignore_password">Ignorar senha de canal</string>
     <string name="permission_ignore_talk_power">Ignorar poder de fala</string>
+    <string name="permission_plugin_data">Dados de complementos no canal</string>
+    <string name="permission_plugin_data_global">Dados de complementos globais</string>
     <string name="permission_talk_power">Poder de fala</string>
     <string name="permissions_for_group">Suas permissões no grupo: %1$s</string>
     <string name="no_permissions">Nenhuma permissão concedida.</string>

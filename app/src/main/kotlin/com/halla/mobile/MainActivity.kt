@@ -1780,6 +1780,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 "move" to getString(R.string.permission_move),
                 "poke" to getString(R.string.permission_poke),
                 "privmsg" to getString(R.string.permission_private_message),
+                "pluginData" to getString(R.string.permission_plugin_data),
+                "pluginDataGlobal" to getString(R.string.permission_plugin_data_global),
                 "chanCreateTemp" to getString(R.string.permission_create_temp),
                 "chanCreateSemi" to getString(R.string.permission_create_semi),
                 "chanCreatePerm" to getString(R.string.permission_create_perm),
@@ -1819,6 +1821,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             "move" to getString(R.string.permission_move),
             "poke" to getString(R.string.permission_poke),
             "privmsg" to getString(R.string.permission_private_message),
+            "pluginData" to getString(R.string.permission_plugin_data),
+            "pluginDataGlobal" to getString(R.string.permission_plugin_data_global),
             "chanEdit" to getString(R.string.permission_edit_channel),
             "chanDelete" to getString(R.string.permission_delete_channel),
             "serverEdit" to getString(R.string.permission_edit_server),
@@ -1960,6 +1964,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             "move" to getString(R.string.permission_move),
             "poke" to getString(R.string.permission_poke),
             "privmsg" to getString(R.string.permission_private_message),
+            "pluginData" to getString(R.string.permission_plugin_data),
+            "pluginDataGlobal" to getString(R.string.permission_plugin_data_global),
             "chanCreateTemp" to getString(R.string.permission_create_temp),
             "chanCreateSemi" to getString(R.string.permission_create_semi),
             "chanCreatePerm" to getString(R.string.permission_create_perm),
@@ -1975,7 +1981,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 text = label
                 setTextColor(Color.WHITE)
                 isChecked = perms.optBoolean(key, false)
-                if (key == "*" && !hasPermission("*")) isEnabled = false
+                if ((key == "*" || key == "pluginDataGlobal")
+                    && !hasPermission("*")) isEnabled = false
             }
             checks[key] = check
             layout.addView(check)

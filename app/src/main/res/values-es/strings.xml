@@ -330,6 +330,8 @@ Notas de la versión:
     <string name="permission_edit_groups">Editar grupos y asignaciones</string>
     <string name="permission_ignore_password">Ignorar contraseña del canal</string>
     <string name="permission_ignore_talk_power">Ignorar poder de habla</string>
+    <string name="permission_plugin_data">Datos de complementos en el canal</string>
+    <string name="permission_plugin_data_global">Datos globales de complementos</string>
     <string name="permission_talk_power">Poder de habla</string>
     <string name="permissions_for_group">Tus permisos en el grupo: %1$s</string>
     <string name="no_permissions">No hay permisos concedidos.</string>

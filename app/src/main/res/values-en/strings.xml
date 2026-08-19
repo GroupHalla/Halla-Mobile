@@ -330,6 +330,8 @@ Download and install now?</string>
     <string name="permission_edit_groups">Edit groups and assignments</string>
     <string name="permission_ignore_password">Ignore channel password</string>
     <string name="permission_ignore_talk_power">Ignore talk power</string>
+    <string name="permission_plugin_data">Add-on data in the channel</string>
+    <string name="permission_plugin_data_global">Global add-on data</string>
     <string name="permission_talk_power">Talk power</string>
     <string name="permissions_for_group">Your permissions in group: %1$s</string>
     <string name="no_permissions">No permissions granted.</string>

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.61
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.62
 </p>
 
 ---
@@ -126,7 +126,8 @@ O sistema de complementos do Halla Desktop agora existe também no Mobile, em
   atenuação por distância e efeito de rádio por usuário.
 - **Transporte `plugin_data` (protocolo v5)**: complementos trocam payloads
   binários (≤ 8 KiB) com instâncias do mesmo complemento em outros clientes,
-  pelo canal TLS — o Mobile agora negocia protocolo v5 no `hello`.
+  pelo canal TLS. O servidor exige `pluginData`, limita alvos ao mesmo canal e
+  reserva broadcasts globais a `pluginDataGlobal`; o Mobile negocia v5 no `hello`.
 - **Complemento oficial embutido**: **Voz de rádio policial**, o mesmo DSP do
   Desktop (banda estreita, compressão, chiado configurável), aplicável ao
   enviar e/ou ao ouvir, sem precisar de `.so` externo.
