@@ -11,13 +11,18 @@ import java.security.KeyStore
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.X509EncodedKeySpec
 import java.util.concurrent.CopyOnWriteArraySet
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+import javax.crypto.spec.SecretKeySpec
 
 object HallaCore {
     private var appContext: Context? = null
@@ -32,7 +37,17 @@ object HallaCore {
     }
 
     private const val IDENTITY_MASTER_KEY_ALIAS = "halla.identity.master.v1"
+    private const val IDENTITY_BACKUP_FORMAT = "halla-identity-backup"
+    private const val IDENTITY_BACKUP_VERSION = 1
+    private const val IDENTITY_BACKUP_ITERATIONS = 310_000
+    private const val IDENTITY_BACKUP_MAX_BYTES = 128 * 1024
     private val fallbackEd25519Provider by lazy { BouncyCastleProvider() }
+
+    data class IdentityImportResult(
+        val alias: String,
+        val uid: String,
+        val name: String
+    )
 
     private fun identityMasterKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -86,6 +101,158 @@ object HallaCore {
         } catch (_: Throwable) {
             "BC-Ed25519" to KeyPairGenerator.getInstance(
                 "Ed25519", fallbackEd25519Provider).generateKeyPair()
+        }
+    }
+
+    private fun backupKey(password: CharArray, salt: ByteArray, iterations: Int): ByteArray {
+        require(password.size >= 10) { "A senha do backup precisa ter ao menos 10 caracteres" }
+        require(salt.size == 16) { "Salt inválido" }
+        require(iterations in 100_000..2_000_000) { "Custo PBKDF2 inválido" }
+        val spec = PBEKeySpec(password, salt, iterations, 256)
+        return try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
+        } finally {
+            spec.clearPassword()
+        }
+    }
+
+    private fun backupAad(alias: String, algorithm: String,
+                          publicKeyBase64: String): ByteArray =
+        "$IDENTITY_BACKUP_FORMAT|$IDENTITY_BACKUP_VERSION|$alias|$algorithm|$publicKeyBase64"
+            .toByteArray(Charsets.UTF_8)
+
+    private fun importedKeyAlgorithm(privateDer: ByteArray, publicDer: ByteArray): String {
+        val challenge = "Halla identity backup validation v1".toByteArray(Charsets.UTF_8)
+        val candidates = listOf<Pair<String, BouncyCastleProvider?>>("Ed25519" to null,
+            "BC-Ed25519" to fallbackEd25519Provider)
+        for ((storedAlgorithm, provider) in candidates) {
+            try {
+                val factory = if (provider == null) KeyFactory.getInstance("Ed25519")
+                    else KeyFactory.getInstance("Ed25519", provider)
+                val privateKey = factory.generatePrivate(PKCS8EncodedKeySpec(privateDer))
+                val publicKey = factory.generatePublic(X509EncodedKeySpec(publicDer))
+                val signer = if (provider == null) Signature.getInstance("Ed25519")
+                    else Signature.getInstance("Ed25519", provider)
+                signer.initSign(privateKey)
+                signer.update(challenge)
+                val signature = signer.sign()
+                val verifier = if (provider == null) Signature.getInstance("Ed25519")
+                    else Signature.getInstance("Ed25519", provider)
+                verifier.initVerify(publicKey)
+                verifier.update(challenge)
+                if (verifier.verify(signature)) return storedAlgorithm
+            } catch (_: Throwable) {
+                // Tenta o próximo provider. Isso torna backups criados em
+                // Android novo importáveis também em aparelhos mais antigos.
+            }
+        }
+        throw IllegalArgumentException("A chave privada não corresponde à chave pública")
+    }
+
+    /**
+     * Exporta a chave Ed25519 real, cifrada independentemente do Android
+     * Keystore. O arquivo só pode ser aberto com a senha escolhida pelo usuário.
+     */
+    fun exportIdentityBackup(uidAlias: String, identityName: String,
+                             password: CharArray): String {
+        val ctx = appContext ?: throw IllegalStateException("HallaCore não inicializado")
+        val alias = uidAlias.ifEmpty { "default" }
+        ensureIdentity(alias)
+        val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
+        val algorithm = prefs.getString("$alias.algorithm", "Ed25519") ?: "Ed25519"
+        val publicKeyBase64 = prefs.getString("$alias.public", "").orEmpty()
+        require(publicKeyBase64.isNotEmpty()) { "Chave pública ausente" }
+        val encryptedPrivate = prefs.getString("$alias.privateEncrypted", "").orEmpty()
+        val privateDer = decryptIdentityPrivateKey(encryptedPrivate)
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+        val derived = backupKey(password, salt, IDENTITY_BACKUP_ITERATIONS)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(derived, "AES"),
+                GCMParameterSpec(128, iv))
+            cipher.updateAAD(backupAad(alias, algorithm, publicKeyBase64))
+            val ciphertext = cipher.doFinal(privateDer)
+            val publicDer = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
+            val uid = Base64.encodeToString(
+                MessageDigest.getInstance("SHA-256").digest(publicDer), Base64.NO_WRAP)
+            return JSONObject()
+                .put("format", IDENTITY_BACKUP_FORMAT)
+                .put("version", IDENTITY_BACKUP_VERSION)
+                .put("name", identityName.take(80))
+                .put("alias", alias)
+                .put("uid", uid)
+                .put("algorithm", algorithm)
+                .put("public", publicKeyBase64)
+                .put("kdf", "PBKDF2-HMAC-SHA256")
+                .put("iterations", IDENTITY_BACKUP_ITERATIONS)
+                .put("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
+                .put("iv", Base64.encodeToString(iv, Base64.NO_WRAP))
+                .put("private", Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+                .toString(2)
+        } finally {
+            privateDer.fill(0)
+            derived.fill(0)
+            password.fill('\u0000')
+        }
+    }
+
+    /** Importa e reencapsula a identidade com uma nova chave do Android Keystore. */
+    fun importIdentityBackup(rawBackup: String, password: CharArray): IdentityImportResult {
+        require(rawBackup.toByteArray(Charsets.UTF_8).size <= IDENTITY_BACKUP_MAX_BYTES) {
+            "Arquivo de identidade muito grande"
+        }
+        val ctx = appContext ?: throw IllegalStateException("HallaCore não inicializado")
+        val json = JSONObject(rawBackup)
+        require(json.optString("format") == IDENTITY_BACKUP_FORMAT
+            && json.optInt("version") == IDENTITY_BACKUP_VERSION) {
+            "Formato de backup de identidade inválido"
+        }
+        require(json.optString("kdf") == "PBKDF2-HMAC-SHA256") { "KDF não suportado" }
+        val alias = json.optString("alias").trim()
+        require(alias.isNotEmpty() && alias.length <= 128
+            && alias.none { it.code < 0x20 }) { "Alias de identidade inválido" }
+        val backupAlgorithm = json.optString("algorithm")
+        require(backupAlgorithm in setOf("Ed25519", "BC-Ed25519", "EdDSA")) {
+            "Algoritmo de identidade inválido"
+        }
+        val publicKeyBase64 = json.optString("public")
+        val publicDer = Base64.decode(publicKeyBase64, Base64.NO_WRAP)
+        val salt = Base64.decode(json.optString("salt"), Base64.NO_WRAP)
+        val iv = Base64.decode(json.optString("iv"), Base64.NO_WRAP)
+        val ciphertext = Base64.decode(json.optString("private"), Base64.NO_WRAP)
+        require(publicDer.isNotEmpty() && publicDer.size <= 512
+            && salt.size == 16 && iv.size == 12
+            && ciphertext.isNotEmpty() && ciphertext.size <= 2048) {
+            "Campos criptográficos inválidos"
+        }
+        val iterations = json.optInt("iterations")
+        val derived = backupKey(password, salt, iterations)
+        var privateDer = ByteArray(0)
+        try {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(derived, "AES"),
+                GCMParameterSpec(128, iv))
+            cipher.updateAAD(backupAad(alias, backupAlgorithm, publicKeyBase64))
+            privateDer = cipher.doFinal(ciphertext)
+            val storageAlgorithm = importedKeyAlgorithm(privateDer, publicDer)
+            val uid = Base64.encodeToString(
+                MessageDigest.getInstance("SHA-256").digest(publicDer), Base64.NO_WRAP)
+            val declaredUid = json.optString("uid")
+            require(declaredUid.isEmpty() || declaredUid == uid) { "UID do backup não confere" }
+            val prefs = ctx.getSharedPreferences("HallaCryptoIdentities", Context.MODE_PRIVATE)
+            check(prefs.edit()
+                .putString("$alias.algorithm", storageAlgorithm)
+                .putString("$alias.public", publicKeyBase64)
+                .putString("$alias.privateEncrypted", encryptIdentityPrivateKey(privateDer))
+                .remove("$alias.private")
+                .commit()) { "Não foi possível salvar a identidade" }
+            return IdentityImportResult(alias, uid,
+                json.optString("name").take(80))
+        } finally {
+            privateDer.fill(0)
+            derived.fill(0)
+            password.fill('\u0000')
         }
     }
 

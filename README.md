@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.62
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.63
 </p>
 
 ---
@@ -98,7 +98,10 @@ acessado via JNI.
   quando disponível, com Bouncy Castle atualizado como implementação compatível
   de fallback em aparelhos mais antigos (API 26+). A chave privada é
   guardada cifrada com uma chave AES do **Android Keystore**, não em texto
-  puro.
+  puro. Como o Android apaga a Keystore ao desinstalar, o gerenciador de
+  identidades exporta um backup portátil protegido por senha (PBKDF2-SHA256 +
+  AES-256-GCM); ao importar após reinstalar, a mesma chave e o mesmo UID são
+  restaurados e reencapsulados pela nova Keystore.
 - Voz cifrada com ChaCha20-Poly1305 via **mbedTLS** (a mesma técnica AEAD do
   cliente desktop, implementação diferente por ser mais leve para Android).
 - Pipeline de release **assinado**: builds de tag exigem a keystore de

@@ -18,6 +18,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -46,6 +47,7 @@ import android.view.MotionEvent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
@@ -209,6 +211,40 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenShareMuteButton: Button? = null
     private var screenShareAudioMuted = false
     private var screenShareFrameCount = 0
+
+    private var pendingIdentityBackupContent: ByteArray? = null
+    private val createIdentityBackupDocument = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val content = pendingIdentityBackupContent
+        pendingIdentityBackupContent = null
+        try {
+            if (uri != null && content != null) {
+                contentResolver.openOutputStream(uri, "w")?.use { it.write(content) }
+                    ?: throw IllegalStateException(getString(R.string.identity_backup_write_failed))
+                Toast.makeText(this, getString(R.string.identity_backup_exported),
+                    Toast.LENGTH_LONG).show()
+            }
+        } catch (error: Throwable) {
+            Toast.makeText(this,
+                getString(R.string.identity_backup_failed, error.message ?: getString(R.string.unknown_failure)),
+                Toast.LENGTH_LONG).show()
+        } finally {
+            content?.fill(0)
+        }
+    }
+    private val openIdentityBackupDocument = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val raw = readIdentityBackupDocument(uri)
+            showImportIdentityBackupPasswordDialog(raw)
+        } catch (error: Throwable) {
+            Toast.makeText(this,
+                getString(R.string.identity_backup_failed, error.message ?: getString(R.string.unknown_failure)),
+                Toast.LENGTH_LONG).show()
+        }
+    }
+
     private var isChannelCommander = false
     private var isAway = false
     private var awayMessage = ""
@@ -3580,21 +3616,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showIdentityDetailsDialog(identity: JSONObject, index: Int) {
         val context = this
         val name = identity.getString("name")
-        val uid = identity.getString("uid")
+        val uid = identity.getString("uid") // alias local usado para localizar a chave
+        val cryptographicUid = HallaCore.prepareIdentity(context, uid)
 
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.identity_name) + ": " + name)
-            .setMessage(getString(R.string.identity_uid_full, uid))
+            .setMessage(getString(R.string.identity_uid_full, cryptographicUid))
             .setPositiveButton(getString(R.string.export_identity)) { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText(getString(R.string.identity_clip_label), uid)
-                clipboard.setPrimaryClip(clip)
-                val share = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, getString(R.string.identity_share_subject, name))
-                    putExtra(Intent.EXTRA_TEXT, uid)
-                }
-                startActivity(Intent.createChooser(share, getString(R.string.identity_share_chooser)))
+                showExportIdentityBackupDialog(name, uid)
             }
             .setNeutralButton(getString(R.string.whisper_delete)) { _, _ ->
                 if (index == 0) {
@@ -3810,53 +3839,137 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    private fun showImportIdentityDialog() {
+    private fun readIdentityBackupDocument(uri: Uri): String {
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException(getString(R.string.identity_backup_read_failed))
+        input.use { stream ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read < 0) break
+                if (read == 0) continue
+                if (output.size() + read > 128 * 1024)
+                    throw IllegalArgumentException(getString(R.string.identity_backup_too_large))
+                output.write(buffer, 0, read)
+            }
+            return output.toByteArray().toString(Charsets.UTF_8)
+        }
+    }
+
+    private fun passwordField(hintText: String) = EditText(this).apply {
+        hint = hintText
+        inputType = android.text.InputType.TYPE_CLASS_TEXT or
+            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setTextColor(Color.WHITE)
+        setHintTextColor(Color.parseColor("#94A3B8"))
+    }
+
+    private fun showExportIdentityBackupDialog(name: String, alias: String) {
+        HallaCore.prepareIdentity(this, alias)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 24, 40, 8)
+            setPadding(40, 20, 40, 8)
         }
-        val inputName = EditText(this).apply {
-            hint = getString(R.string.identity_name_hint)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
-        }
-        val inputUid = EditText(this).apply {
-            hint = getString(R.string.identity_uid_hint)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
-            setSingleLine(false)
-        }
-        layout.addView(inputName)
-        layout.addView(inputUid)
+        val password = passwordField(getString(R.string.identity_backup_password_hint))
+        val confirmation = passwordField(getString(R.string.identity_backup_confirm_hint))
+        layout.addView(password)
+        layout.addView(confirmation)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.export_identity))
+            .setMessage(getString(R.string.identity_backup_explanation))
+            .setView(layout)
+            .setPositiveButton(getString(R.string.export_identity)) { _, _ ->
+                val pass = password.text.toString().toCharArray()
+                val confirm = confirmation.text.toString().toCharArray()
+                try {
+                    if (pass.size < 10) {
+                        Toast.makeText(this, getString(R.string.identity_backup_password_short),
+                            Toast.LENGTH_LONG).show()
+                        return@setPositiveButton
+                    }
+                    if (!pass.contentEquals(confirm)) {
+                        Toast.makeText(this, getString(R.string.identity_backup_password_mismatch),
+                            Toast.LENGTH_LONG).show()
+                        return@setPositiveButton
+                    }
+                    val backup = HallaCore.exportIdentityBackup(alias, name, pass)
+                    pendingIdentityBackupContent?.fill(0)
+                    pendingIdentityBackupContent = backup.toByteArray(Charsets.UTF_8)
+                    val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
+                        .ifEmpty { "identity" }
+                    createIdentityBackupDocument.launch(
+                        "Halla-Identity-$safeName.halla-identity.json")
+                } catch (error: Throwable) {
+                    pendingIdentityBackupContent?.fill(0)
+                    pendingIdentityBackupContent = null
+                    Toast.makeText(this,
+                        getString(R.string.identity_backup_failed,
+                            error.message ?: getString(R.string.unknown_failure)),
+                        Toast.LENGTH_LONG).show()
+                } finally {
+                    pass.fill('\u0000')
+                    confirm.fill('\u0000')
+                }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
 
+    private fun showImportIdentityDialog() {
+        HallaCore.prepareIdentity(this, getOrCreateClientUid())
+        openIdentityBackupDocument.launch(arrayOf(
+            "application/json", "text/plain", "application/octet-stream"))
+    }
+
+    private fun showImportIdentityBackupPasswordDialog(rawBackup: String) {
+        val metadata = try { JSONObject(rawBackup) } catch (_: Throwable) { JSONObject() }
+        val suggestedName = metadata.optString("name", getString(R.string.default_identity))
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 8)
+        }
+        val name = EditText(this).apply {
+            hint = getString(R.string.identity_name_hint)
+            setText(suggestedName)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+        }
+        val password = passwordField(getString(R.string.identity_backup_password_hint))
+        layout.addView(name)
+        layout.addView(password)
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.import_identity))
-            .setMessage(getString(R.string.identity_import_paste))
+            .setMessage(getString(R.string.identity_backup_import_explanation))
             .setView(layout)
             .setPositiveButton(getString(R.string.import_identity)) { _, _ ->
-                val name = inputName.text.toString().trim()
-                val uid = inputUid.text.toString().trim()
-                if (name.isEmpty() || uid.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.name_uid_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val list = getSavedIdentities()
-                var replaced = false
-                for (i in 0 until list.length()) {
-                    if (list.getJSONObject(i).optString("uid") == uid) {
-                        list.getJSONObject(i).put("name", name)
-                        replaced = true
-                        break
-                    }
-                }
-                if (!replaced) {
-                    list.put(JSONObject().apply {
-                        put("name", name)
-                        put("uid", uid)
+                val pass = password.text.toString().toCharArray()
+                try {
+                    val result = HallaCore.importIdentityBackup(rawBackup, pass)
+                    val restoredName = name.text.toString().trim()
+                        .ifEmpty { result.name.ifEmpty { getString(R.string.default_identity) } }
+                    val previous = getSavedIdentities()
+                    val promoted = JSONArray().put(JSONObject().apply {
+                        put("name", restoredName)
+                        put("uid", result.alias)
                     })
+                    for (index in 0 until previous.length()) {
+                        val item = previous.optJSONObject(index) ?: continue
+                        if (item.optString("uid") != result.alias) promoted.put(item)
+                    }
+                    saveIdentities(promoted)
+                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
+                        .putString("client_uid", result.alias).apply()
+                    Toast.makeText(this,
+                        getString(R.string.identity_backup_imported, result.uid.take(12)),
+                        Toast.LENGTH_LONG).show()
+                } catch (error: Throwable) {
+                    Toast.makeText(this,
+                        getString(R.string.identity_backup_import_failed),
+                        Toast.LENGTH_LONG).show()
+                } finally {
+                    pass.fill('\u0000')
                 }
-                saveIdentities(list)
-                Toast.makeText(this, getString(R.string.identity_success), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -4044,6 +4157,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .unregisterAudioDeviceCallback(audioDeviceCallback)
         sensorManager?.unregisterListener(proximityListener)
         if (wakeLock?.isHeld == true) wakeLock?.release()
+        pendingIdentityBackupContent?.fill(0)
+        pendingIdentityBackupContent = null
         super.onDestroy()
     }
 
