@@ -4589,74 +4589,106 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnScreenShareModule.isActivated = sharing
     }
 
-    private fun availableScreenShareProfiles(): List<ScreenShareQualityProfile> {
-        data class Base(val width: Int, val height: Int, val bitrate30: Int, val bitrate60: Int)
-        val bases = listOf(
-            Base(1280, 720, 2500, 4500),
-            Base(1920, 1080, 4500, 8000),
-            Base(2560, 1440, 9000, 16000),
-            Base(3840, 2160, 18000, 32000)
-        )
-        val rates = if (screenShareMaxFps < 30) listOf(screenShareMaxFps)
-            else listOf(30, screenShareMaxFps).distinct()
-        val profiles = ArrayList<ScreenShareQualityProfile>()
-        for (base in bases) {
-            if (base.width > screenShareMaxWidth || base.height > screenShareMaxHeight) continue
-            for (fps in rates) {
-                val bitrate = if (fps <= 30) base.bitrate30 else
-                    base.bitrate30 + (base.bitrate60 - base.bitrate30) * (fps - 30) / 30
-                if (bitrate <= screenShareMaxBitrateKbps)
-                    profiles += ScreenShareQualityProfile(base.width, base.height, fps, bitrate)
-            }
+    private fun availableScreenShareResolutions(): List<ScreenShareQualityProfile> {
+        val labels = listOf(480, 720, 1080, 1440, 2160)
+        val resolutions = ArrayList<ScreenShareQualityProfile>()
+        for (height in labels) {
+            if (height > screenShareMaxHeight) continue
+            var width = (height.toDouble() * screenShareMaxWidth /
+                screenShareMaxHeight).toInt() and -2
+            width = width.coerceIn(2, screenShareMaxWidth)
+            if (width >= 640) resolutions += ScreenShareQualityProfile(width, height, 30, 1200)
         }
-        val exactStandard = bases.any {
-            it.width == screenShareMaxWidth && it.height == screenShareMaxHeight
+        if (screenShareMaxHeight !in labels && screenShareMaxHeight >= 360) {
+            resolutions += ScreenShareQualityProfile(
+                screenShareMaxWidth, screenShareMaxHeight, 30, 1200)
         }
-        if (!exactStandard) {
-            for (fps in rates) {
-                val reference = if (fps <= 30) 4500L else
-                    4500L + (8000L - 4500L) * (fps - 30) / 30
-                var bitrate = (reference * screenShareMaxWidth * screenShareMaxHeight /
-                    (1920L * 1080L)).toInt()
-                bitrate = maxOf(500, ((bitrate + 50) / 100) * 100)
-                if (bitrate <= screenShareMaxBitrateKbps) {
-                    profiles += ScreenShareQualityProfile(
-                        screenShareMaxWidth, screenShareMaxHeight, fps, bitrate)
-                }
-            }
+        if (resolutions.isEmpty()) resolutions += ScreenShareQualityProfile(
+            screenShareMaxWidth, screenShareMaxHeight, 30, 1200)
+        return resolutions
+    }
+
+    private fun recommendedScreenBitrate(width: Int, height: Int, fps: Int): Int {
+        val pair = when {
+            height <= 480 -> 1200 to 2500
+            height <= 720 -> 2500 to 4500
+            height <= 1080 -> 4500 to 8000
+            height <= 1440 -> 9000 to 16000
+            else -> 18000 to 32000
         }
-        if (profiles.isEmpty()) {
-            profiles += ScreenShareQualityProfile(
-                screenShareMaxWidth, screenShareMaxHeight,
-                screenShareMaxFps, screenShareMaxBitrateKbps)
-        }
-        return profiles
+        var bitrate = if (fps <= 30) pair.first else
+            pair.first + (pair.second - pair.first) * (fps - 30) / 30
+        val standardWidth = maxOf(1, (height * 16.0 / 9.0).toInt())
+        bitrate = maxOf(500, bitrate * width / standardWidth)
+        return minOf(bitrate, screenShareMaxBitrateKbps)
     }
 
     private fun showScreenShareQualityDialog() {
-        val profiles = availableScreenShareProfiles()
-        val labels = profiles.map { profile ->
-            val mbps = if (profile.bitrateKbps % 1000 == 0)
-                (profile.bitrateKbps / 1000).toString()
-            else String.format(java.util.Locale.US, "%.1f", profile.bitrateKbps / 1000.0)
-            val standard = (profile.width == 1280 && profile.height == 720)
-                || (profile.width == 1920 && profile.height == 1080)
-                || (profile.width == 2560 && profile.height == 1440)
-                || (profile.width == 3840 && profile.height == 2160)
-            if (standard) getString(
-                R.string.screen_quality_option, profile.height, profile.fps, mbps)
-            else getString(R.string.screen_quality_custom_option,
-                profile.width, profile.height, profile.fps, mbps)
-        }.toTypedArray()
-        var selected = profiles.lastIndex
+        val resolutions = availableScreenShareResolutions()
+        val resolutionLabels = resolutions.map { profile ->
+            val qualityName = when (profile.height) {
+                480 -> "480p"
+                720 -> "720p HD"
+                1080 -> "1080p Full HD"
+                1440 -> "1440p 2K"
+                2160 -> "2160p 4K"
+                else -> "${profile.height}p"
+            }
+            "$qualityName (${profile.width}x${profile.height})"
+        }
+        val fpsValues = if (screenShareMaxFps < 30) listOf(screenShareMaxFps)
+            else listOf(30, screenShareMaxFps).distinct()
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 20, 40, 8)
+        }
+        fun label(textValue: String) = TextView(this).apply {
+            text = textValue
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 10, 0, 4)
+        }
+        val resolutionSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity,
+                android.R.layout.simple_spinner_item, resolutionLabels).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(resolutions.lastIndex)
+        }
+        val fpsSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity,
+                android.R.layout.simple_spinner_item, fpsValues.map { "$it FPS" }).also {
+                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            setSelection(fpsValues.lastIndex)
+        }
+        val highest = resolutions.last()
+        val bitrateInput = HallaInputEditText(this).apply {
+            hint = getString(R.string.quality_bitrate_hint, screenShareMaxBitrateKbps)
+            setText(recommendedScreenBitrate(
+                highest.width, highest.height, fpsValues.last()).toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        layout.addView(label(getString(R.string.quality_resolution)))
+        layout.addView(resolutionSpinner)
+        layout.addView(label(getString(R.string.quality_fps)))
+        layout.addView(fpsSpinner)
+        layout.addView(label(getString(R.string.quality_bitrate_kbps)))
+        layout.addView(bitrateInput)
+
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.choose_screen_quality))
-            .setSingleChoiceItems(labels, selected) { _, which -> selected = which }
             .setMessage(getString(R.string.screen_quality_server_limit,
                 screenShareMaxWidth, screenShareMaxHeight,
                 screenShareMaxFps, screenShareMaxBitrateKbps))
+            .setView(layout)
             .setPositiveButton(getString(R.string.transmit)) { _, _ ->
-                pendingScreenShareProfile = profiles[selected.coerceIn(profiles.indices)]
+                val resolution = resolutions[resolutionSpinner.selectedItemPosition]
+                val fps = fpsValues[fpsSpinner.selectedItemPosition]
+                val bitrate = bitrateInput.text.toString().toIntOrNull()
+                    ?.coerceIn(500, screenShareMaxBitrateKbps)
+                    ?: recommendedScreenBitrate(resolution.width, resolution.height, fps)
+                pendingScreenShareProfile = ScreenShareQualityProfile(
+                    resolution.width, resolution.height, fps, bitrate)
                 val projection = getSystemService(
                     Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 startActivityForResult(
