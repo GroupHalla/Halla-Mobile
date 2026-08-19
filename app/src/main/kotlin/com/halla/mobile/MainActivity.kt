@@ -4218,10 +4218,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
+    private fun selfUniqueId(): String =
+        usersData.optJSONObject(findUserIndex(selfId))?.optString("uid", "").orEmpty()
+
+    private fun channelObject(channelId: Int): JSONObject? {
+        for (index in 0 until channelsData.length()) {
+            val channel = channelsData.optJSONObject(index) ?: continue
+            if (channel.optInt("id", 0) == channelId) return channel
+        }
+        return null
+    }
+
+    private fun isTemporaryChannelOwner(channelId: Int): Boolean {
+        val channel = channelObject(channelId) ?: return false
+        return channel.optInt("type", 2) == 0
+            && channel.optString("tempOwner", "") == selfUniqueId()
+    }
+
     private fun showChannelOptionsDialog(chanId: Int, chanName: String) {
         val context = this
         val hasSub = hasSubchannels(chanId)
         val isCollapsed = collapsedChannels.contains(chanId)
+        val channel = channelObject(chanId)
+        val selfUid = selfUniqueId()
+        val localOperator = channel?.optJSONArray("ops")?.let { ops ->
+            (0 until ops.length()).any { ops.optString(it) == selfUid }
+        } == true
+        val temporaryOwner = isTemporaryChannelOwner(chanId)
+        val canEdit = hasPermission("chanEdit") || temporaryOwner
+            || (channel?.optInt("type", 2) != 0 && localOperator)
 
         val options = ArrayList<String>()
         val joinLabel = "➦ ${getString(R.string.channel_join)}"
@@ -4229,7 +4254,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val collapseLabel = "📁 ${getString(R.string.channel_collapse)}"
         options.add(joinLabel)
         if (hasSub) options.add(if (isCollapsed) expandLabel else collapseLabel)
-        options.add("⚙️ ${getString(R.string.channel_edit)}")
+        if (canEdit) options.add("⚙️ ${getString(R.string.channel_edit)}")
         options.add("➕ ${getString(R.string.channel_create_sub)}")
 
         AlertDialog.Builder(context)
@@ -4243,7 +4268,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     else collapsedChannels.add(chanId)
                     rebuildChannelTree()
                 } else if (choice.contains(getString(R.string.channel_edit))) {
-                    showEditChannelDialog(chanId, chanName)
+                    showEditChannelDialog(chanId, chanName,
+                        temporaryOwner && !hasPermission("chanEdit"))
                 } else if (choice.contains(getString(R.string.create))) {
                     showCreateSubchannelDialog(chanId)
                 }
@@ -4282,21 +4308,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    private fun showEditChannelDialog(chanId: Int, currentName: String) {
+    private fun showEditChannelDialog(chanId: Int, currentName: String,
+                                      limitedTemporaryOwner: Boolean) {
         val context = this
-        var initialBitrate = 96
-        var initialNoSymbol = false
-        for (i in 0 until channelsData.length()) {
-            val channel = channelsData.optJSONObject(i) ?: continue
-            if (channel.optInt("id", -1) == chanId) {
-                initialBitrate = channel.optInt("bitrate", 96).coerceIn(16, 384)
-                initialNoSymbol = channel.optBoolean("noSymbol", false)
-                break
-            }
-        }
+        val channel = channelObject(chanId)
+        val initialBitrate = channel?.optInt("bitrate", 96)?.coerceIn(16, 384) ?: 96
+        val initialMax = channel?.optInt("max", -1)?.coerceIn(-1, activeMaxClients) ?: -1
+        val initialNoSymbol = channel?.optBoolean("noSymbol", false) ?: false
+        val initialDescription = channel?.optString("desc", "").orEmpty()
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
+            setPadding(40, 32, 40, 24)
+        }
+        if (limitedTemporaryOwner) {
+            layout.addView(TextView(context).apply {
+                text = getString(R.string.temporary_owner_limits)
+                setTextColor(Color.parseColor("#CBD5E1"))
+                setPadding(0, 0, 0, 16)
+            })
         }
         val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.channel_name)
@@ -4309,7 +4338,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val inputDesc = HallaInputEditText(context).apply {
             hint = getString(R.string.description)
-            setMinLines(5)
+            setText(initialDescription)
+            setMinLines(4)
             gravity = android.view.Gravity.TOP
         }
         val descriptionHint = TextView(context).apply {
@@ -4323,28 +4353,63 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setText(initialBitrate.toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val inputPass = HallaInputEditText(context).apply {
-            hint = getString(R.string.password_optional)
+        val inputMax = HallaInputEditText(context).apply {
+            hint = getString(R.string.max_clients_hint)
+            setText(initialMax.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-        layout.addView(inputName)
-        layout.addView(hideSymbol)
-        layout.addView(inputDesc)
-        layout.addView(descriptionHint)
+        val inputPass = HallaInputEditText(context).apply {
+            hint = getString(R.string.password_leave_unchanged)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val removePassword = CheckBox(context).apply {
+            text = getString(R.string.remove_channel_password)
+            setTextColor(Color.WHITE)
+        }
+        if (!limitedTemporaryOwner) {
+            layout.addView(inputName)
+            layout.addView(hideSymbol)
+            layout.addView(inputDesc)
+            layout.addView(descriptionHint)
+        }
         layout.addView(inputBitrate)
+        layout.addView(inputMax)
         layout.addView(inputPass)
+        layout.addView(removePassword)
 
         AlertDialog.Builder(context)
-            .setTitle(getString(R.string.edit_channel_title))
+            .setTitle(getString(if (limitedTemporaryOwner)
+                R.string.manage_temporary_channel else R.string.edit_channel_title))
             .setView(layout)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val name = inputName.text.toString().trimStart().trimEnd()
-                val desc = inputDesc.text.toString()
-                val pass = inputPass.text.toString().trim()
-                val bitrate = inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96
-                if (name.isNotEmpty()) {
-                    HallaCore.sendEditChannel(chanId, name, desc, pass, bitrate, hideSymbol.isChecked)
-                    Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
+                val bitrate = inputBitrate.text.toString().toIntOrNull()
+                    ?.coerceIn(16, 384) ?: initialBitrate
+                val maxClients = inputMax.text.toString().toIntOrNull()
+                    ?.coerceIn(-1, activeMaxClients) ?: initialMax
+                val request = JSONObject()
+                    .put("t", "chan_edit")
+                    .put("id", chanId)
+                    .put("bitrate", bitrate)
+                    .put("max", maxClients)
+                val password = inputPass.text.toString()
+                if (removePassword.isChecked) request.put("pass", "")
+                else if (password.isNotEmpty()) request.put("pass", password)
+
+                if (!limitedTemporaryOwner) {
+                    val name = inputName.text.toString().trimStart().trimEnd()
+                    if (name.isEmpty()) {
+                        Toast.makeText(context, getString(R.string.name_required_short),
+                            Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+                    request.put("name", name)
+                        .put("desc", inputDesc.text.toString())
+                        .put("noSymbol", hideSymbol.isChecked)
                 }
+                HallaCore.sendRawJson(request.toString())
+                Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -4399,6 +4464,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val awayLabel = if (isAway) getString(R.string.away_unmark) else getString(R.string.away_mark)
         val ownCommanderLabel = if (isChannelCommander) getString(R.string.commander_disable) else getString(R.string.commander_enable)
         val targetCommanderLabel = if (usr.optBoolean("cc", false)) getString(R.string.commander_disable) else getString(R.string.commander_enable)
+        val ownsTargetTemporaryChannel = isTemporaryChannelOwner(getChannelOfUser(userId))
         val options = ArrayList<String>()
         if (userId == selfId) {
             options.add("💤 $awayLabel")
@@ -4415,10 +4481,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             options.add("💬 ${getString(R.string.private_message)}")
             options.add("ℹ️ ${getString(R.string.client_info)}")
             if (canSetOtherCommander()) options.add("👑 $targetCommanderLabel")
-            options.add("➦ ${getString(R.string.move_to_channel)}")
-            options.add("🚫 ${getString(R.string.kick_channel)}")
-            options.add("🚫 ${getString(R.string.kick_server)}")
-            options.add("🚷 ${getString(R.string.ban_user)}")
+            if (hasPermission("move") || hasPermission("i_client_move_power"))
+                options.add("➦ ${getString(R.string.move_to_channel)}")
+            if (hasPermission("kick") || ownsTargetTemporaryChannel)
+                options.add("🚫 ${getString(R.string.kick_channel)}")
+            if (hasPermission("kick")) options.add("🚫 ${getString(R.string.kick_server)}")
+            if (hasPermission("ban")) options.add("🚷 ${getString(R.string.ban_user)}")
         }
 
         AlertDialog.Builder(context)

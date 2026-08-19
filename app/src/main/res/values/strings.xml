@@ -446,4 +446,9 @@ Deseja baixar e instalar agora?</string>
     <string name="mute_live_audio">Mutar áudio</string>
     <string name="unmute_live_audio">Ativar áudio</string>
     <string name="stop_watching_live">Parar de assistir</string>
+    <string name="temporary_owner_limits">Como criador deste canal temporário, você pode alterar somente a senha, o bitrate do codec e o máximo de clientes.</string>
+    <string name="manage_temporary_channel">Administrar canal temporário</string>
+    <string name="max_clients_hint">Máximo de clientes (-1 = ilimitado)</string>
+    <string name="password_leave_unchanged">Nova senha (vazio mantém a atual)</string>
+    <string name="remove_channel_password">Remover senha atual</string>
 </resources>

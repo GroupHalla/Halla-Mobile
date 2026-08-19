@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.64
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.65
 </p>
 
 ---
@@ -68,6 +68,8 @@ acessado via JNI.
 - Gravação local e diagnóstico de áudio (painel com status do pipeline de
   voz, útil para depurar problemas de microfone/alto-falante).
 - Reconexão silenciosa ao trocar de rede (Wi-Fi ↔ dados móveis).
+- Criadores de canais temporários recebem controles locais limitados: senha,
+  bitrate, máximo de clientes e expulsão apenas daquele canal.
 - Notificação persistente com ações rápidas (mudo do microfone, dos
   alto-falantes, desconectar) enquanto conectado.
 - Verificação e download de atualizações dentro do próprio app (checksum

@@ -446,4 +446,9 @@ Notas de la versión:
     <string name="mute_live_audio">Silenciar audio</string>
     <string name="unmute_live_audio">Activar audio</string>
     <string name="stop_watching_live">Dejar de ver</string>
+    <string name="temporary_owner_limits">Como creador de este canal temporal, solo puedes cambiar la contraseña, el bitrate del códec y el máximo de clientes.</string>
+    <string name="manage_temporary_channel">Administrar canal temporal</string>
+    <string name="max_clients_hint">Máximo de clientes (-1 = ilimitado)</string>
+    <string name="password_leave_unchanged">Nueva contraseña (vacío conserva la actual)</string>
+    <string name="remove_channel_password">Eliminar contraseña actual</string>
 </resources>

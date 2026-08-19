@@ -446,4 +446,9 @@ Download and install now?</string>
     <string name="mute_live_audio">Mute audio</string>
     <string name="unmute_live_audio">Unmute audio</string>
     <string name="stop_watching_live">Stop watching</string>
+    <string name="temporary_owner_limits">As the creator of this temporary channel, you can only change its password, codec bitrate, and maximum clients.</string>
+    <string name="manage_temporary_channel">Manage temporary channel</string>
+    <string name="max_clients_hint">Maximum clients (-1 = unlimited)</string>
+    <string name="password_leave_unchanged">New password (empty keeps the current one)</string>
+    <string name="remove_channel_password">Remove current password</string>
 </resources>
