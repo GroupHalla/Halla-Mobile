@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.63
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.64
 </p>
 
 ---
@@ -73,7 +73,8 @@ acessado via JNI.
 - Verificação e download de atualizações dentro do próprio app (checksum
   SHA-256 conferido antes de instalar).
 - Interface com tema claro/escuro (`Theme.AppCompat.DayNight`) e suporte a
-  RTL.
+  RTL. Campos de escrita criados por diálogos usam fundo claro, texto preto e
+  hint escuro explícitos, permanecendo legíveis nos dois temas e em skins OEM.
 - Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
   não só pelo sistema).
 - **Transmitir a própria tela em até 30 FPS e o áudio interno capturável** usando

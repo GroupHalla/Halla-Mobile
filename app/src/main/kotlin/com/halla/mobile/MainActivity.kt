@@ -1336,10 +1336,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     })
                 }
                 else -> {
-                    val edit = EditText(this).apply {
+                    val edit = HallaInputEditText(this).apply {
                         setText(current.optString(key, field.optString("default")))
-                        setTextColor(Color.WHITE)
-                        setHintTextColor(Color.parseColor("#64748B"))
                         hint = label
                     }
                     container.addView(edit)
@@ -1939,17 +1937,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 20, 36, 8)
         }
-        val name = EditText(this).apply {
+        val name = HallaInputEditText(this).apply {
             hint = getString(R.string.group_name)
             setText(source.optString("name", ""))
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
-        val sigla = EditText(this).apply {
+        val sigla = HallaInputEditText(this).apply {
             hint = getString(R.string.group_sigla)
             setText(source.optString("sigla", ""))
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val siglaPlacementLabel = TextView(this).apply {
             text = getString(R.string.group_sigla_position)
@@ -1964,23 +1958,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
             setSelection(if (source.optBoolean("siglaAfter", false)) 1 else 0)
         }
-        val order = EditText(this).apply {
+        val order = HallaInputEditText(this).apply {
             hint = getString(R.string.group_order)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(source.optInt("order", 0).toString())
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val orderEnabled = CheckBox(this).apply {
             text = getString(R.string.group_order_enabled)
             setTextColor(Color.WHITE)
             isChecked = source.optBoolean("orderEnabled", true)
         }
-        val icon = EditText(this).apply {
+        val icon = HallaInputEditText(this).apply {
             hint = getString(R.string.group_icon)
             setText(source.optString("icon", ""))
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(name)
         layout.addView(sigla)
@@ -2023,12 +2013,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             checks[key] = check
             layout.addView(check)
         }
-        val talkPower = EditText(this).apply {
+        val talkPower = HallaInputEditText(this).apply {
             hint = getString(R.string.talk_power)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(perms.optInt("talkPower", 0).toString())
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(talkPower)
 
@@ -2185,17 +2173,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 20, 36, 8)
         }
-        val name = EditText(this).apply {
+        val name = HallaInputEditText(this).apply {
             hint = getString(R.string.server_name_hint)
             setText(txtActiveServerName.text)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
-        val motd = EditText(this).apply {
+        val motd = HallaInputEditText(this).apply {
             hint = getString(R.string.server_motd_hint)
             setText(txtActiveMotd.text)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
             minLines = 3
         }
         layout.addView(name)
@@ -2249,43 +2233,33 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         dialogView.addView(txtTitle)
 
-        val inputName = EditText(context).apply {
+        val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.server_name_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("name") ?: "")
         }
         dialogView.addView(inputName)
 
-        val inputNick = EditText(context).apply {
+        val inputNick = HallaInputEditText(context).apply {
             hint = getString(R.string.nickname_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("nick") ?: "HallaMobile")
         }
         dialogView.addView(inputNick)
 
-        val inputHost = EditText(context).apply {
+        val inputHost = HallaInputEditText(context).apply {
             hint = getString(R.string.host_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             setText(editSrv?.optString("host") ?: "127.0.0.1")
         }
         dialogView.addView(inputHost)
 
-        val inputPort = EditText(context).apply {
+        val inputPort = HallaInputEditText(context).apply {
             hint = getString(R.string.port_label)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText(editSrv?.optString("port") ?: "9987")
         }
         dialogView.addView(inputPort)
 
-        val inputPass = EditText(context).apply {
+        val inputPass = HallaInputEditText(context).apply {
             hint = getString(R.string.server_password_optional)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(editSrv?.optString("pass") ?: "")
         }
@@ -3678,11 +3652,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(32, 12, 32, 4)
             setBackgroundColor(Color.parseColor("#151322"))
         }
-        val nameInput = EditText(this).apply {
+        val nameInput = HallaInputEditText(this).apply {
             hint = getString(R.string.whisper_name_hint)
             setText(existing?.optString("name", "") ?: "")
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
             setBackgroundColor(Color.parseColor("#0D0E15"))
             setPadding(16, 12, 16, 12)
         }
@@ -3822,10 +3794,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun showPrivilegeKeyDialog() {
-        val input = EditText(this).apply {
+        val input = HallaInputEditText(this).apply {
             hint = getString(R.string.privilege_hint)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.privilege_title))
@@ -3857,12 +3827,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    private fun passwordField(hintText: String) = EditText(this).apply {
+    private fun passwordField(hintText: String) = HallaInputEditText(this).apply {
         hint = hintText
         inputType = android.text.InputType.TYPE_CLASS_TEXT or
             android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        setTextColor(Color.WHITE)
-        setHintTextColor(Color.parseColor("#94A3B8"))
     }
 
     private fun showExportIdentityBackupDialog(name: String, alias: String) {
@@ -3929,11 +3897,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 20, 40, 8)
         }
-        val name = EditText(this).apply {
+        val name = HallaInputEditText(this).apply {
             hint = getString(R.string.identity_name_hint)
             setText(suggestedName)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val password = passwordField(getString(R.string.identity_backup_password_hint))
         layout.addView(name)
@@ -3981,15 +3947,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
         }
-        val inputName = EditText(context).apply {
+        val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.identity_name_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
-        val inputUid = EditText(context).apply {
+        val inputUid = HallaInputEditText(context).apply {
             hint = getString(R.string.uid_generate_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(inputName)
         layout.addView(inputUid)
@@ -4304,12 +4266,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             return
         }
 
-        val input = EditText(this).apply {
+        val input = HallaInputEditText(this).apply {
             hint = getString(R.string.channel_password)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                     android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.join_channel, chanName))
@@ -4338,21 +4298,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
         }
-        val inputName = EditText(context).apply {
+        val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.channel_name)
             setText(currentName)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
             setTextColor(Color.WHITE)
             isChecked = initialNoSymbol
         }
-        val inputDesc = EditText(context).apply {
+        val inputDesc = HallaInputEditText(context).apply {
             hint = getString(R.string.description)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
             setMinLines(5)
             gravity = android.view.Gravity.TOP
         }
@@ -4362,17 +4318,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             textSize = 12f
             setPadding(0, 4, 0, 10)
         }
-        val inputBitrate = EditText(context).apply {
+        val inputBitrate = HallaInputEditText(context).apply {
             hint = getString(R.string.bitrate_hint)
             setText(initialBitrate.toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
-        val inputPass = EditText(context).apply {
+        val inputPass = HallaInputEditText(context).apply {
             hint = getString(R.string.password_optional)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(inputName)
         layout.addView(hideSymbol)
@@ -4404,10 +4356,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
         }
-        val inputName = EditText(context).apply {
+        val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.subchannel_name)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
@@ -4772,10 +4722,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showAwayMessageDialog() {
         val context = this
-        val input = EditText(context).apply {
+        val input = HallaInputEditText(context).apply {
             hint = getString(R.string.away_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.away_title))
@@ -4791,10 +4739,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showChangeNicknameDialog() {
         val context = this
-        val input = EditText(context).apply {
+        val input = HallaInputEditText(context).apply {
             hint = getString(R.string.new_nickname_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.change_nickname))
@@ -4811,10 +4757,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showSendPokeDialog(toUserId: Int, targetName: String) {
         val context = this
-        val input = EditText(context).apply {
+        val input = HallaInputEditText(context).apply {
             hint = getString(R.string.poke_hint)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.poke_user_title, targetName))
@@ -4876,10 +4820,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun showKickDialog(userId: Int, fromServer: Boolean, userName: String) {
         val context = this
-        val input = EditText(context).apply {
+        val input = HallaInputEditText(context).apply {
             hint = getString(R.string.kick_reason)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(context)
             .setTitle(if (fromServer) getString(R.string.kick_title_server, userName) else getString(R.string.kick_title_channel, userName))
@@ -4899,16 +4841,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
         }
-        val inputReason = EditText(context).apply {
+        val inputReason = HallaInputEditText(context).apply {
             hint = getString(R.string.ban_reason)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
-        val inputMinutes = EditText(context).apply {
+        val inputMinutes = HallaInputEditText(context).apply {
             hint = getString(R.string.ban_time)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         layout.addView(inputReason)
         layout.addView(inputMinutes)
@@ -4971,10 +4909,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun showPrivateMessageDialog(userId: Int, targetName: String) {
         ensurePrivateChatTab(userId, targetName)
         selectChatTab("private:$userId")
-        val input = EditText(this).apply {
+        val input = HallaInputEditText(this).apply {
             hint = getString(R.string.private_message_hint, targetName)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.parseColor("#94A3B8"))
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.private_message))
