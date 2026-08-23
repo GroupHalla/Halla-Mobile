@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bolha do dock em repouso -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#1E1A2B" />
+    <corners android:radius="32dp" />
+</shape>

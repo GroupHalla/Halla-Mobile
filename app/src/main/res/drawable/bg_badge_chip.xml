@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chip translúcido arredondado para badges do banner do servidor e contadores -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#16FFFFFF" />
+    <corners android:radius="12dp" />
+</shape>

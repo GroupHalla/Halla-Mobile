@@ -187,7 +187,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_below="@+id/topAppBar"
-            android:background="#0D0E15"
+            android:background="#0D0B14"
             android:visibility="gone">
 
             <!-- Card de Destaque do Servidor (Top Banner Gradiente Metálico Roxo) -->
@@ -221,7 +221,7 @@
                     android:layout_height="48dp"
                     android:layout_alignParentStart="true"
                     android:layout_centerVertical="true"
-                    android:background="#0D0821">
+                    android:background="#241B45">
 
                     <ImageView
                         android:layout_width="24dp"
@@ -271,13 +271,13 @@
                             android:id="@+id/txtCardOnlineBadge"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:background="#0D0821"
+                            android:background="@drawable/bg_badge_chip"
                             android:paddingStart="10dp"
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
                             android:text="@string/online"
-                            android:textColor="#22C55E"
+                            android:textColor="#4ADE80"
                             android:textSize="11sp"
                             android:textStyle="bold" />
 
@@ -287,13 +287,13 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:background="#0D0821"
+                            android:background="@drawable/bg_badge_chip"
                             android:paddingStart="10dp"
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
                             android:text="@string/members_initial"
-                            android:textColor="#FFFFFF"
+                            android:textColor="#E7E5F0"
                             android:textSize="11sp"
                             android:textStyle="bold" />
 
@@ -303,13 +303,13 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:background="#0D0821"
+                            android:background="@drawable/bg_badge_chip"
                             android:paddingStart="10dp"
                             android:paddingTop="3dp"
                             android:paddingEnd="10dp"
                             android:paddingBottom="3dp"
                             android:text="@string/network_unknown"
-                            android:textColor="#94A3B8"
+                            android:textColor="#A5B4FC"
                             android:textSize="11sp"
                             android:textStyle="bold" />
 
@@ -347,31 +347,26 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="▼  "
-                        android:textColor="#8B5CF6"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
                     <ImageView
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:layout_marginEnd="6dp"
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:layout_marginEnd="8dp"
+                        android:alpha="0.9"
                         android:src="@drawable/halla_logo" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:letterSpacing="0.12"
                         android:text="@string/channels_voice"
-                        android:textColor="#94A3B8"
-                        android:textSize="12sp"
+                        android:textAllCaps="true"
+                        android:textColor="#8E89A8"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                 </LinearLayout>
 
-                <!-- Badge Contadora (Direita) + Seta de Recolhimento -->
+                <!-- Badge Contadora (Direita) -->
                 <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -384,23 +379,14 @@
                         android:id="@+id/txtCategoryChannelsCount"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="#151322"
-                        android:paddingStart="8dp"
+                        android:background="@drawable/bg_badge_chip"
+                        android:paddingStart="10dp"
                         android:paddingTop="2dp"
-                        android:paddingEnd="8dp"
+                        android:paddingEnd="10dp"
                         android:paddingBottom="2dp"
                         android:text="2"
-                        android:textColor="#FFFFFF"
+                        android:textColor="#A5B4FC"
                         android:textSize="11sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="10dp"
-                        android:text="▲"
-                        android:textColor="#94A3B8"
-                        android:textSize="12sp"
                         android:textStyle="bold" />
 
                 </LinearLayout>
@@ -436,7 +422,7 @@
                 android:layout_marginStart="16dp"
                 android:layout_marginEnd="16dp"
                 android:layout_marginBottom="16dp"
-                android:background="#141322"
+                android:background="@drawable/bg_dock"
                 android:elevation="12dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
@@ -511,7 +497,6 @@
                         android:layout_weight="1.4"
                         android:layout_marginStart="4dp"
                         android:layout_marginEnd="4dp"
-                        android:background="#8B5CF6"
                         android:gravity="center"
                         android:orientation="vertical">
 
