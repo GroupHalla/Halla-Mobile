@@ -1226,18 +1226,22 @@ class HallaService : Service(), HallaCore.Callbacks {
                 "chan_removed" -> removeChannel(welcome, obj.optInt("id", 0))
                 "group_list" -> obj.optJSONArray("groups")?.let { welcome.put("groups", it) }
                 "server_edit" -> {
-                    val server = welcome.optJSONObject("server") ?: return
-                    obj.optString("name").takeIf { it.isNotEmpty() }?.let {
-                        server.put("name", it)
-                        lastServerName = it
+                    val server = welcome.optJSONObject("server")
+                    if (server != null) {
+                        obj.optString("name").takeIf { it.isNotEmpty() }?.let {
+                            server.put("name", it)
+                            lastServerName = it
+                        }
+                        if (obj.has("motd")) {
+                            server.put("motd", obj.optString("motd"))
+                            lastMotd = obj.optString("motd")
+                        }
+                        if (obj.has("banner")) server.put("banner", obj.optString("banner", ""))
                     }
-                    if (obj.has("motd")) {
-                        server.put("motd", obj.optString("motd"))
-                        lastMotd = obj.optString("motd")
-                    }
-                    if (obj.has("banner")) server.put("banner", obj.optString("banner", ""))
                 }
+                else -> { /* eventos irrelevantes para o cache */ }
             }
+            Unit
         }
     }
 
