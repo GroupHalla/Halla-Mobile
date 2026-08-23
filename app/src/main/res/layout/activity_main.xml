@@ -8,14 +8,14 @@
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#0D0E15">
+        android:background="#0D0B14">
 
         <!-- Barra Superior (Top Bar) -->
         <RelativeLayout
             android:id="@+id/topAppBar"
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:background="#0B0E15"
+            android:background="#0D0B14"
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
@@ -584,11 +584,11 @@
                 android:layout_width="match_parent"
                 android:layout_height="350dp"
                 android:layout_alignParentBottom="true"
-                android:background="#141322"
+                android:background="@drawable/bg_chat_sheet"
                 android:clickable="true"
                 android:elevation="24dp"
                 android:focusable="true"
-                android:padding="12dp"
+                android:padding="16dp"
                 android:visibility="gone">
 
                 <!-- Header do Chat Overlay -->
@@ -596,14 +596,14 @@
                     android:id="@+id/chatOverlayHeader"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="10dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_alignParentStart="true"
                         android:text="@string/chat_title"
-                        android:textColor="#FFFFFF"
+                        android:textColor="#F1EEFA"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -614,7 +614,7 @@
                         android:layout_alignParentEnd="true"
                         android:background="?android:attr/selectableItemBackgroundBorderless"
                         android:text="✕"
-                        android:textColor="#94A3B8"
+                        android:textColor="#8E89A8"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -626,7 +626,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
                     android:layout_below="@+id/chatOverlayHeader"
-                    android:background="#3E434A" />
+                    android:background="#14FFFFFF" />
 
                 <!-- Abas: servidor, canal atual e conversas privadas dinâmicas -->
                 <HorizontalScrollView
@@ -658,6 +658,7 @@
                         android:id="@+id/txtChatBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:lineSpacingExtra="4dp"
                         android:textColor="#DCDFE3"
                         android:textSize="13sp" />
 
@@ -676,19 +677,22 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:background="#0D0E15"
+                        android:background="@drawable/bg_chat_input"
                         android:hint="@string/chat_hint"
                         android:inputType="text"
-                        android:padding="10dp"
-                        android:textColor="#DCDFE3"
-                        android:textColorHint="#5E636A" />
+                        android:paddingStart="16dp"
+                        android:paddingTop="12dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="12dp"
+                        android:textColor="#E7E5F0"
+                        android:textColorHint="#8E89A8" />
 
                     <Button
                         android:id="@+id/btnSendChat"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:backgroundTint="#8B5CF6"
+                        android:layout_marginStart="10dp"
+                        android:backgroundTint="#7C3AED"
                         android:text="@string/send"
                         android:textColor="#FFFFFF" />
 
@@ -706,7 +710,7 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_below="@+id/topAppBar"
-            android:background="#0D0E15"
+            android:background="#0D0B14"
             android:visibility="gone">
 
             <!-- Top Bar -->
@@ -714,7 +718,7 @@
                 android:id="@+id/settingsTopBar"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:background="#0F172A"
+                android:background="#0D0B14"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp">
 

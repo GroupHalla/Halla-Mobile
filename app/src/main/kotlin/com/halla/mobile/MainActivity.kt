@@ -413,7 +413,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnTransmissionMode = Button(this).apply {
             text = getString(R.string.voice_activation_mode)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -451,7 +451,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnWhisperLists = Button(this).apply {
             text = getString(R.string.whisper_list_button)
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -463,7 +463,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnVoiceDiagnostics = Button(this).apply {
             text = "Diagnóstico de voz"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12, 0, 0) }
             setOnClickListener {
@@ -533,7 +533,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             text = getString(R.string.floating_position,
                 positionNames[positionKeys.indexOf(current).coerceAtLeast(0)])
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             setOnClickListener {
                 val selected = positionKeys.indexOf(
                     prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
@@ -560,7 +560,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnManageIds = Button(this).apply {
             text = getString(R.string.manage_identities)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -576,7 +576,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnUsePrivilegeKey = Button(this).apply {
             text = getString(R.string.use_privilege_key)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -589,7 +589,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnLanguage = Button(this).apply {
             text = getString(R.string.settings_language)
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -965,7 +965,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val fileButton = Button(this).apply {
                 text = speechCueLabel(prefs.getString(key, "") ?: "")
                 setTextColor(Color.WHITE)
-                setBackgroundColor(Color.parseColor("#1C1B2B"))
+                background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { pickSpeechCueFile(key) }
             }
@@ -1621,15 +1621,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lParams.setMargins(0, 0, 0, 16)
+            lParams.setMargins(0, 0, 0, 14)
             layoutParams = lParams
-            setPadding(32, 32, 32, 32)
-            
+            setPadding(28, 26, 28, 26)
+
+            // Mesma linguagem visual dos canais: superfície neutra, canto
+            // generoso, contorno de luz e feedback de toque (ripple).
             val shape = GradientDrawable().apply {
-                setColor(Color.parseColor("#151322")) // Fundo escuro idêntico do mockup
-                cornerRadius = 16f
+                setColor(Color.parseColor("#16141F"))
+                cornerRadius = 20f
+                setStroke(dp(1), Color.parseColor("#14FFFFFF"))
             }
-            background = shape
+            background = RippleDrawable(
+                ColorStateList.valueOf(Color.parseColor("#1F8B5CF6")), shape, null)
         }
 
         // Linha 1: Nome do Servidor (Esquerda) e Três Pontinhos (Direita)
@@ -1640,23 +1644,48 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             )
         }
 
-        val txtSrvTitle = TextView(context).apply {
-            text = srv.getString("name")
-            setTextColor(Color.parseColor("#FFFFFF"))
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
+        // Avatar circular com a inicial do servidor, alinhado com os avatares
+        // de usuário dentro dos canais.
+        val titleRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
             val rParams = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT
             )
             rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
+            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
             layoutParams = rParams
         }
+        val txtSrvAvatar = TextView(context).apply {
+            text = srv.getString("name").take(1).uppercase()
+            setTextColor(Color.parseColor("#F1EEFA"))
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            gravity = android.view.Gravity.CENTER
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.parseColor("#3B2A6B"), Color.parseColor("#241B45"))
+            ).apply {
+                shape = GradientDrawable.OVAL
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply {
+                setMargins(0, 0, 16, 0)
+            }
+        }
+        val txtSrvTitle = TextView(context).apply {
+            text = srv.getString("name")
+            setTextColor(Color.parseColor("#F1EEFA"))
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+        }
+        titleRow.addView(txtSrvAvatar)
+        titleRow.addView(txtSrvTitle)
 
         val btnOptions = Button(context).apply {
             text = "⋮"
             textSize = 20f
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(Color.parseColor("#8E89A8"))
             background = ContextCompat.getDrawable(context, android.R.color.transparent)
             val rParams = RelativeLayout.LayoutParams(
                 72, 72
@@ -1682,46 +1711,56 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
         }
 
-        row1.addView(txtSrvTitle)
+        row1.addView(titleRow)
         row1.addView(btnOptions)
 
-        // Linha 2: Status (Esquerda) e Ping/Latência (Direita)
+        // Linha 2: chips de vagas (esquerda) e ping (direita)
         val row2 = RelativeLayout(context).apply {
             val lParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lParams.setMargins(0, 8, 0, 8)
+            lParams.setMargins(0, 12, 0, 0)
             layoutParams = lParams
         }
 
+        // Chip de vagas no mesmo estilo dos badges do banner
         val txtStatus = TextView(context).apply {
             val hasProbe = srv.has("onlineClients") && srv.has("maxClients")
             val savedSlots = srv.optString("slots", "0/32")
             text = if (hasProbe) getString(R.string.available_slots, savedSlots)
                    else getString(R.string.searching)
             tag = "slots_text_$index"
-            setTextColor(Color.parseColor("#94A3B8"))
-            textSize = 13f
+            setTextColor(Color.parseColor("#A5B4FC"))
+            textSize = 11f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(14, 5, 14, 5)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#241F33"))
+                cornerRadius = 12f
+            }
             val rParams = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT
             )
             rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
+            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
             layoutParams = rParams
         }
 
+        // Ping em destaque tipográfico (cor aplicada dinamicamente pelo probe)
         val txtPing = TextView(context).apply {
             text = getString(R.string.searching)
             tag = "ping_text_$index"
-            setTextColor(Color.parseColor("#94A3B8"))
-            textSize = 13f
+            setTextColor(Color.parseColor("#8E89A8"))
+            textSize = 12f
             setTypeface(null, Typeface.BOLD)
             val rParams = RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.WRAP_CONTENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT
             )
             rParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
             layoutParams = rParams
         }
 
@@ -1735,18 +1774,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lParams.setMargins(0, 4, 0, 4)
+            lParams.setMargins(0, 12, 0, 4)
             layoutParams = lParams
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
         val txtUserIcon = TextView(context).apply {
             text = "👤 "
-            textSize = 14f
+            textSize = 13f
         }
         val txtNickname = TextView(context).apply {
             text = srv.getString("nick")
-            setTextColor(Color.parseColor("#FFFFFF"))
+            setTextColor(Color.parseColor("#E7E5F0"))
             textSize = 14f
         }
         row3.addView(txtUserIcon)
@@ -1759,19 +1798,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            lParams.setMargins(0, 4, 0, 4)
+            lParams.setMargins(0, 4, 0, 0)
             layoutParams = lParams
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
 
         val txtServerIcon = TextView(context).apply {
             text = "🖥️ "
-            textSize = 14f
+            textSize = 13f
         }
         val txtAddress = TextView(context).apply {
             text = "${srv.getString("host")}:${srv.getInt("port")}"
-            setTextColor(Color.parseColor("#94A3B8"))
-            textSize = 14f
+            setTextColor(Color.parseColor("#8E89A8"))
+            textSize = 13f
         }
         row4.addView(txtServerIcon)
         row4.addView(txtAddress)
@@ -2323,7 +2362,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnSelectIdentity = Button(context).apply {
             text = getString(R.string.identity_label, selectedIdentityName)
-            setBackgroundColor(Color.parseColor("#1C1B2B"))
+            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
                 val list = getSavedIdentities()
@@ -3030,9 +3069,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onPingUpdated(pingMs: Int, packetLossPercent: Int) {
         runOnUiThread {
             val color = when {
-                packetLossPercent >= 20 || pingMs < 0 -> Color.parseColor("#EF4444")
-                packetLossPercent >= 5 || pingMs >= 180 -> Color.parseColor("#F59E0B")
-                else -> Color.parseColor("#22C55E")
+                packetLossPercent >= 20 || pingMs < 0 -> Color.parseColor("#F87171")
+                packetLossPercent >= 5 || pingMs >= 180 -> Color.parseColor("#FBBF24")
+                else -> Color.parseColor("#4ADE80")
             }
             val pingText = if (pingMs >= 0) "${pingMs}ms" else "--"
             txtNetworkQuality.text = getString(R.string.network_quality, pingText, packetLossPercent.toString())
@@ -5444,17 +5483,28 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (!::containerChatTabs.isInitialized) return
         containerChatTabs.removeAllViews()
         for ((key, label) in chatTabLabels) {
+            val active = key == activeChatKey
             val button = TextView(this).apply {
                 text = label
-                setTextColor(if (key == activeChatKey) Color.WHITE else Color.parseColor("#94A3B8"))
+                setTextColor(if (active) Color.WHITE else Color.parseColor("#A1A1B5"))
                 textSize = 12f
+                setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
                 gravity = Gravity.CENTER
-                setPadding(24, 10, 24, 10)
-                setBackgroundColor(if (key == activeChatKey) Color.parseColor("#8B5CF6")
-                                  else Color.parseColor("#1C1B2B"))
+                setPadding(22, 9, 22, 9)
+                background = GradientDrawable().apply {
+                    setColor(if (active) Color.parseColor("#7C3AED")
+                             else Color.parseColor("#1E1A2B"))
+                    cornerRadius = 18f
+                }
                 setOnClickListener { selectChatTab(key) }
             }
             containerChatTabs.addView(button)
+            // espaçamento entre chips
+            if (containerChatTabs.childCount > 0) {
+                (button.layoutParams as LinearLayout.LayoutParams).apply {
+                    setMargins(if (containerChatTabs.childCount == 1) 0 else 10, 0, 0, 0)
+                }
+            }
         }
     }
 
