@@ -222,6 +222,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenShareTitle: TextView? = null
     private var screenShareViewerControls: LinearLayout? = null
     private var screenShareMuteButton: Button? = null
+    private var screenShareTapCatcher: View? = null
     private var screenShareControlsVisible = true
     private val screenShareControlsHide = Runnable { hideLiveControls() }
     private var screenShareAudioMuted = false
@@ -5262,6 +5263,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             screenShareOverlay = overlay
             screenShareImage = image
             screenShareVideoHost = videoHost
+            screenShareTapCatcher = tapCatcher
             screenShareTitle = title
             screenShareViewerControls = viewerControls
             screenShareMuteButton = muteLive
@@ -5281,6 +5283,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         screenShareImage?.visibility = View.GONE
         screenShareVideoHost?.visibility = View.VISIBLE
         screenShareVideoHost?.bringToFront()
+        // O capturador de toques precisa ficar ACIMA do WebView (que consome
+        // qualquer gesto) para alternar os controles; título e botões
+        // permanecem acima dele.
+        screenShareTapCatcher?.bringToFront()
         screenShareVideoHost?.let { host ->
             try {
                 webRtcViewer = HallaWebRtcViewer(

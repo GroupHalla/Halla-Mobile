@@ -91,6 +91,14 @@ class HallaService : Service(), HallaCore.Callbacks {
         @Volatile private var lastMotd = ""
         @Volatile private var lastWelcomeJson = ""
 
+        // Cópia VIVA do welcome: os eventos incrementais (user_* , chan_*,
+        // group_list, server_edit) são aplicados aqui enquanto a sessão
+        // existe, mesmo com a Activity destruída. Ao reabrir o app, a Activity
+        // restaura o estado atual (incluindo quem está transmitindo) em vez
+        // do snapshot congelado do login.
+        @Volatile private var cachedWelcome: JSONObject? = null
+        private val welcomeLock = Any()
+
         fun start(context: Context, host: String, port: Int, nick: String, pass: String, uid: String) {
             val intent = Intent(context, HallaService::class.java).apply {
                 action = ACTION_START
@@ -199,7 +207,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         fun isReconnecting(): Boolean = reconnecting
         fun currentServerName(): String = lastServerName
         fun currentMotd(): String = lastMotd
-        fun currentWelcomeJson(): String = lastWelcomeJson
+        fun currentWelcomeJson(): String = synchronized(welcomeLock) {
+            cachedWelcome?.toString() ?: lastWelcomeJson
+        }
         fun voiceDiagnostics(): String = instance?.audio?.diagnosticsText()
             ?: "Serviço de voz não está ativo."
     }
@@ -868,7 +878,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     private fun resolveWhisperTargets(list: JSONObject): List<Int> {
-        val welcome = try { JSONObject(lastWelcomeJson) } catch (_: Exception) { return emptyList() }
+        val welcome = try { JSONObject(currentWelcomeJson()) } catch (_: Exception) { return emptyList() }
         val users = welcome.optJSONArray("users") ?: JSONArray()
         val channels = welcome.optJSONArray("channels") ?: JSONArray()
         val targets = list.optJSONArray("targets") ?: JSONArray()
@@ -1105,6 +1115,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         handler.post {
             sessionActive = false
             connecting = false
+            synchronized(welcomeLock) { cachedWelcome = null }
             audio.stop()
             if (shouldReconnect && !wasConnecting) {
                 scheduleReconnect(1500)
@@ -1122,6 +1133,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         lastWelcomeJson = welcomeJson
         try {
             val welcome = JSONObject(welcomeJson)
+            synchronized(welcomeLock) { cachedWelcome = welcome }
             selfId = welcome.optInt("selfId", 0)
             remoteTalking.clear()
             remoteWhispering.clear()
@@ -1177,14 +1189,183 @@ class HallaService : Service(), HallaCore.Callbacks {
                 for (i in 0 until users.length()) {
                     users.optJSONObject(i)?.let { updateRemoteUserState(it) }
                 }
+                synchronized(welcomeLock) { cachedWelcome?.put("users", users) }
             } else if (usersJson.trimStart().startsWith("{")) {
                 val obj = JSONObject(usersJson)
                 if (obj.optString("t") == "user_state") updateRemoteUserState(obj)
                 else if (obj.optString("t") == "user_moved" && obj.optInt("id", 0) == selfId) {
                     HallaCore.setCurrentChannel(obj.optInt("channel", 0))
                 }
+                applyWelcomeEvent(obj)
             }
         } catch (_: Exception) { }
+    }
+
+    // ==== Manutenção do welcome vivo =====================================
+    // Espelha no cache as mesmas mutações que a Activity aplica na própria
+    // árvore; assim o estado sobrevive à destruição da Activity (app fechado
+    // sem matar o serviço) e é restaurado atualizado no reabrir.
+
+    private fun applyWelcomeEvent(obj: JSONObject) {
+        synchronized(welcomeLock) {
+            val welcome = cachedWelcome ?: return
+            when (obj.optString("t")) {
+                "user_joined" -> {
+                    val user = obj.optJSONObject("user") ?: return
+                    updateOrAddUser(welcome, user)
+                    moveUserInChannels(welcome, user.optInt("id", 0), 1)
+                }
+                "user_left" -> removeUser(welcome, obj.optInt("id", 0))
+                "user_moved" ->
+                    moveUserInChannels(welcome, obj.optInt("id", 0), obj.optInt("channel", 0))
+                "user_state", "user_nick", "user_desc", "user_group" ->
+                    updateUserState(welcome, obj)
+                "user_screenshare_state" ->
+                    setScreensharing(welcome, obj.optInt("id", 0), obj.optBoolean("on", false))
+                "chan_update" -> obj.optJSONObject("chan")?.let { updateOrAddChannel(welcome, it) }
+                "chan_removed" -> removeChannel(welcome, obj.optInt("id", 0))
+                "group_list" -> obj.optJSONArray("groups")?.let { welcome.put("groups", it) }
+                "server_edit" -> {
+                    val server = welcome.optJSONObject("server") ?: return
+                    obj.optString("name").takeIf { it.isNotEmpty() }?.let {
+                        server.put("name", it)
+                        lastServerName = it
+                    }
+                    if (obj.has("motd")) {
+                        server.put("motd", obj.optString("motd"))
+                        lastMotd = obj.optString("motd")
+                    }
+                    if (obj.has("banner")) server.put("banner", obj.optString("banner", ""))
+                }
+            }
+        }
+    }
+
+    private fun usersOf(welcome: JSONObject): JSONArray =
+        welcome.optJSONArray("users") ?: JSONArray().also { welcome.put("users", it) }
+
+    private fun channelsOf(welcome: JSONObject): JSONArray =
+        welcome.optJSONArray("channels") ?: JSONArray().also { welcome.put("channels", it) }
+
+    private fun updateOrAddUser(welcome: JSONObject, user: JSONObject) {
+        val users = usersOf(welcome)
+        val uid = user.optInt("id", 0)
+        for (i in 0 until users.length()) {
+            if (users.optJSONObject(i)?.optInt("id", 0) == uid) {
+                users.put(i, user)
+                return
+            }
+        }
+        users.put(user)
+    }
+
+    private fun removeUser(welcome: JSONObject, userId: Int) {
+        val users = usersOf(welcome)
+        val newList = JSONArray()
+        for (i in 0 until users.length()) {
+            val u = users.optJSONObject(i) ?: continue
+            if (u.optInt("id", 0) != userId) newList.put(u)
+        }
+        welcome.put("users", newList)
+        val channels = channelsOf(welcome)
+        for (i in 0 until channels.length()) {
+            val chan = channels.optJSONObject(i) ?: continue
+            val arr = chan.optJSONArray("users") ?: continue
+            val kept = JSONArray()
+            for (j in 0 until arr.length()) {
+                if (arr.optInt(j, 0) != userId) kept.put(arr.optInt(j, 0))
+            }
+            chan.put("users", kept)
+        }
+    }
+
+    private fun moveUserInChannels(welcome: JSONObject, userId: Int, newChannelId: Int) {
+        val channels = channelsOf(welcome)
+        var targetExists = false
+        for (i in 0 until channels.length()) {
+            if (channels.optJSONObject(i)?.optInt("id", 0) == newChannelId) {
+                targetExists = true
+                break
+            }
+        }
+        if (newChannelId <= 0 || !targetExists) return
+        for (i in 0 until channels.length()) {
+            val chan = channels.optJSONObject(i) ?: continue
+            val arr = chan.optJSONArray("users") ?: continue
+            val kept = JSONArray()
+            for (j in 0 until arr.length()) {
+                if (arr.optInt(j, 0) != userId) kept.put(arr.optInt(j, 0))
+            }
+            chan.put("users", kept)
+        }
+        for (i in 0 until channels.length()) {
+            val chan = channels.optJSONObject(i) ?: continue
+            if (chan.optInt("id", 0) == newChannelId) {
+                val arr = chan.optJSONArray("users") ?: JSONArray().also { chan.put("users", it) }
+                var exists = false
+                for (j in 0 until arr.length()) {
+                    if (arr.optInt(j, 0) == userId) exists = true
+                }
+                if (!exists) arr.put(userId)
+                break
+            }
+        }
+    }
+
+    private fun updateUserState(welcome: JSONObject, state: JSONObject) {
+        val uid = state.optInt("id", 0)
+        val users = usersOf(welcome)
+        for (i in 0 until users.length()) {
+            val u = users.optJSONObject(i) ?: continue
+            if (u.optInt("id", 0) != uid) continue
+            for (key in listOf("talking", "whispering", "mic", "spk", "away",
+                               "rec", "screensharing", "cc")) {
+                if (state.has(key)) u.put(key, state.getBoolean(key))
+            }
+            for (key in listOf("name", "group", "sigla", "siglaSuffix", "icon")) {
+                if (state.has(key)) u.put(key, state.getString(key))
+            }
+            if (state.has("text")) u.put("desc", state.getString("text"))
+            if (state.has("order")) u.put("order", state.getInt("order"))
+            if (state.has("orderEnabled")) u.put("orderEnabled", state.getBoolean("orderEnabled"))
+            if (state.has("position")) u.put("position", state.getInt("position"))
+            if (state.has("siglaPosition")) u.put("siglaPosition", state.getInt("siglaPosition"))
+            break
+        }
+    }
+
+    private fun setScreensharing(welcome: JSONObject, userId: Int, on: Boolean) {
+        if (userId <= 0) return
+        val users = usersOf(welcome)
+        for (i in 0 until users.length()) {
+            val u = users.optJSONObject(i) ?: continue
+            if (u.optInt("id", 0) == userId) {
+                u.put("screensharing", on)
+                break
+            }
+        }
+    }
+
+    private fun updateOrAddChannel(welcome: JSONObject, chan: JSONObject) {
+        val channels = channelsOf(welcome)
+        val cid = chan.optInt("id", 0)
+        for (i in 0 until channels.length()) {
+            if (channels.optJSONObject(i)?.optInt("id", 0) == cid) {
+                channels.put(i, chan)
+                return
+            }
+        }
+        channels.put(chan)
+    }
+
+    private fun removeChannel(welcome: JSONObject, channelId: Int) {
+        val channels = channelsOf(welcome)
+        val newList = JSONArray()
+        for (i in 0 until channels.length()) {
+            val c = channels.optJSONObject(i) ?: continue
+            if (c.optInt("id", 0) != channelId) newList.put(c)
+        }
+        welcome.put("channels", newList)
     }
 
     override fun onChatMessageReceived(scope: String, fromUserId: Int, toUserId: Int, fromName: String, text: String) {
