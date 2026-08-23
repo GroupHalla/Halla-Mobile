@@ -413,7 +413,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         btnTransmissionMode = Button(this).apply {
             text = getString(R.string.voice_activation_mode)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -451,7 +451,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnWhisperLists = Button(this).apply {
             text = getString(R.string.whisper_list_button)
             setTextColor(Color.WHITE)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -463,7 +463,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnVoiceDiagnostics = Button(this).apply {
             text = "Diagnóstico de voz"
             setTextColor(Color.WHITE)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12, 0, 0) }
             setOnClickListener {
@@ -533,7 +533,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             text = getString(R.string.floating_position,
                 positionNames[positionKeys.indexOf(current).coerceAtLeast(0)])
             setTextColor(Color.WHITE)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setOnClickListener {
                 val selected = positionKeys.indexOf(
                     prefs.getString(HallaService.PREF_OVERLAY_POSITION, "bottom_end") ?: "bottom_end"
@@ -560,7 +560,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnManageIds = Button(this).apply {
             text = getString(R.string.manage_identities)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -576,7 +576,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnUsePrivilegeKey = Button(this).apply {
             text = getString(R.string.use_privilege_key)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -589,7 +589,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val btnLanguage = Button(this).apply {
             text = getString(R.string.settings_language)
             setTextColor(Color.WHITE)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -965,7 +965,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val fileButton = Button(this).apply {
                 text = speechCueLabel(prefs.getString(key, "") ?: "")
                 setTextColor(Color.WHITE)
-                background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+                background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener { pickSpeechCueFile(key) }
             }
@@ -2362,7 +2362,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         val btnSelectIdentity = Button(context).apply {
             text = getString(R.string.identity_label, selectedIdentityName)
-            background = ContextCompat.getDrawable(this, R.drawable.bg_dock_bubble)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
                 val list = getSavedIdentities()
