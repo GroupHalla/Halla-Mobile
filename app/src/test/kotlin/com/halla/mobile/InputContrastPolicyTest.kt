@@ -34,7 +34,14 @@ class InputContrastPolicyTest {
     fun chatInputKeepsItsIntentionalDarkTheme() {
         val layout = File(root(), "app/src/main/res/layout/activity_main.xml").readText()
         assertTrue(layout.contains("android:id=\"@+id/editChatMsg\""))
-        assertTrue(layout.contains("android:background=\"#0D0E15\""))
-        assertTrue(layout.contains("android:textColor=\"#DCDFE3\""))
+        // O campo usa a cápsula escura do sistema visual (bg_chat_input)
+        assertTrue(layout.contains("android:background=\"@drawable/bg_chat_input\""))
+        assertTrue(layout.contains("android:textColor=\"#E7E5F0\""))
+        assertTrue(layout.contains("android:textColorHint=\"#8E89A8\""))
+        // A cápsula permanece um fundo escuro com contorno sutil
+        val inputBg = File(root(),
+            "app/src/main/res/drawable/bg_chat_input.xml").readText()
+        assertTrue(inputBg.contains("android:color=\"#1E1A2B\""))
+        assertTrue(inputBg.contains("android:color=\"#14FFFFFF\""))
     }
 }
