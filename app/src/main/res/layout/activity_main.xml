@@ -217,15 +217,15 @@
             <!-- Logo oficial no banner do servidor -->
             <RelativeLayout
                     android:id="@+id/bannerLogoLayout"
-                    android:layout_width="96dp"
-                    android:layout_height="96dp"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
                     android:layout_alignParentStart="true"
                     android:layout_centerVertical="true"
                     android:background="#241B45">
 
                     <ImageView
-                        android:layout_width="64dp"
-                        android:layout_height="64dp"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
                         android:layout_centerInParent="true"
                         android:src="@drawable/halla_logo" />
 
