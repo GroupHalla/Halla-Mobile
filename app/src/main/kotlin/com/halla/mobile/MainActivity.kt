@@ -5273,20 +5273,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             screenShareMuteButton?.text = "🔇  ${getString(R.string.mute_live_audio)}"
         }
         screenShareOverlay?.bringToFront()
-        // A rotação pode relayoutar a árvore de views; reaplica a camada logo
-        // depois para garantir que a transmissão fique acima do app.
+        // A rotação pode relayoutar a árvore de views; reaplica a camada e a
+        // ordem interna (vídeo < capturador de toques < título/botões) logo
+        // depois para garantir que a transmissão fique acima do app e o
+        // toque continue alternando os controles.
         screenShareOverlay?.postDelayed({
             screenShareOverlay?.visibility = View.VISIBLE
             screenShareOverlay?.bringToFront()
+            restackViewerLayers()
         }, 250)
         webRtcViewer?.close()
         screenShareImage?.visibility = View.GONE
         screenShareVideoHost?.visibility = View.VISIBLE
-        screenShareVideoHost?.bringToFront()
-        // O capturador de toques precisa ficar ACIMA do WebView (que consome
-        // qualquer gesto) para alternar os controles; título e botões
-        // permanecem acima dele.
-        screenShareTapCatcher?.bringToFront()
         screenShareVideoHost?.let { host ->
             try {
                 webRtcViewer = HallaWebRtcViewer(
@@ -5297,12 +5295,27 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 return
             }
         }
-        screenShareTitle?.bringToFront()
-        screenShareViewerControls?.bringToFront()
+        // O WebView é criado dentro do videoHost acima; a ordem correta das
+        // camadas é reaplicada sempre DEPOIS da criação (e o viewer não faz
+        // mais bringToFront por conta própria).
+        restackViewerLayers()
         // Abre a transmissão mostrando os controles; eles somem sozinhos.
         showLiveControls()
         HallaCore.sendWebRtcWatchRequest(userId)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
+    }
+
+    // Ordem canônica das camadas do overlay de transmissão: vídeo (legado e
+    // WebRTC) fica atrás do capturador de toques, que alterna os controles;
+    // título e botões permanecem no topo. Toda mudança de hierarquia
+    // (criação do WebView, rotação, reaplicação do overlay) deve terminar
+    // chamando este método.
+    private fun restackViewerLayers() {
+        screenShareImage?.bringToFront()
+        screenShareVideoHost?.bringToFront()
+        screenShareTapCatcher?.bringToFront()
+        screenShareTitle?.bringToFront()
+        screenShareViewerControls?.bringToFront()
     }
 
     // ==== Controles imersivos da transmissão (mostrar/ocultar) ============
@@ -5362,6 +5375,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             android.util.Log.e("HallaWebRTC", "viewer init failed from signal", t)
                             Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
                         }
+                        // Reaplica a ordem das camadas após criar o WebView.
+                        restackViewerLayers()
                     }
                 }
                 webRtcViewer?.handleSignal(signal)

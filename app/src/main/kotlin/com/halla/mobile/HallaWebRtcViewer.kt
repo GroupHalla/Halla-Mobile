@@ -96,7 +96,10 @@ class HallaWebRtcViewer(
                 FrameLayout.LayoutParams.MATCH_PARENT
             ))
             container.visibility = android.view.View.VISIBLE
-            container.bringToFront()
+            // Nota: a ordem de camadas do overlay (vídeo < capturador de
+            // toques < título/botões) é gerenciada pela Activity; trazer o
+            // container para frente aqui cobriria o capturador e quebraria
+            // o alternar controles por toque.
             webView = web
             web.loadDataWithBaseURL(
                 "https://halla.local/webrtc-viewer/",
