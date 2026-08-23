@@ -4275,30 +4275,46 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             || (channel?.optInt("type", 2) != 0 && localOperator)
 
         val options = ArrayList<String>()
+        val actions = ArrayList<() -> Unit>()
         val joinLabel = "➦ ${getString(R.string.channel_join)}"
         val expandLabel = "📁 ${getString(R.string.channel_expand)}"
         val collapseLabel = "📁 ${getString(R.string.channel_collapse)}"
         options.add(joinLabel)
-        if (hasSub) options.add(if (isCollapsed) expandLabel else collapseLabel)
-        if (canEdit) options.add("⚙️ ${getString(R.string.channel_edit)}")
+        actions.add { joinChannelWithPassword(chanId, chanName) }
+        if (hasSub) {
+            options.add(if (isCollapsed) expandLabel else collapseLabel)
+            actions.add {
+                if (isCollapsed) collapsedChannels.remove(chanId)
+                else collapsedChannels.add(chanId)
+                rebuildChannelTree()
+            }
+        }
+        if (canEdit) {
+            options.add("⚙️ ${getString(R.string.channel_edit)}")
+            actions.add {
+                showEditChannelDialog(chanId, chanName,
+                    temporaryOwner && !hasPermission("chanEdit"))
+            }
+        }
         options.add("➕ ${getString(R.string.channel_create_sub)}")
+        actions.add { showCreateSubchannelDialog(chanId) }
+        // Administração completa (paridade com o desktop): mover, excluir e
+        // permissões por canal — cada item exige sua permissão global.
+        if (hasPermission("chanEdit")) {
+            options.add("↕️ ${getString(R.string.channel_move)}")
+            actions.add { moveChannel(chanId) }
+            options.add("🔐 ${getString(R.string.channel_perms)}")
+            actions.add { showChannelPermissionsDialog(chanId, chanName) }
+        }
+        if (hasPermission("chanDelete")) {
+            options.add("🗑️ ${getString(R.string.channel_delete)}")
+            actions.add { deleteChannel(chanId, chanName) }
+        }
 
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.channel_title, chanName))
             .setItems(options.toTypedArray()) { _, which ->
-                val choice = options[which]
-                if (choice == joinLabel) {
-                    joinChannelWithPassword(chanId, chanName)
-                } else if (choice == expandLabel || choice == collapseLabel) {
-                    if (isCollapsed) collapsedChannels.remove(chanId)
-                    else collapsedChannels.add(chanId)
-                    rebuildChannelTree()
-                } else if (choice.contains(getString(R.string.channel_edit))) {
-                    showEditChannelDialog(chanId, chanName,
-                        temporaryOwner && !hasPermission("chanEdit"))
-                } else if (choice.contains(getString(R.string.create))) {
-                    showCreateSubchannelDialog(chanId)
-                }
+                actions[which].invoke()
             }
             .show()
     }
@@ -4342,6 +4358,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val initialMax = channel?.optInt("max", -1)?.coerceIn(-1, activeMaxClients) ?: -1
         val initialNoSymbol = channel?.optBoolean("noSymbol", false) ?: false
         val initialDescription = channel?.optString("desc", "").orEmpty()
+        val initialTopic = channel?.optString("topic", "").orEmpty()
+        val initialType = channel?.optInt("type", 2) ?: 2
+        val initialCodec = (channel?.optInt("codec", 4) ?: 4).coerceIn(4, 5)
+        val initialQuality = (channel?.optInt("quality", 6) ?: 6).coerceIn(0, 10)
+        val initialModerated = channel?.optBoolean("moderated", false) ?: false
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 32, 40, 24)
@@ -4356,6 +4377,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.channel_name)
             setText(currentName)
+        }
+        val inputTopic = HallaInputEditText(context).apply {
+            hint = getString(R.string.channel_topic_hint)
+            setText(initialTopic)
         }
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
@@ -4394,21 +4419,73 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             text = getString(R.string.remove_channel_password)
             setTextColor(Color.WHITE)
         }
+        // Campos administrativos completos (paridade com o cliente desktop):
+        // tipo, codec, qualidade e moderação — visíveis para quem tem
+        // chanEdit global (donos de canal temporário continuam limitados).
+        val typeGroup = RadioGroup(context).apply { orientation = RadioGroup.VERTICAL }
+        val typeTemp = RadioButton(context).apply {
+            text = getString(R.string.channel_type_temporary); setTextColor(Color.WHITE)
+        }
+        val typeSemi = RadioButton(context).apply {
+            text = getString(R.string.channel_type_semi); setTextColor(Color.WHITE)
+        }
+        val typePerm = RadioButton(context).apply {
+            text = getString(R.string.channel_type_permanent); setTextColor(Color.WHITE)
+        }
+        typeGroup.addView(typeTemp); typeGroup.addView(typeSemi); typeGroup.addView(typePerm)
+        when (initialType) {
+            0 -> typeTemp.isChecked = true
+            1 -> typeSemi.isChecked = true
+            else -> typePerm.isChecked = true
+        }
+        val codecSpinner = android.widget.Spinner(context)
+        val codecNames = listOf("Opus Voice", "Opus Music")
+        codecSpinner.adapter = android.widget.ArrayAdapter(
+            context, android.R.layout.simple_spinner_dropdown_item, codecNames)
+        codecSpinner.setSelection(initialCodec - 4)
+        val inputQuality = HallaInputEditText(context).apply {
+            hint = getString(R.string.channel_quality_label)
+            setText(initialQuality.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val moderated = CheckBox(context).apply {
+            text = getString(R.string.channel_moderated)
+            setTextColor(Color.WHITE)
+            isChecked = initialModerated
+        }
+        val typeLabel = TextView(context).apply {
+            text = getString(R.string.channel_type_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 10, 0, 2)
+        }
+        val codecLabel = TextView(context).apply {
+            text = getString(R.string.channel_codec_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 10, 0, 2)
+        }
+
         if (!limitedTemporaryOwner) {
             layout.addView(inputName)
+            layout.addView(inputTopic)
             layout.addView(hideSymbol)
             layout.addView(inputDesc)
             layout.addView(descriptionHint)
+            layout.addView(typeLabel); layout.addView(typeGroup)
+            layout.addView(codecLabel); layout.addView(codecSpinner)
+            layout.addView(inputQuality)
+            layout.addView(moderated)
         }
         layout.addView(inputBitrate)
         layout.addView(inputMax)
         layout.addView(inputPass)
         layout.addView(removePassword)
 
+        val scroll = android.widget.ScrollView(context).apply { addView(layout) }
+
         AlertDialog.Builder(context)
             .setTitle(getString(if (limitedTemporaryOwner)
                 R.string.manage_temporary_channel else R.string.edit_channel_title))
-            .setView(layout)
+            .setView(scroll)
             .setPositiveButton(getString(R.string.save)) { _, _ ->
                 val bitrate = inputBitrate.text.toString().toIntOrNull()
                     ?.coerceIn(16, 384) ?: initialBitrate
@@ -4431,18 +4508,38 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         return@setPositiveButton
                     }
                     request.put("name", name)
+                        .put("topic", inputTopic.text.toString())
                         .put("desc", inputDesc.text.toString())
                         .put("noSymbol", hideSymbol.isChecked)
+                        .put("codec", 4 + codecSpinner.selectedItemPosition)
+                        .put("quality", inputQuality.text.toString().toIntOrNull()
+                            ?.coerceIn(0, 10) ?: initialQuality)
+                        .put("moderated", moderated.isChecked)
+                    request.put("type", when (typeGroup.checkedRadioButtonId) {
+                        typeTemp.id -> 0
+                        typeSemi.id -> 1
+                        else -> 2
+                    })
                 }
                 HallaCore.sendRawJson(request.toString())
-                Toast.makeText(context, getString(R.string.edit_request), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.edit_request_sent),
+                    Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
     }
 
     private fun showCreateSubchannelDialog(parentChanId: Int) {
+        showCreateChannelDialog(parentChanId)
+    }
+
+    // Criação completa de canal (paridade com o desktop): sem permissão de
+    // criação permanente/semi, cria temporário; com chanCreatePerm/Semi,
+    // o usuário escolhe o tipo.
+    private fun showCreateChannelDialog(parentChanId: Int) {
         val context = this
+        val canSemi = hasPermission("chanCreateSemi")
+        val canPerm = hasPermission("chanCreatePerm")
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
@@ -4450,33 +4547,267 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.subchannel_name)
         }
+        val inputTopic = HallaInputEditText(context).apply {
+            hint = getString(R.string.channel_topic_hint)
+        }
+        val inputPass = HallaInputEditText(context).apply {
+            hint = getString(R.string.password_optional)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
             setTextColor(Color.WHITE)
         }
+        val typeGroup = RadioGroup(context).apply { orientation = RadioGroup.VERTICAL }
+        val typeTemp = RadioButton(context).apply {
+            text = getString(R.string.channel_type_temporary); setTextColor(Color.WHITE)
+            isChecked = true
+        }
+        val typeSemi = RadioButton(context).apply {
+            text = getString(R.string.channel_type_semi); setTextColor(Color.WHITE)
+            isEnabled = canSemi
+        }
+        val typePerm = RadioButton(context).apply {
+            text = getString(R.string.channel_type_permanent); setTextColor(Color.WHITE)
+            isEnabled = canPerm
+        }
+        typeGroup.addView(typeTemp)
+        if (canSemi) typeGroup.addView(typeSemi)
+        if (canPerm) typeGroup.addView(typePerm)
+        val typeLabel = TextView(context).apply {
+            text = getString(R.string.channel_type_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 10, 0, 2)
+        }
+        val codecSpinner = android.widget.Spinner(context)
+        codecSpinner.adapter = android.widget.ArrayAdapter(
+            context, android.R.layout.simple_spinner_dropdown_item,
+            listOf("Opus Voice", "Opus Music"))
+        val codecLabel = TextView(context).apply {
+            text = getString(R.string.channel_codec_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            setPadding(0, 10, 0, 2)
+        }
+        val inputQuality = HallaInputEditText(context).apply {
+            hint = getString(R.string.channel_quality_label)
+            setText("6")
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val inputBitrate = HallaInputEditText(context).apply {
+            hint = getString(R.string.bitrate_hint)
+            setText("96")
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        val inputMax = HallaInputEditText(context).apply {
+            hint = getString(R.string.max_clients_hint)
+            setText("-1")
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        }
         layout.addView(inputName)
+        layout.addView(inputTopic)
+        layout.addView(inputPass)
         layout.addView(hideSymbol)
+        layout.addView(typeLabel); layout.addView(typeGroup)
+        layout.addView(codecLabel); layout.addView(codecSpinner)
+        layout.addView(inputQuality)
+        layout.addView(inputBitrate)
+        layout.addView(inputMax)
+
+        val scroll = android.widget.ScrollView(context).apply { addView(layout) }
 
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.create_subchannel_title))
-            .setView(layout)
+            .setView(scroll)
             .setPositiveButton(getString(R.string.create)) { _, _ ->
                 val name = inputName.text.toString().trimStart().trimEnd()
-                if (name.isNotEmpty()) {
-                    val msg = JSONObject().apply {
-                        put("t", "chan_create")
-                        put("parent", parentChanId)
-                        put("name", name)
-                        put("noSymbol", hideSymbol.isChecked)
-                        put("type", 0)
-                        put("codec", 4)
-                        put("quality", 6)
-                        put("bitrate", 96)
-                        put("max", -1)
-                    }.toString()
-                    HallaCore.sendRawJson(msg)
-                    Toast.makeText(context, getString(R.string.create_request), Toast.LENGTH_SHORT).show()
+                if (name.isEmpty()) {
+                    Toast.makeText(context, getString(R.string.name_required_short),
+                        Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
                 }
+                val type = when (typeGroup.checkedRadioButtonId) {
+                    typeSemi.id -> 1
+                    typePerm.id -> 2
+                    else -> 0
+                }
+                val msg = JSONObject().apply {
+                    put("t", "chan_create")
+                    put("parent", parentChanId)
+                    put("name", name)
+                    put("topic", inputTopic.text.toString())
+                    put("pass", inputPass.text.toString())
+                    put("noSymbol", hideSymbol.isChecked)
+                    put("type", type)
+                    put("codec", 4 + codecSpinner.selectedItemPosition)
+                    put("quality", inputQuality.text.toString().toIntOrNull()?.coerceIn(0, 10) ?: 6)
+                    put("bitrate", inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96)
+                    put("max", inputMax.text.toString().toIntOrNull() ?: -1)
+                }.toString()
+                HallaCore.sendRawJson(msg)
+                Toast.makeText(context, getString(R.string.create_request_sent),
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    // Exclusão de canal (perm chanDelete) com confirmação; canais com
+    // subcanais são recusados pelo servidor (has_children).
+    private fun deleteChannel(chanId: Int, chanName: String) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_delete))
+            .setMessage(getString(R.string.channel_delete_confirm, chanName))
+            .setPositiveButton(getString(R.string.delete)) { _, _ ->
+                HallaCore.sendRawJson(JSONObject()
+                    .put("t", "chan_delete")
+                    .put("id", chanId).toString())
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    // Move o canal para outro pai (perm chanEdit); raiz = parent 0.
+    private fun moveChannel(chanId: Int) {
+        val candidates = ArrayList<String>()
+        val targetIds = ArrayList<Int>()
+        candidates.add(getString(R.string.channel_move_root)); targetIds.add(0)
+        for (i in 0 until channelsData.length()) {
+            val chan = channelsData.optJSONObject(i) ?: continue
+            val id = chan.optInt("id", 0)
+            if (id == chanId) continue
+            // não oferece o canal nem seus descendentes como destino (ciclo)
+            if (isDescendantOf(id, chanId)) continue
+            candidates.add(chan.optString("name", "#$id")); targetIds.add(id)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_move))
+            .setItems(candidates.toTypedArray()) { _, which ->
+                HallaCore.sendRawJson(JSONObject()
+                    .put("t", "chan_move")
+                    .put("id", chanId)
+                    .put("parent", targetIds[which])
+                    .put("order", 0).toString())
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun isDescendantOf(candidateId: Int, ancestorId: Int): Boolean {
+        var cursor = candidateId
+        var depth = 0
+        while (depth++ < 100) {
+            val chan = channelObject(cursor) ?: return false
+            val parent = chan.optInt("parent", 0)
+            if (parent == 0) return false
+            if (parent == ancestorId) return true
+            cursor = parent
+        }
+        return false
+    }
+
+    // Permissões por cargo neste canal (groupPerms Allow/Deny/Inherit).
+    // Exige chanEdit; cada cargo configurado entra no payload com os
+    // overrides escolhidos; cargos não tocados seguem como estavam.
+    private fun showChannelPermissionsDialog(chanId: Int, chanName: String) {
+        if (serverGroupsData.length() == 0) {
+            HallaCore.sendRawJson(JSONObject().put("t", "group_list").toString())
+            Toast.makeText(this, getString(R.string.channel_perms_group_hint),
+                Toast.LENGTH_SHORT).show()
+            return
+        }
+        val channel = channelObject(chanId) ?: return
+        val existing = channel.optJSONObject("groupPerms") ?: JSONObject()
+        val groupNames = ArrayList<String>()
+        for (i in 0 until serverGroupsData.length()) {
+            val g = serverGroupsData.optJSONObject(i) ?: continue
+            groupNames.add(g.optString("name", "#${g.optInt("id", 0)}"))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.channel_perms))
+            .setMessage(getString(R.string.channel_perms_group_hint))
+            .setItems(groupNames.toTypedArray()) { _, which ->
+                val group = serverGroupsData.optJSONObject(which) ?: return@setItems
+                showGroupChannelPermEditor(chanId, chanName,
+                    group.optInt("id", 0), group.optString("name", ""),
+                    existing.optJSONObject(group.optInt("id", 0).toString())
+                        ?: JSONObject())
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun showGroupChannelPermEditor(chanId: Int, chanName: String,
+                                           groupId: Int, groupName: String,
+                                           current: JSONObject) {
+        val context = this
+        val permKeys = listOf(
+            "view" to getString(R.string.perm_view),
+            "join" to getString(R.string.perm_join),
+            "talk" to getString(R.string.perm_talk),
+            "text_chat" to getString(R.string.perm_text_chat),
+            "listen" to getString(R.string.perm_listen),
+            "pluginData" to getString(R.string.perm_plugin_data),
+            "file_upload" to getString(R.string.perm_file_upload),
+            "file_download" to getString(R.string.perm_file_download)
+        )
+        val layout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 24, 40, 24)
+        }
+        val rows = HashMap<String, Triple<RadioGroup, RadioButton, RadioButton>>()
+        for ((key, label) in permKeys) {
+            layout.addView(TextView(context).apply {
+                text = label; setTextColor(Color.WHITE); setPadding(0, 10, 0, 2)
+            })
+            val group = RadioGroup(context).apply { orientation = RadioGroup.HORIZONTAL }
+            val inherit = RadioButton(context).apply {
+                text = getString(R.string.perm_inherit); setTextColor(Color.LTGRAY)
+            }
+            val allow = RadioButton(context).apply {
+                text = getString(R.string.perm_allow); setTextColor(Color.GREEN)
+            }
+            val deny = RadioButton(context).apply {
+                text = getString(R.string.perm_deny); setTextColor(Color.RED)
+            }
+            group.addView(inherit); group.addView(allow); group.addView(deny)
+            val state = current.optInt(key, -1)
+            when (state) {
+                1 -> allow.isChecked = true
+                0 -> deny.isChecked = true
+                else -> inherit.isChecked = true
+            }
+            rows[key] = Triple(group, allow, deny)
+            layout.addView(group)
+        }
+        val scroll = android.widget.ScrollView(context).apply { addView(layout) }
+
+        AlertDialog.Builder(context)
+            .setTitle("$groupName — $chanName")
+            .setView(scroll)
+            .setPositiveButton(getString(R.string.save)) { _, _ ->
+                // Reaproveita as permissões já persistidas do canal e troca
+                // apenas o cargo editado; cargos intocados permanecem.
+                val channel = channelObject(chanId) ?: return@setPositiveButton
+                val permsOut = channel.optJSONObject("groupPerms") ?: JSONObject()
+                val groupPerms = JSONObject()
+                for ((key, triple) in rows) {
+                    val (group, allow, deny) = triple
+                    val value = when (group.checkedRadioButtonId) {
+                        allow.id -> 1
+                        deny.id -> 0
+                        else -> -1
+                    }
+                    if (value != -1) groupPerms.put(key, value)
+                }
+                permsOut.put(groupId.toString(), groupPerms)
+                HallaCore.sendRawJson(JSONObject()
+                    .put("t", "chan_edit")
+                    .put("id", chanId)
+                    .put("groupPerms", permsOut).toString())
+                Toast.makeText(context, getString(R.string.edit_request_sent),
+                    Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()

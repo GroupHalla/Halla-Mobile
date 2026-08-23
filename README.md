@@ -81,6 +81,12 @@ acessado via JNI.
   conceito do cliente desktop.
 - Canais, chat de texto (com histórico/rolagem), grupos de servidor/canal,
   permissões granulares, talk power, "cutucar" (poke).
+- Administração completa de canais (paridade com o Desktop): criação
+  temporária/semi-permanente/permanente com tópico, senha, codec, qualidade,
+  bitrate e limite de clientes; edição de todos os campos; exclusão com
+  confirmação; movimentação na hierarquia; e permissões por cargo com
+  Permitir/Negar/Herdar (visualizar, entrar, falar, chat, ouvir, complementos,
+  arquivos). Cada ação respeita as permissões do servidor.
 - Emblemas globais oficiais vinculados à UID, obtidos de um registro Ed25519
   assinado e mantidos em cache para funcionamento offline.
 - Roteamento de áudio para fone de ouvido/alto-falante/Bluetooth.
