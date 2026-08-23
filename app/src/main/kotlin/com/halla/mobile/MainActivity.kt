@@ -222,6 +222,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var screenShareTitle: TextView? = null
     private var screenShareViewerControls: LinearLayout? = null
     private var screenShareMuteButton: Button? = null
+    private var screenShareControlsVisible = true
+    private val screenShareControlsHide = Runnable { hideLiveControls() }
     private var screenShareAudioMuted = false
     private var screenShareFrameCount = 0
 
@@ -5159,42 +5161,43 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     FrameLayout.LayoutParams.MATCH_PARENT
                 )
             }
-            val title = TextView(this).apply {
-                text = "Transmissão de $name"
-                setTextColor(Color.WHITE)
-                textSize = 16f
-                setTypeface(null, Typeface.BOLD)
-                setPadding(24, 24, 24, 16)
-                setBackgroundColor(0x99000000.toInt())
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP
-                )
-            }
             val density = resources.displayMetrics.density
             fun dp(value: Int) = (value * density).toInt()
+            val title = TextView(this).apply {
+                text = "Transmissão de $name"
+                setTextColor(Color.parseColor("#F1EEFA"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                background = GradientDrawable().apply {
+                    setColor(0xB30D0B14.toInt())
+                    cornerRadius = dp(18).toFloat()
+                }
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.START
+                ).apply {
+                    setMargins(dp(16), dp(16), dp(16), 0)
+                }
+            }
             fun roundedButton(color: String) = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(14).toFloat()
+                cornerRadius = dp(26).toFloat()
                 setColor(Color.parseColor(color))
                 setStroke(dp(1), 0x33FFFFFF)
             }
+            // Controles flutuantes: duas cápsulas com elevation, sem faixa
+            // fixa no rodapé — a transmissão fica em tela cheia de verdade.
             val viewerControls = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(18).toFloat()
-                    setColor(0xE612141F.toInt())
-                    setStroke(dp(1), 0x33FFFFFF)
-                }
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                    dp(64), Gravity.BOTTOM
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
                 ).apply {
-                    setMargins(dp(20), 0, dp(20), dp(24))
+                    setMargins(dp(20), 0, dp(20), dp(20))
                 }
             }
             val muteLive = Button(this).apply {
@@ -5202,10 +5205,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 isAllCaps = false
                 textSize = 14f
                 setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = roundedButton("#343746")
-                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                    marginEnd = dp(8)
+                setTextColor(Color.parseColor("#F1EEFA"))
+                background = roundedButton("#2A2438")
+                elevation = dp(6).toFloat()
+                stateListAnimator = null
+                setPadding(dp(20), 0, dp(20), 0)
+                layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                    marginEnd = dp(10)
                 }
                 setOnClickListener {
                     screenShareAudioMuted = !screenShareAudioMuted
@@ -5213,6 +5219,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     text = if (screenShareAudioMuted)
                         "🔊  ${getString(R.string.unmute_live_audio)}"
                     else "🔇  ${getString(R.string.mute_live_audio)}"
+                    scheduleLiveControlsHide()
                 }
             }
             val stopLive = Button(this).apply {
@@ -5222,15 +5229,33 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.WHITE)
                 background = roundedButton("#D83B4D")
-                layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply {
-                    marginStart = dp(8)
+                elevation = dp(6).toFloat()
+                stateListAnimator = null
+                setPadding(dp(20), 0, dp(20), 0)
+                layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                    marginStart = dp(10)
                 }
                 setOnClickListener { stopWatchingScreenShare() }
             }
             viewerControls.addView(muteLive)
             viewerControls.addView(stopLive)
+            // Capturador de toques sobre o vídeo: alterna os controles. O
+            // vídeo (WebView legado/WebRTC) recebe gestos normais quando os
+            // controles estão ocultos… na prática um toque simples mostra os
+            // controles; o vídeo em si não precisa de interação.
+            val tapCatcher = View(this).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                setOnClickListener {
+                    if (screenShareControlsVisible) hideLiveControls()
+                    else showLiveControls()
+                }
+            }
             overlay.addView(image)
             overlay.addView(videoHost)
+            overlay.addView(tapCatcher)
             overlay.addView(title)
             overlay.addView(viewerControls)
             drawerLayout.addView(overlay)
@@ -5268,13 +5293,42 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         screenShareTitle?.bringToFront()
         screenShareViewerControls?.bringToFront()
+        // Abre a transmissão mostrando os controles; eles somem sozinhos.
+        showLiveControls()
         HallaCore.sendWebRtcWatchRequest(userId)
         Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
+    }
+
+    // ==== Controles imersivos da transmissão (mostrar/ocultar) ============
+
+    private fun showLiveControls() {
+        screenShareControlsVisible = true
+        screenShareTitle?.visibility = View.VISIBLE
+        screenShareViewerControls?.visibility = View.VISIBLE
+        screenShareTitle?.animate()?.alpha(1f)?.setDuration(180)?.start()
+        screenShareViewerControls?.animate()?.alpha(1f)?.setDuration(180)?.start()
+        scheduleLiveControlsHide()
+    }
+
+    private fun hideLiveControls() {
+        screenShareControlsVisible = false
+        screenShareTitle?.animate()?.alpha(0f)?.setDuration(180)
+            ?.withEndAction { screenShareTitle?.visibility = View.INVISIBLE }?.start()
+        screenShareViewerControls?.animate()?.alpha(0f)?.setDuration(180)
+            ?.withEndAction { screenShareViewerControls?.visibility = View.INVISIBLE }?.start()
+        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
+    }
+
+    private fun scheduleLiveControlsHide() {
+        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
+        screenShareOverlay?.postDelayed(screenShareControlsHide, 3500)
     }
 
     private fun stopWatchingScreenShare() {
         val previous = watchingStreamUserId
         if (previous > 0) HallaCore.sendWebRtcWatchStop(previous)
+        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
+        screenShareControlsVisible = true
         webRtcViewer?.close()
         webRtcViewer = null
         watchingStreamUserId = 0
