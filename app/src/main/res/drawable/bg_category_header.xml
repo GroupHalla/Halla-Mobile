@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cabeçalho de categoria de canais (=★ NOME ★=) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#13141C" />
+    <corners android:radius="16dp" />
+</shape>

@@ -10,6 +10,7 @@ Toque em + para adicionar.</string>
     <string name="about_version_static">Halla Mobile</string>
     <string name="record_static">Gravar</string>
     <string name="channels_voice">CANAIS DE VOZ</string>
+    <string name="search_channels">Buscar</string>
     <string name="messages">Mensagens</string>
     <string name="chat_title">Mensagens de texto</string>
     <string name="chat_hint">Escreva uma mensagem...</string>

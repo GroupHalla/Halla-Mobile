@@ -7,6 +7,7 @@ Tap + to add one.</string>
     <string name="server_motd">Welcome to the Halla server!</string>
     <string name="online">🟢 Online</string>
     <string name="channels_voice">VOICE CHANNELS</string>
+    <string name="search_channels">Search</string>
     <string name="messages">Messages</string>
     <string name="chat_title">Text messages</string>
     <string name="chat_hint">Write a message...</string>
