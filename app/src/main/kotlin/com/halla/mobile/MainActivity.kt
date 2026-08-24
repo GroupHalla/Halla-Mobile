@@ -3597,6 +3597,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             .filter { it.isNotEmpty() }
                             .joinToString(" ")
                         val isTalking = usr.optBoolean("talking", false)
+                        val isWhispering = usr.optBoolean("whispering", false)
+                        // Sussurro tem prioridade sobre a fala normal: o alvo
+                        // vê o indicador LARANJA; fala do canal fica verde.
+                        val talkTint = when {
+                            isWhispering -> "#F59E0B"
+                            isTalking -> "#4ADE80"
+                            else -> "#3E434A"
+                        }
 
                         // Linha do Usuário
                         val userRow = LinearLayout(this).apply {
@@ -3646,7 +3654,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         val viewStatusDot = View(this).apply {
                             val d = GradientDrawable().apply {
                                 shape = GradientDrawable.OVAL
-                                setColor(Color.parseColor(if (isTalking) "#4ADE80" else "#3E434A"))
+                                setColor(Color.parseColor(talkTint))
                                 setStroke(dp(2), Color.parseColor("#16141F"))
                             }
                             background = d
@@ -3660,12 +3668,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         avatarContainer.addView(viewStatusDot)
 
                         // Nome do usuário: branco suave; falando ganha o verde
-                        // de destaque (tom menos neon que o original).
+                        // de destaque, sussurrando (para você) ganha laranja.
                         val isAwayUsr = usr.optBoolean("away", false)
                         val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
                         val txtUser = TextView(this).apply {
                                 text = "$displayName$awayText"
-                            setTextColor(Color.parseColor(if (isTalking) "#4ADE80" else "#E7E5F0"))
+                            setTextColor(Color.parseColor(
+                                if (isWhispering) "#F59E0B"
+                                else if (isTalking) "#4ADE80"
+                                else "#E7E5F0"))
                             textSize = 14f
                             layoutParams = LinearLayout.LayoutParams(
                                 0,
