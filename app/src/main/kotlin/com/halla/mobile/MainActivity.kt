@@ -4777,32 +4777,49 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Campos administrativos completos (paridade com o cliente desktop):
         // tipo, codec, qualidade e moderação — visíveis para quem tem
         // chanEdit global (donos de canal temporário continuam limitados).
-        val typeGroup = RadioGroup(context).apply { orientation = RadioGroup.VERTICAL }
-        val typeTemp = RadioButton(context).apply {
-            text = getString(R.string.channel_type_temporary); setTextColor(Color.WHITE)
-        }
-        val typeSemi = RadioButton(context).apply {
-            text = getString(R.string.channel_type_semi); setTextColor(Color.WHITE)
-        }
-        val typePerm = RadioButton(context).apply {
-            text = getString(R.string.channel_type_permanent); setTextColor(Color.WHITE)
-        }
-        typeGroup.addView(typeTemp); typeGroup.addView(typeSemi); typeGroup.addView(typePerm)
-        when (initialType) {
-            0 -> typeTemp.isChecked = true
-            1 -> typeSemi.isChecked = true
-            else -> typePerm.isChecked = true
-        }
+        // Tipo em cartões com descrição + cadeado quando falta permissão.
+        val (typeSelector, selectedType) = buildChannelTypeSelector(
+            initialType,
+            hasPermission("chanCreateSemi"),
+            hasPermission("chanCreatePerm"))
         val codecSpinner = android.widget.Spinner(context)
         val codecNames = listOf("Opus Voice", "Opus Music")
-        codecSpinner.adapter = android.widget.ArrayAdapter(
-            context, android.R.layout.simple_spinner_dropdown_item, codecNames)
-        codecSpinner.setSelection(initialCodec - 4)
-        val inputQuality = HallaInputEditText(context).apply {
-            hint = getString(R.string.channel_quality_label)
-            setText(initialQuality.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        codecSpinner.adapter = object : ArrayAdapter<String>(
+            context, android.R.layout.simple_spinner_dropdown_item, codecNames
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#0D0E15"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getDropDownView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#151322"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
         }
+        codecSpinner.setSelection((initialCodec - 4).coerceIn(0, 1))
+        val qualityValue = TextView(context).apply {
+            text = getString(R.string.audio_quality_value, initialQuality)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(2))
+        }
+        val qualitySlider = android.widget.SeekBar(context).apply {
+            max = 10
+            progress = initialQuality
+            progressTintList = ColorStateList.valueOf(Color.parseColor("#8B5CF6"))
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A78BFA"))
+        }
+        qualitySlider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                qualityValue.text = getString(R.string.audio_quality_value, value)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+        })
         val moderated = CheckBox(context).apply {
             text = getString(R.string.channel_moderated)
             setTextColor(Color.WHITE)
@@ -4825,15 +4842,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layout.addView(hideSymbol)
             layout.addView(inputDesc)
             layout.addView(descriptionHint)
-            layout.addView(typeLabel); layout.addView(typeGroup)
-            layout.addView(codecLabel); layout.addView(codecSpinner)
-            layout.addView(inputQuality)
+            layout.addView(typeLabel); layout.addView(typeSelector)
             layout.addView(moderated)
         }
         layout.addView(inputBitrate)
         layout.addView(inputMax)
         layout.addView(inputPass)
         layout.addView(removePassword)
+        if (!limitedTemporaryOwner) {
+            val advancedBody = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(dp(4), 0, dp(4), dp(8))
+            }
+            advancedBody.addView(codecLabel)
+            advancedBody.addView(codecSpinner)
+            advancedBody.addView(qualityValue)
+            advancedBody.addView(qualitySlider)
+            layout.addView(buildAdvancedSettingsToggle(advancedBody))
+            layout.addView(advancedBody)
+        }
 
         val scroll = android.widget.ScrollView(context).apply { addView(layout) }
 
@@ -4867,14 +4895,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         .put("desc", inputDesc.text.toString())
                         .put("noSymbol", hideSymbol.isChecked)
                         .put("codec", 4 + codecSpinner.selectedItemPosition)
-                        .put("quality", inputQuality.text.toString().toIntOrNull()
-                            ?.coerceIn(0, 10) ?: initialQuality)
+                        .put("quality", qualitySlider.progress.coerceIn(0, 10))
                         .put("moderated", moderated.isChecked)
-                    request.put("type", when (typeGroup.checkedRadioButtonId) {
-                        typeTemp.id -> 0
-                        typeSemi.id -> 1
-                        else -> 2
-                    })
+                    request.put("type", selectedType())
                 }
                 HallaCore.sendRawJson(request.toString())
                 Toast.makeText(context, getString(R.string.edit_request_sent),
@@ -4888,6 +4911,132 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         showCreateChannelDialog(parentChanId)
     }
 
+    // Seletor de tipo de canal em CARTÕES, usado na criação e na edição.
+    // Cada opção mostra o nome curto, uma descrição do comportamento real
+    // ("some quando esvazia" etc.) e um cadeado quando o cargo do usuário não
+    // tem a permissão correspondente — antes eram rádios com texto técnico
+    // longo e sem explicação, e opções sem permissão simplesmente sumiam.
+    // Retorna o container e uma função que devolve o tipo selecionado (0/1/2).
+    private fun buildChannelTypeSelector(
+        initialType: Int,
+        allowSemi: Boolean,
+        allowPerm: Boolean,
+        onChanged: (Int) -> Unit = {}
+    ): Pair<LinearLayout, () -> Int> {
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        data class Option(val type: Int, val titleRes: Int, val descRes: Int, val allowed: Boolean)
+        val options = listOf(
+            Option(0, R.string.channel_type_temporary_short,
+                R.string.channel_type_temporary_desc, true),
+            Option(1, R.string.channel_type_semi_short,
+                R.string.channel_type_semi_desc, allowSemi),
+            Option(2, R.string.channel_type_permanent_short,
+                R.string.channel_type_permanent_desc, allowPerm)
+        )
+        var current = when {
+            initialType == 1 && allowSemi -> 1
+            initialType == 2 && allowPerm -> 2
+            else -> 0
+        }
+        val cards = HashMap<Int, LinearLayout>()
+        val titles = HashMap<Int, TextView>()
+
+        fun paint() {
+            for (opt in options) {
+                val card = cards[opt.type] ?: continue
+                val selected = opt.type == current
+                card.background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.parseColor(
+                        if (selected) "#241B45" else "#0D0E15"))
+                    setStroke(
+                        if (selected) dp(2) else dp(1),
+                        Color.parseColor(when {
+                            selected -> "#A78BFA"
+                            opt.allowed -> "#26223F"
+                            else -> "#1A1826"
+                        }))
+                }
+                card.alpha = if (opt.allowed) 1f else 0.55f
+                titles[opt.type]?.setTextColor(Color.parseColor(
+                    if (selected) "#E9E4FF" else "#E7E5F0"))
+            }
+        }
+
+        for (opt in options) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(8) }
+                isClickable = opt.allowed
+                isFocusable = opt.allowed
+            }
+            val title = TextView(this).apply {
+                text = getString(opt.titleRes)
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+            }
+            card.addView(title)
+            val desc = TextView(this).apply {
+                text = getString(opt.descRes)
+                setTextColor(Color.parseColor("#94A3B8"))
+                textSize = 12.5f
+                setPadding(0, dp(2), 0, 0)
+            }
+            card.addView(desc)
+            if (!opt.allowed) {
+                val lock = TextView(this).apply {
+                    text = getString(R.string.channel_type_requires_perm)
+                    setTextColor(Color.parseColor("#7C6FA8"))
+                    textSize = 11.5f
+                    setPadding(0, dp(4), 0, 0)
+                }
+                card.addView(lock)
+            }
+            card.setOnClickListener {
+                if (!opt.allowed) return@setOnClickListener
+                current = opt.type
+                paint()
+                onChanged(current)
+            }
+            cards[opt.type] = card
+            titles[opt.type] = title
+            container.addView(card)
+        }
+        paint()
+        return Pair(container, { current })
+    }
+
+    // Cabeçalho recolhível de "Configurações avançadas": mantém os campos
+    // técnicos (codec, qualidade, bitrate, limite) fora do caminho de quem
+    // só quer criar um canal com nome — mas a um toque de distância, com
+    // rótulos legíveis em vez de campos soltos cheios de números.
+    private fun buildAdvancedSettingsToggle(body: LinearLayout): TextView {
+        val header = TextView(this).apply {
+            text = "▸  ${getString(R.string.advanced_settings)}"
+            setTextColor(Color.parseColor("#A78BFA"))
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setPadding(0, dp(14), 0, dp(6))
+            isClickable = true
+            isFocusable = true
+        }
+        header.setOnClickListener {
+            if (body.visibility == View.VISIBLE) {
+                body.visibility = View.GONE
+                header.text = "▸  ${getString(R.string.advanced_settings)}"
+            } else {
+                body.visibility = View.VISIBLE
+                header.text = "▾  ${getString(R.string.advanced_settings)}"
+            }
+        }
+        return header
+    }
+
     // Criação completa de canal (paridade com o desktop): sem permissão de
     // criação permanente/semi, cria temporário; com chanCreatePerm/Semi,
     // o usuário escolhe o tipo.
@@ -4897,8 +5046,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val canPerm = hasPermission("chanCreatePerm")
         val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
+            setPadding(32, 24, 32, 16)
+            setBackgroundColor(Color.parseColor("#151322"))
         }
+
         val inputName = HallaInputEditText(context).apply {
             hint = getString(R.string.subchannel_name)
         }
@@ -4910,65 +5061,114 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
+        layout.addView(inputName)
+        layout.addView(inputTopic)
+        layout.addView(inputPass)
+        (0..2).forEach { layout.addView(View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(1, dp(8))
+        }) }
+
+        // Tipo do canal em cartões com descrição do comportamento; opções
+        // sem permissão ficam visíveis com cadeado (antes simplesmente não
+        // apareciam e o rádio único parecia um bug).
+        val typeLabel = TextView(context).apply {
+            text = getString(R.string.channel_type_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+        }
+        val (typeSelector, selectedType) = buildChannelTypeSelector(0, canSemi, canPerm)
+        layout.addView(typeLabel)
+        layout.addView(typeSelector)
+
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
             setTextColor(Color.WHITE)
         }
-        val typeGroup = RadioGroup(context).apply { orientation = RadioGroup.VERTICAL }
-        val typeTemp = RadioButton(context).apply {
-            text = getString(R.string.channel_type_temporary); setTextColor(Color.WHITE)
-            isChecked = true
+        layout.addView(hideSymbol)
+
+        // ---- Configurações avançadas (recolhidas por padrão) -------------
+        val advancedBody = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(dp(4), 0, dp(4), dp(8))
         }
-        val typeSemi = RadioButton(context).apply {
-            text = getString(R.string.channel_type_semi); setTextColor(Color.WHITE)
-            isEnabled = canSemi
-        }
-        val typePerm = RadioButton(context).apply {
-            text = getString(R.string.channel_type_permanent); setTextColor(Color.WHITE)
-            isEnabled = canPerm
-        }
-        typeGroup.addView(typeTemp)
-        if (canSemi) typeGroup.addView(typeSemi)
-        if (canPerm) typeGroup.addView(typePerm)
-        val typeLabel = TextView(context).apply {
-            text = getString(R.string.channel_type_label)
+        val codecLabel = TextView(context).apply {
+            text = getString(R.string.codec_label)
             setTextColor(Color.parseColor("#CBD5E1"))
-            setPadding(0, 10, 0, 2)
+            textSize = 13f
+            setPadding(0, dp(8), 0, dp(4))
         }
         val codecSpinner = android.widget.Spinner(context)
-        codecSpinner.adapter = android.widget.ArrayAdapter(
+        codecSpinner.adapter = object : ArrayAdapter<String>(
             context, android.R.layout.simple_spinner_dropdown_item,
-            listOf("Opus Voice", "Opus Music"))
-        val codecLabel = TextView(context).apply {
-            text = getString(R.string.channel_codec_label)
-            setTextColor(Color.parseColor("#CBD5E1"))
-            setPadding(0, 10, 0, 2)
+            listOf("Opus Voice", "Opus Music")
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#0D0E15"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getDropDownView(position, convertView, parent).apply {
+                    setBackgroundColor(Color.parseColor("#151322"))
+                    (this as? TextView)?.setTextColor(Color.WHITE)
+                }
+            }
         }
-        val inputQuality = HallaInputEditText(context).apply {
-            hint = getString(R.string.channel_quality_label)
-            setText("6")
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        // Qualidade como SLIDER com valor legível — o campo numérico solto
+        // ("6") não dizia o que era nem o intervalo.
+        val qualityValue = TextView(context).apply {
+            text = getString(R.string.audio_quality_value, 6)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(2))
+        }
+        val qualitySlider = android.widget.SeekBar(context).apply {
+            max = 10
+            progress = 6
+            progressTintList = ColorStateList.valueOf(Color.parseColor("#8B5CF6"))
+            thumbTintList = ColorStateList.valueOf(Color.parseColor("#A78BFA"))
+        }
+        qualitySlider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, value: Int, fromUser: Boolean) {
+                qualityValue.text = getString(R.string.audio_quality_value, value)
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+        })
+        val bitrateLabel = TextView(context).apply {
+            text = getString(R.string.bitrate_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(4))
         }
         val inputBitrate = HallaInputEditText(context).apply {
-            hint = getString(R.string.bitrate_hint)
             setText("96")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val inputMax = HallaInputEditText(context).apply {
-            hint = getString(R.string.max_clients_hint)
-            setText("-1")
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
-                android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
+        val maxLabel = TextView(context).apply {
+            text = getString(R.string.max_clients_label)
+            setTextColor(Color.parseColor("#CBD5E1"))
+            textSize = 13f
+            setPadding(0, dp(10), 0, dp(4))
         }
-        layout.addView(inputName)
-        layout.addView(inputTopic)
-        layout.addView(inputPass)
-        layout.addView(hideSymbol)
-        layout.addView(typeLabel); layout.addView(typeGroup)
-        layout.addView(codecLabel); layout.addView(codecSpinner)
-        layout.addView(inputQuality)
-        layout.addView(inputBitrate)
-        layout.addView(inputMax)
+        // Vazio = ilimitado: muito mais claro do que exigir "-1".
+        val inputMax = HallaInputEditText(context).apply {
+            hint = getString(R.string.max_clients_unlimited)
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+        advancedBody.addView(codecLabel)
+        advancedBody.addView(codecSpinner)
+        advancedBody.addView(qualityValue)
+        advancedBody.addView(qualitySlider)
+        advancedBody.addView(bitrateLabel)
+        advancedBody.addView(inputBitrate)
+        advancedBody.addView(maxLabel)
+        advancedBody.addView(inputMax)
+        layout.addView(buildAdvancedSettingsToggle(advancedBody))
+        layout.addView(advancedBody)
 
         val scroll = android.widget.ScrollView(context).apply { addView(layout) }
 
@@ -4982,11 +5182,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                val type = when (typeGroup.checkedRadioButtonId) {
-                    typeSemi.id -> 1
-                    typePerm.id -> 2
-                    else -> 0
-                }
                 val msg = JSONObject().apply {
                     put("t", "chan_create")
                     put("parent", parentChanId)
@@ -4994,9 +5189,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     put("topic", inputTopic.text.toString())
                     put("pass", inputPass.text.toString())
                     put("noSymbol", hideSymbol.isChecked)
-                    put("type", type)
+                    put("type", selectedType())
                     put("codec", 4 + codecSpinner.selectedItemPosition)
-                    put("quality", inputQuality.text.toString().toIntOrNull()?.coerceIn(0, 10) ?: 6)
+                    put("quality", qualitySlider.progress.coerceIn(0, 10))
                     put("bitrate", inputBitrate.text.toString().toIntOrNull()?.coerceIn(16, 384) ?: 96)
                     put("max", inputMax.text.toString().toIntOrNull() ?: -1)
                 }.toString()
