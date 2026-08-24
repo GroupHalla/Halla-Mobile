@@ -3700,7 +3700,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Rótulo do avatar: nomes iniciados por número usam o número completo
     // (ex.: "06-Farley" -> "06"); os demais usam a inicial maiúscula.
     private fun avatarLabel(name: String): String {
-        val match = Regex("^(\d{1,3})").find(name)
+        val match = Regex("^(\\d{1,3})").find(name)
         return match?.groupValues?.get(1) ?: name.take(1).uppercase()
     }
 
