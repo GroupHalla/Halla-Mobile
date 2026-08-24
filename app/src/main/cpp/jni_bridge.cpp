@@ -1127,7 +1127,7 @@ public:
     int udpPort() const { return m_udpPort.load(); }
     int udpSocket() const { return m_udpSocket.load(); }
     bool hasVoiceToken() const { return m_hasVoiceToken.load(); }
-    bool encoderReady() const {
+    bool encoderReady() {
         std::lock_guard<std::mutex> lock(m_codecMutex);
         return m_encoder != nullptr;
     }
