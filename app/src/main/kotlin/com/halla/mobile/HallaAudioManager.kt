@@ -58,8 +58,17 @@ class HallaAudioManager(private val cacheDir: File) {
 
     var onTalkingStateChanged: ((Boolean) -> Unit)? = null
     private var isTalking = false
+    // Marca de tempo da última janela de áudio acima do limiar do VAD. A
+    // liberação usa histerese (350 ms), igual ao Desktop: sem isso o estado
+    // "falando" liga/desliga a cada frame de 20 ms quando a voz fica perto do
+    // limiar e o servidor é inundado por user_state — o PC reconstrói a lista
+    // de canais dezenas de vezes por segundo e dispara o rate limit.
+    private var vadLastVoiceAboveMs = 0L
 
     companion object {
+        /** Histerese de fechamento do VAD em milissegundos (igual ao Desktop). */
+        const val VAD_RELEASE_HOLD_MS = 350L
+
         /** Os efeitos são opcionais no Android e variam conforme o fabricante. */
         fun isNoiseSuppressionAvailable(): Boolean = try {
             NoiseSuppressor.isAvailable()
@@ -149,12 +158,18 @@ class HallaAudioManager(private val cacheDir: File) {
                         currentVoiceLevel = minOf(voiceLevel, 100.0)
 
                         // Limiar VAD / PTT / Contínuo para transmissão.
+                        val nowMs = System.currentTimeMillis()
+                        val vadVoice = rms > vadThreshold
+                        if (vadVoice) vadLastVoiceAboveMs = nowMs
                         val voiceNow = when {
                             whisperActivationPending -> false
                             whisperPressed -> true // sussurro também funciona sobre VAD
                             transmissionMode == 1 -> isPttPressed // PTT
                             transmissionMode == 2 -> true // Contínuo
-                            else -> rms > vadThreshold // VAD
+                            // VAD com histerese: abre no instante em que passa do
+                            // limiar, mas só fecha 350 ms depois de ficar abaixo —
+                            // evita o oscilar (flap) rápido do estado de fala.
+                            else -> vadVoice || (nowMs - vadLastVoiceAboveMs) < VAD_RELEASE_HOLD_MS
                         }
                         if (voiceNow != isTalking) {
                             isTalking = voiceNow
