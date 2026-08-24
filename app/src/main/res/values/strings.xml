@@ -91,6 +91,8 @@ Deseja baixar e instalar agora?</string>
     <string name="bottom_right">Inferior direito</string>
     <string name="custom_drag">Personalizada (arraste)</string>
     <string name="whisper_list_button">🟠 Lista de sussurro</string>
+    <string name="whisper_overlay_toggle">Botões de sussurro flutuantes sobre outros apps</string>
+    <string name="whisper_overlay_summary">Mostra um botão flutuante para cada lista de sussurro marcada como flutuante.</string>
     <string name="manage_identities">👥 Gerenciar identidades</string>
     <string name="use_privilege_key">🔑 Usar chave de privilégio</string>
     <string name="invite_copied">Link de convite copiado.</string>

@@ -515,29 +515,37 @@
 
                     </LinearLayout>
 
-                    <!-- Módulo 3: Destaque central do PTT -->
+                    <!-- Módulo 3: Destaque central do PTT (FALAR) -->
+                    <!-- O botão FALAR é o MAIOR do dock: squircle alto com -->
+                    <!-- gradiente roxo vibrante e glow, no estilo do mockup. -->
                     <LinearLayout
                         android:id="@+id/btnPttModule"
                         android:layout_width="0dp"
-                        android:layout_height="60dp"
-                        android:layout_weight="1.4"
-                        android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
+                        android:layout_height="76dp"
+                        android:layout_weight="1.6"
+                        android:layout_marginStart="6dp"
+                        android:layout_marginEnd="6dp"
+                        android:layout_marginTop="-6dp"
+                        android:layout_marginBottom="-6dp"
+                        android:layout_gravity="center_vertical"
                         android:gravity="center"
-                        android:orientation="vertical">
+                        android:orientation="vertical"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp">
 
                         <ImageView
-                            android:layout_width="36dp"
-                            android:layout_height="36dp"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
                             android:src="@drawable/halla_logo" />
 
                         <TextView
                             android:id="@+id/txtPttText"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
                             android:text="@string/talk"
                             android:textColor="#FFFFFF"
-                            android:textSize="12sp"
+                            android:textSize="13sp"
                             android:textStyle="bold" />
 
                     </LinearLayout>

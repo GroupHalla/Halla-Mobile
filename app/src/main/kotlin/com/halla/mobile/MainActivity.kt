@@ -477,6 +477,47 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelAudio.addView(btnWhisperLists)
 
+        // Toggle: habilita/desabilita os botões flutuantes de sussurro
+        // sobre outros apps. O usuário pode querer usar listas de sussurro
+        // apenas no próprio Halla (chamadas internas) sem ter botões
+        // flutuantes cobrindo a tela de outros apps.
+        val whisperOverlayContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 12, 24, 12)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 12, 0, 0) }
+            setBackgroundColor(Color.parseColor("#151322"))
+        }
+        val whisperOverlaySwitch = Switch(this).apply {
+            text = getString(R.string.whisper_overlay_toggle)
+            setTextColor(Color.WHITE)
+            isChecked = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+                .getBoolean(HallaService.PREF_WHISPER_OVERLAY, true)
+            setOnCheckedChangeListener { _, enabled ->
+                if (enabled && !Settings.canDrawOverlays(this@MainActivity)) {
+                    isChecked = false
+                    Toast.makeText(this@MainActivity,
+                        getString(R.string.overlay_permission_message),
+                        Toast.LENGTH_LONG).show()
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")))
+                } else {
+                    HallaService.setWhisperOverlayEnabled(this@MainActivity, enabled)
+                }
+            }
+        }
+        whisperOverlayContainer.addView(whisperOverlaySwitch)
+        val whisperOverlayHint = TextView(this).apply {
+            text = getString(R.string.whisper_overlay_summary)
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 11f
+            setPadding(0, 6, 0, 0)
+        }
+        whisperOverlayContainer.addView(whisperOverlayHint)
+        panelAudio.addView(whisperOverlayContainer)
+
         val btnVoiceDiagnostics = Button(this).apply {
             text = "Diagnóstico de voz"
             setTextColor(Color.WHITE)
@@ -1066,19 +1107,20 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     private fun setPttButtonBackground(color: Int) {
-        // Botão FALAR do mockup: gradiente vertical (tom profundo -> tom
-        // claro), contorno sutil e sombra roxa (glow) em API 28+.
+        // Botão FALAR do mockup: squircle roxo vibrante com gradiente
+        // vertical (tom claro topo -> tom profundo base), contorno sutil
+        // branco e sombra roxa intensa (glow) em API 28+.
         btnPttModule.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(lighten(color, 0.30f), color)
+            intArrayOf(lighten(color, 0.35f), color)
         ).apply {
-            cornerRadius = dp(16).toFloat()
-            setStroke(dp(1), Color.parseColor("#26FFFFFF"))
+            cornerRadius = dp(24).toFloat()
+            setStroke(dp(2), Color.parseColor("#4DFFFFFF"))
         }
-        btnPttModule.elevation = dp(6).toFloat()
+        btnPttModule.elevation = dp(10).toFloat()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            btnPttModule.outlineAmbientShadowColor = Color.parseColor("#668B5CF6")
-            btnPttModule.outlineSpotShadowColor = Color.parseColor("#668B5CF6")
+            btnPttModule.outlineAmbientShadowColor = Color.parseColor("#A08B5CF6")
+            btnPttModule.outlineSpotShadowColor = Color.parseColor("#A08B5CF6")
         }
     }
 
@@ -2926,7 +2968,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 HallaCore.setCurrentChannel(getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
-                txtActiveUsersCountBadge.text = "👤 " + getString(R.string.members, "$clientsCount/$activeMaxClients")
+                // (A string `members` já começa com 👤 — não adicionar outro.)
+                txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 updateActiveServerSlots(clientsCount, maxClients)
@@ -3038,7 +3081,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 
                 // Atualiza contadores dinâmicos no banner e no cartão salvo.
-                txtActiveUsersCountBadge.text = "👤 " + getString(R.string.members, "${usersData.length()}/$activeMaxClients")
+                // (A string `members` já começa com 👤 — não adicionar outro.)
+                txtActiveUsersCountBadge.text = getString(R.string.members, "${usersData.length()}/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
                 updateActiveServerSlots(usersData.length(), activeMaxClients)
 
@@ -3364,8 +3408,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // anulava a função de indicar "onde você está".
             val activeChannel = (getChannelOfUser(selfId) == chanId)
 
-            // Card do Canal: superfície neutra; o canal ativo ganha tom mais
-            // claro, contorno violeta sutil e barra de destaque.
+            // Card do Canal: superfície neutra ARREDONDADA (não quadrada);
+            // o canal ativo ganha borda violeta vibrante (2-3px) e barra de
+            // destaque. As barras laterais têm cantos arredondados casando
+            // com o card externo — antes eram quadradas e davam a impressão
+            // de "card retangular" mesmo com o canto externo curvo.
+            val outerRadius = if (isSubchannel) 16f else 20f
             val cardContainer = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
@@ -3381,8 +3429,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         isSubchannel -> Color.parseColor("#1A1726")
                         else -> Color.parseColor("#16141F")
                     })
-                    cornerRadius = if (isSubchannel) 14f else 18f
-                    if (activeChannel) setStroke(dp(1), Color.parseColor("#408B5CF6"))
+                    cornerRadius = outerRadius
+                    // Borda vibrante no canal ativo (roxo saturado 2-3px),
+                    // contorno neutro discreto nos demais.
+                    if (activeChannel) {
+                        setStroke(dp(if (isSubchannel) 2 else 3),
+                                  Color.parseColor("#A78BFA"))
+                    } else {
+                        setStroke(dp(1), Color.parseColor("#26223F"))
+                    }
                 }
                 // Feedback de toque com ripple violeta sutil
                 background = RippleDrawable(
@@ -3398,13 +3453,26 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
             // Barra lateral: colorida apenas no canal ativo; neutra nos
             // demais. Subcanais ativos mantêm a cor azul da hierarquia.
+            // Cantos ESQUERDOS arredondados casando com o card externo,
+            // para a barra parecer parte do card e não um retângulo separado.
             val leftBlueBorder = View(this).apply {
-                setBackgroundColor(when {
-                    activeChannel && isSubchannel -> Color.parseColor("#38BDF8")
-                    activeChannel -> Color.parseColor("#8B5CF6")
-                    isSubchannel -> Color.parseColor("#22273A")
-                    else -> Color.parseColor("#2A2740")
-                })
+                val borderShape = GradientDrawable().apply {
+                    setColor(when {
+                        activeChannel && isSubchannel -> Color.parseColor("#38BDF8")
+                        activeChannel -> Color.parseColor("#A78BFA")
+                        isSubchannel -> Color.parseColor("#22273A")
+                        else -> Color.parseColor("#2A2740")
+                    })
+                    // Cantos somente no lado esquerdo (top/bottom-left),
+                    // casando com o raio externo do card.
+                    cornerRadii = floatArrayOf(
+                        outerRadius, outerRadius,   // top-left
+                        0f, 0f,                     // top-right
+                        0f, 0f,                     // bottom-right
+                        outerRadius, outerRadius    // bottom-left
+                    )
+                }
+                background = borderShape
                 val borderParams = LinearLayout.LayoutParams(
                     if (isSubchannel) 5 else 8,
                     LinearLayout.LayoutParams.MATCH_PARENT
@@ -3602,17 +3670,39 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             )
                         }
 
-                        // Status do microfone/fones cortado
-                        val txtStatusIcon = TextView(this).apply {
+                        // Ícone de status do usuário: quando o microfone ou
+                        // o fone está mutado, mostra APENAS o ícone vermelho
+                        // com a listra (mic_off / headset_off) ao lado do
+                        // nome — e não dois emojis grudados. Se ambos
+                        // estiverem mutados, mostra só o fone mutado (estado
+                        // mais grave).
+                        fun addMutedIcon() {
                             val micMuted = usr.optBoolean("mic", false)
                             val spkMuted = usr.optBoolean("spk", false)
-                            text = if (spkMuted) "🎧🔇 " else if (micMuted) "🎙️🔇 " else ""
-                            setTextColor(Color.parseColor("#F87171"))
-                            textSize = 12f
+                            val mutedIconRes = when {
+                                spkMuted -> R.drawable.ic_deafen_mute
+                                micMuted -> R.drawable.ic_mic_mute
+                                else -> 0
+                            }
+                            if (mutedIconRes != 0) {
+                                val imgStatusIcon = ImageView(this).apply {
+                                    setImageResource(mutedIconRes)
+                                    tooltipText = if (spkMuted)
+                                        getString(R.string.unmute_speakers)
+                                      else getString(R.string.unmute_mic)
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        (22 * resources.displayMetrics.density).toInt(),
+                                        (22 * resources.displayMetrics.density).toInt()
+                                    ).apply { setMargins(8, 0, 8, 0) }
+                                }
+                                userRow.addView(imgStatusIcon)
+                            }
                         }
 
                         userRow.addView(avatarContainer)
                         userRow.addView(txtUser)
+                        // Ícone de mute logo após o nome (microfone ou fone).
+                        addMutedIcon()
                         if (showBadges) {
                             val badgeSize = (28 * resources.displayMetrics.density).toInt()
                             BadgeRegistry.badgesForUid(usr.optString("uid", ""))
@@ -3649,7 +3739,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             }
                             userRow.addView(liveBadge)
                         }
-                        userRow.addView(txtStatusIcon)
 
                         userRow.setOnLongClickListener {
                             showUserOptionsDialog(usr)

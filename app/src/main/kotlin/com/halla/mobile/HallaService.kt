@@ -50,6 +50,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
         const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
         const val ACTION_REFRESH_WHISPER_OVERLAYS = "com.halla.mobile.action.REFRESH_WHISPER_OVERLAYS"
+        const val ACTION_SET_WHISPER_OVERLAY = "com.halla.mobile.action.SET_WHISPER_OVERLAY"
         const val ACTION_START_SCREEN_SHARE = "com.halla.mobile.action.START_SCREEN_SHARE"
         const val ACTION_STOP_SCREEN_SHARE = "com.halla.mobile.action.STOP_SCREEN_SHARE"
         const val ACTION_STATE_CHANGED = "com.halla.mobile.action.STATE_CHANGED"
@@ -78,6 +79,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val PREF_SCREEN_SHARING = "service_screen_sharing"
         const val PREF_OVERLAY = "overlay_ptt"
         const val PREF_OVERLAY_POSITION = "overlay_ptt_position"
+        const val PREF_WHISPER_OVERLAY = "whisper_overlay_enabled"
 
         private const val NOTIFICATION_ID = 2401
         private const val CHANNEL_ID = "halla_voice_session"
@@ -184,6 +186,13 @@ class HallaService : Service(), HallaCore.Callbacks {
         fun refreshWhisperOverlays(context: Context) {
             context.startService(Intent(context, HallaService::class.java).apply {
                 action = ACTION_REFRESH_WHISPER_OVERLAYS
+            })
+        }
+
+        fun setWhisperOverlayEnabled(context: Context, enabled: Boolean) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_WHISPER_OVERLAY
+                putExtra(EXTRA_ENABLED, enabled)
             })
         }
 
@@ -346,6 +355,20 @@ class HallaService : Service(), HallaCore.Callbacks {
                 // verifica permissão e flag "floating" por lista. Removida a
                 // condição externa que podia impedir a criação do botão.
                 showWhisperOverlays()
+            }
+            ACTION_SET_WHISPER_OVERLAY -> {
+                val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
+                getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
+                    .putBoolean(PREF_WHISPER_OVERLAY, enabled).apply()
+                if (!enabled) {
+                    for (view in whisperViews.values) {
+                        try { overlayWindow?.removeView(view) } catch (_: Exception) { }
+                    }
+                    whisperViews.clear()
+                    activeWhispers.clear()
+                } else {
+                    showWhisperOverlays()
+                }
             }
             ACTION_START_SCREEN_SHARE -> startScreenShare(intent)
             ACTION_STOP_SCREEN_SHARE -> stopScreenShare(true)
@@ -969,6 +992,11 @@ class HallaService : Service(), HallaCore.Callbacks {
         if (!ensureOverlayWindow()) return
         val wm = overlayWindow ?: return
         if (!Settings.canDrawOverlays(this)) return
+        // O usuário pode desativar os botões de sussurro nas Configs de
+        // Áudio; nesse caso, nenhum overlay é criado.
+        val enabled = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
+            .getBoolean(PREF_WHISPER_OVERLAY, true)
+        if (!enabled) return
         val lists = loadWhisperLists()
         var index = 0
         for (i in 0 until lists.length()) {

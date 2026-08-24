@@ -88,6 +88,8 @@ Notas de la versión:
     <string name="bottom_right">Abajo a la derecha</string>
     <string name="custom_drag">Personalizada (arrastrar)</string>
     <string name="whisper_list_button">🟠 Lista de susurros</string>
+    <string name="whisper_overlay_toggle">Botones de susurro flotantes sobre otras apps</string>
+    <string name="whisper_overlay_summary">Muestra un botón flotante para cada lista de susurros marcada como flotante.</string>
     <string name="manage_identities">👥 Gestionar identidades</string>
     <string name="use_privilege_key">🔑 Usar clave de privilegio</string>
     <string name="invite_copied">Enlace de invitación copiado.</string>

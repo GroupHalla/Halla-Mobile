@@ -88,6 +88,8 @@ Download and install now?</string>
     <string name="bottom_right">Bottom right</string>
     <string name="custom_drag">Custom (drag)</string>
     <string name="whisper_list_button">🟠 Whisper list</string>
+    <string name="whisper_overlay_toggle">Floating whisper buttons over other apps</string>
+    <string name="whisper_overlay_summary">Shows a floating button for each whisper list marked as floating.</string>
     <string name="manage_identities">👥 Manage identities</string>
     <string name="use_privilege_key">🔑 Use privilege key</string>
     <string name="invite_copied">Invite link copied.</string>
