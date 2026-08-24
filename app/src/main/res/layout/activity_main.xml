@@ -14,7 +14,7 @@
         <RelativeLayout
             android:id="@+id/topAppBar"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="72dp"
             android:background="#0B0C10"
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
@@ -38,9 +38,9 @@
                 android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_marginEnd="10dp"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:layout_marginEnd="12dp"
                     android:src="@drawable/halla_logo" />
 
                 <TextView
@@ -224,8 +224,8 @@
                     android:background="#241B45">
 
                     <ImageView
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
+                        android:layout_width="64dp"
+                        android:layout_height="64dp"
                         android:layout_centerInParent="true"
                         android:src="@drawable/halla_logo" />
 
@@ -256,7 +256,7 @@
                         android:layout_height="wrap_content"
                         android:text="@string/server_default"
                         android:textColor="#FFFFFF"
-                        android:textSize="18sp"
+                        android:textSize="20sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -527,8 +527,8 @@
                         android:orientation="vertical">
 
                         <ImageView
-                            android:layout_width="30dp"
-                            android:layout_height="30dp"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
                             android:src="@drawable/halla_logo" />
 
                         <TextView

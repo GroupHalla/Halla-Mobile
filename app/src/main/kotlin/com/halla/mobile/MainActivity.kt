@@ -1070,7 +1070,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // claro), contorno sutil e sombra roxa (glow) em API 28+.
         btnPttModule.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(color, lighten(color, 0.30f))
+            intArrayOf(lighten(color, 0.30f), color)
         ).apply {
             cornerRadius = dp(16).toFloat()
             setStroke(dp(1), Color.parseColor("#26FFFFFF"))
@@ -2926,7 +2926,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 HallaCore.setCurrentChannel(getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
-                txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$activeMaxClients")
+                txtActiveUsersCountBadge.text = "👤 " + getString(R.string.members, "$clientsCount/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
                 updateActiveServerSlots(clientsCount, maxClients)
@@ -3038,7 +3038,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 
                 // Atualiza contadores dinâmicos no banner e no cartão salvo.
-                txtActiveUsersCountBadge.text = getString(R.string.members, "${usersData.length()}/$activeMaxClients")
+                txtActiveUsersCountBadge.text = "👤 " + getString(R.string.members, "${usersData.length()}/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
                 updateActiveServerSlots(usersData.length(), activeMaxClients)
 
@@ -3326,406 +3326,381 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         )
     }
 
-    // Árvore de canais no estilo do mockup oficial: categorias com título
-    // decorativo centralizado (=★ NOME ★=), cards de canal compactos com
-    // chevron e o canal com membros expandido mostrando os usuários por
-    // dentro. A busca filtra por nome de canal ou de usuário.
+    // Árvore de canais baseada em cartões (cards com barra lateral no canal
+    // ativo, ripple, chips e avatares — design aprovado na 1.0.75), agora com
+    // filtro da busca de canais por nome de canal ou de usuário.
     private fun rebuildChannelTree() {
         containerChannels.removeAllViews()
 
         val settingsPrefs = getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
         val showBadges = settingsPrefs.getBoolean("show_badges", true)
-        val query = channelSearchQuery.trim().lowercase()
-        val searching = query.isNotEmpty()
 
-        // Usuários conectados de um canal (objetos completos).
-        fun usersOfChannel(chanId: Int): ArrayList<JSONObject> {
-            val list = ArrayList<JSONObject>()
-            for (j in 0 until usersData.length()) {
-                val candidate = usersData.optJSONObject(j) ?: continue
-                if (getChannelOfUser(candidate.optInt("id", 0)) == chanId) list.add(candidate)
-            }
-            return list
-        }
-
-        fun chanMatches(chan: JSONObject): Boolean {
-            if (!searching) return true
-            if (chan.optString("name", "").lowercase().contains(query)) return true
-            return usersOfChannel(chan.optInt("id", 0)).any {
-                it.optString("name", "").lowercase().contains(query)
-            }
-        }
-
-        fun subtreeMatches(chan: JSONObject): Boolean {
-            if (chanMatches(chan)) return true
-            for (child in sortedChildChannels(chan.optInt("id", 0))) {
-                if (subtreeMatches(child)) return true
-            }
-            return false
-        }
-
-        // ===== Linha de usuário (dentro do card do canal) ====================
-
-        fun addUserRows(content: LinearLayout, chanId: Int) {
-            val sortedChannelUsers = usersOfChannel(chanId)
-            // Ordena por cargos com ordem visual ativa; sem ordem, alfabético.
-            sortedChannelUsers.sortWith(Comparator { left, right ->
-                val leftEnabled = left.optBoolean("orderEnabled", true)
-                val rightEnabled = right.optBoolean("orderEnabled", true)
-                when {
-                    leftEnabled != rightEnabled -> if (leftEnabled) -1 else 1
-                    leftEnabled && left.optInt("order", 0) != right.optInt("order", 0) ->
-                        left.optInt("order", 0).compareTo(right.optInt("order", 0))
-                    else -> left.optString("name", "").compareTo(
-                        right.optString("name", ""), ignoreCase = true
-                    )
-                }
-            })
-
-            for (usr in sortedChannelUsers) {
-                val name = usr.getString("name")
-                val sigla = usr.optString("sigla", "").trim()
-                val siglaSuffix = usr.optString("siglaSuffix", "").trim()
-                val isTalking = usr.optBoolean("talking", false)
-                val isAwayUsr = usr.optBoolean("away", false)
-
-                val userRow = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { setMargins(0, dp(8), 0, dp(8)) }
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                }
-
-                // Avatar circular com anel violeta (vermelho para comandante)
-                // e bolinha de status. Nomes iniciados por número usam o
-                // número como identificador do avatar (ex.: "06").
-                val avatarContainer = FrameLayout(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
-                        setMargins(0, 0, dp(12), 0)
-                    }
-                }
-                val txtAvatar = TextView(this).apply {
-                    text = avatarLabel(name)
-                    setTextColor(Color.WHITE)
-                    textSize = 15f
-                    setTypeface(null, Typeface.BOLD)
-                    gravity = android.view.Gravity.CENTER
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#1E1B2E"))
-                        val isCc = usr.optBoolean("cc", false)
-                        setStroke(dp(2), Color.parseColor(if (isCc) "#F87171" else "#8B5CF6"))
-                    }
-                    layoutParams = FrameLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.MATCH_PARENT)
-                }
-                val viewStatusDot = View(this).apply {
-                    background = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor(if (isTalking) "#22C55E" else "#3E434A"))
-                        setStroke(dp(2), Color.parseColor("#161625"))
-                    }
-                    layoutParams = FrameLayout.LayoutParams(dp(13), dp(13)).apply {
-                        gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-                    }
-                }
-                avatarContainer.addView(txtAvatar)
-                avatarContainer.addView(viewStatusDot)
-
-                // Bloco do nome: sigla do cargo em roxo, nome em branco
-                // (verde ao falar) e sufixo do cargo em roxo, mantidos juntos
-                // à esquerda; badges e ícones de estado ficam à direita.
-                val nameBlock = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                if (sigla.isNotEmpty()) {
-                    nameBlock.addView(TextView(this).apply {
-                        text = "$sigla "
-                        setTextColor(Color.parseColor("#A78BFA"))
-                        textSize = 13f
-                        setTypeface(null, Typeface.BOLD)
-                    })
-                }
-                val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
-                nameBlock.addView(TextView(this).apply {
-                    text = "$name$awayText"
-                    setTextColor(Color.parseColor(if (isTalking) "#22C55E" else "#FFFFFF"))
-                    textSize = 15f
-                })
-                if (siglaSuffix.isNotEmpty()) {
-                    nameBlock.addView(TextView(this).apply {
-                        text = " $siglaSuffix"
-                        setTextColor(Color.parseColor("#A78BFA"))
-                        textSize = 13f
-                        setTypeface(null, Typeface.BOLD)
-                    })
-                }
-                userRow.addView(avatarContainer)
-                userRow.addView(nameBlock)
-
-                if (showBadges) {
-                    val badgeSize = dp(24)
-                    BadgeRegistry.badgesForUid(usr.optString("uid", ""))
-                        .filter { it.bitmap != null }
-                        .take(4)
-                        .forEach { badge ->
-                            userRow.addView(ImageView(this).apply {
-                                setImageBitmap(badge.bitmap)
-                                contentDescription = "${badge.name}: ${badge.description}"
-                                tooltipText = contentDescription
-                                layoutParams = LinearLayout.LayoutParams(badgeSize, badgeSize).apply {
-                                    setMargins(dp(4), 0, dp(4), 0)
-                                }
-                            })
-                        }
-                }
-                if (usr.optBoolean("screensharing", false)) {
-                    userRow.addView(TextView(this).apply {
-                        text = "● LIVE"
-                        setTextColor(Color.WHITE)
-                        textSize = 10f
-                        setTypeface(null, Typeface.BOLD)
-                        gravity = android.view.Gravity.CENTER
-                        background = GradientDrawable().apply {
-                            cornerRadius = 18f
-                            setColor(Color.parseColor("#B91C1C"))
-                            setStroke(1, Color.parseColor("#EF4444"))
-                        }
-                        setPadding(10, 3, 10, 3)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { setMargins(dp(8), 0, dp(8), 0) }
-                    })
-                }
-                userRow.addView(TextView(this).apply {
-                    val micMuted = usr.optBoolean("mic", false)
-                    val spkMuted = usr.optBoolean("spk", false)
-                    text = if (spkMuted) "🎧🔇 " else if (micMuted) "🎙️🔇 " else ""
-                    setTextColor(Color.parseColor("#F87171"))
-                    textSize = 12f
-                })
-
-                userRow.setOnLongClickListener {
-                    showUserOptionsDialog(usr)
-                    true
-                }
-                userRow.setOnClickListener { showUserOptionsDialog(usr) }
-
-                content.addView(userRow)
-            }
-        }
-
-        // ===== Card de canal ==================================================
-
-        fun addChannelCard(chan: JSONObject, depth: Int, recursive: Boolean = true) {
+        lateinit var renderChannel: (JSONObject, Int) -> Unit
+        renderChannel = renderChannel@{ chan: JSONObject, depth: Int ->
             val chanId = chan.getInt("id")
-            if (isChannelCollapsed(chanId)) return
-            if (!chanMatches(chan)) return
-
+            // Mobile não preserva espaços decorativos no início dos nomes de
+            // canais: isso evita cards desalinhados e canais "invisivelmente"
+            // diferentes apenas por whitespace inicial.
             val chanName = chan.getString("name").trimStart()
-            val count = usersOfChannel(chanId).size
-            val activeChannel = (getChannelOfUser(selfId) == chanId)
-            val listCollapsed = collapsedChannels.contains(chanId)
+            val isSubchannel = depth > 0
 
+            // Busca: exibe somente canais cujo nome (ou o nome de algum
+            // usuário dentro deles, ou de qualquer descendente) corresponda;
+            // durante a busca o recolhimento é ignorado para revelar tudo.
+            val query = channelSearchQuery.trim().lowercase()
+            val searching = query.isNotEmpty()
+            if (searching && !subtreeMatchesSearch(chan, query)) {
+                return@renderChannel
+            }
+            if (!searching && isChannelCollapsed(chanId)) {
+                return@renderChannel
+            }
+
+            val channelUsers = chan.optJSONArray("users")
+            val count = channelUsers?.length() ?: 0
+
+            // O canal em que o próprio usuário está é o único com barra de
+            // destaque: antes todos os canais tinham a mesma barra roxa, o que
+            // anulava a função de indicar "onde você está".
+            val activeChannel = (getChannelOfUser(selfId) == chanId)
+
+            // Card do Canal: superfície neutra; o canal ativo ganha tom mais
+            // claro, contorno violeta sutil e barra de destaque.
             val cardContainer = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    val indent = if (depth >= 2) (depth - 1) * dp(14) else 0
-                    setMargins(indent, 0, 0, dp(10))
+                    setMargins(depth * 28, if (isSubchannel) 6 else 0, 0, 14)
                 }
-                val radius = dp(14).toFloat()
+
                 val cardShape = GradientDrawable().apply {
-                    setColor(Color.parseColor(if (activeChannel) "#161625" else "#13141C"))
-                    cornerRadius = radius
+                    setColor(when {
+                        activeChannel -> Color.parseColor("#221B35")
+                        isSubchannel -> Color.parseColor("#1A1726")
+                        else -> Color.parseColor("#16141F")
+                    })
+                    cornerRadius = if (isSubchannel) 14f else 18f
+                    if (activeChannel) setStroke(dp(1), Color.parseColor("#408B5CF6"))
                 }
+                // Feedback de toque com ripple violeta sutil
                 background = RippleDrawable(
                     ColorStateList.valueOf(Color.parseColor("#1F8B5CF6")), cardShape, null)
-                setOnClickListener { showChannelOptionsDialog(chanId, chanName) }
+                setOnClickListener {
+                    showChannelOptionsDialog(chanId, chanName)
+                }
                 setOnLongClickListener {
                     showChannelDescriptionDialog(chanId, chanName)
                     true
                 }
             }
 
-            // O canal ativo ganha a barra lateral roxa com cantos casados.
-            if (activeChannel) {
-                val radius = dp(14).toFloat()
-                cardContainer.addView(View(this).apply {
-                    background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#8B5CF6"))
-                        cornerRadii = floatArrayOf(radius, radius, 0f, 0f, 0f, 0f, radius, radius)
-                    }
-                    layoutParams = LinearLayout.LayoutParams(dp(4), LinearLayout.LayoutParams.MATCH_PARENT)
+            // Barra lateral: colorida apenas no canal ativo; neutra nos
+            // demais. Subcanais ativos mantêm a cor azul da hierarquia.
+            val leftBlueBorder = View(this).apply {
+                setBackgroundColor(when {
+                    activeChannel && isSubchannel -> Color.parseColor("#38BDF8")
+                    activeChannel -> Color.parseColor("#8B5CF6")
+                    isSubchannel -> Color.parseColor("#22273A")
+                    else -> Color.parseColor("#2A2740")
                 })
+                val borderParams = LinearLayout.LayoutParams(
+                    if (isSubchannel) 5 else 8,
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                )
+                layoutParams = borderParams
             }
+            cardContainer.addView(leftBlueBorder)
 
+            // Layout do conteúdo interno do Card
             val contentLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
-                setPadding(dp(16), dp(13), dp(14), if (count > 0 && !listCollapsed) dp(13) else dp(13))
+                setPadding(24, 20, 24, 20)
             }
 
+            // Linha Principal do Canal (Icone + Nome + Badge)
             val headerRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
+                gravity = android.view.Gravity.CENTER_VERTICAL
             }
 
-            headerRow.addView(TextView(this).apply {
+            // Ícone de canal é opcional: o usuário pode ocultá-lo no editor.
+            val txtIcon = TextView(this).apply {
                 text = if (chan.optBoolean("noSymbol", false)) "" else "🔊  "
-                setTextColor(if (activeChannel || count > 0) Color.parseColor("#A78BFA")
-                             else Color.parseColor("#6B7280"))
+                setTextColor(if (activeChannel) Color.parseColor("#A78BFA")
+                             else Color.parseColor("#6E688C"))
                 textSize = 13f
-            })
-
-            headerRow.addView(TextView(this).apply {
-                text = chanName
-                setTextColor(Color.WHITE)
-                textSize = 15f
-                setTypeface(null, Typeface.BOLD)
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                maxLines = 1
-                layoutParams = LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-
-            if (count > 0 && showBadges) {
-                headerRow.addView(TextView(this).apply {
-                    text = count.toString()
-                    setTextColor(Color.parseColor("#A78BFA"))
-                    textSize = 11f
-                    setTypeface(null, Typeface.BOLD)
-                    setPadding(dp(10), 2, dp(10), 2)
-                    background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#1F2937"))
-                        cornerRadius = dp(12).toFloat()
-                    }
-                })
             }
 
-            headerRow.addView(TextView(this).apply {
-                text = if (hasSubchannels(chanId))
-                    (if (listCollapsed) "  ▸" else "  ▾") else "  ›"
-                setTextColor(Color.parseColor("#6B7280"))
-                textSize = 14f
+            // Nome do Canal
+            val isCollapsed = collapsedChannels.contains(chanId)
+            val indicator = if (hasSubchannels(chanId))
+                (if (isCollapsed) "  ▸" else "  ▾") else ""
+            val txtName = TextView(this).apply {
+                text = if (isSubchannel) "↳ $chanName$indicator" else "$chanName$indicator"
+                setTextColor(if (activeChannel) Color.parseColor("#F1EEFA")
+                             else Color.parseColor("#E7E5F0"))
+                textSize = if (isSubchannel) 14f else 15f
                 setTypeface(null, Typeface.BOLD)
-            })
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            }
+
+            val txtType = TextView(this).apply {
+                text = if (isSubchannel) getString(R.string.subchannel_badge) else ""
+                setTextColor(Color.parseColor(if (isSubchannel) "#38BDF8" else "#94A3B8"))
+                textSize = 9f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(8, 3, 8, 3)
+                visibility = if (isSubchannel) View.VISIBLE else View.GONE
+            }
+
+            // Badge de Membros (ex: 👤 2): chip arredondado discreto
+            val txtBadge = TextView(this).apply {
+                text = getString(R.string.members, count.toString())
+                setTextColor(Color.parseColor("#A5B4FC"))
+                textSize = 11f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(14, 5, 14, 5)
+
+                val badgeShape = GradientDrawable().apply {
+                    setColor(Color.parseColor("#241F33"))
+                    cornerRadius = 12f
+                }
+                background = badgeShape
+                visibility = if (count > 0 && showBadges) View.VISIBLE else View.GONE
+            }
+
+            headerRow.addView(txtIcon)
+            headerRow.addView(txtName)
+            headerRow.addView(txtType)
+            headerRow.addView(txtBadge)
 
             contentLayout.addView(headerRow)
-            if (count > 0 && !listCollapsed) addUserRows(contentLayout, chanId)
+
+            // Lista de Membros Conectados (Dentro do próprio Card de Canal Expandido)
+            if (count > 0 && (searching || !isCollapsed)) {
+                // Sem linha divisória: o espaçamento separa título e membros
+                // (linhas horizontais finas davam um ar datado à lista).
+
+                // Renderiza usuários do canal respeitando somente cargos cuja
+                // ordem visual está habilitada. A hierarquia de permissões não
+                // participa desta classificação.
+                val sortedChannelUsers = ArrayList<JSONObject>()
+                for (j in 0 until usersData.length()) {
+                    val candidate = usersData.getJSONObject(j)
+                    if (getChannelOfUser(candidate.getInt("id")) == chanId)
+                        sortedChannelUsers.add(candidate)
+                }
+                sortedChannelUsers.sortWith(Comparator { left, right ->
+                    val leftEnabled = left.optBoolean("orderEnabled", true)
+                    val rightEnabled = right.optBoolean("orderEnabled", true)
+                    when {
+                        leftEnabled != rightEnabled -> if (leftEnabled) -1 else 1
+                        leftEnabled && left.optInt("order", 0) != right.optInt("order", 0) ->
+                            left.optInt("order", 0).compareTo(right.optInt("order", 0))
+                        else -> left.optString("name", "").compareTo(
+                            right.optString("name", ""), ignoreCase = true
+                        )
+                    }
+                })
+
+                for (usr in sortedChannelUsers) {
+                        val name = usr.getString("name")
+                        val sigla = usr.optString("sigla", "").trim()
+                        val siglaSuffix = usr.optString("siglaSuffix", "").trim()
+                        val displayName = listOf(sigla, name, siglaSuffix)
+                            .filter { it.isNotEmpty() }
+                            .joinToString(" ")
+                        val isTalking = usr.optBoolean("talking", false)
+
+                        // Linha do Usuário
+                        val userRow = LinearLayout(this).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                            ).apply {
+                                setMargins(0, 8, 0, 8)
+                            }
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                        }
+
+                        // Avatar Circular com Bolinha de Status Sobreposta
+                        val avatarContainer = FrameLayout(this).apply {
+                            layoutParams = LinearLayout.LayoutParams(
+                                HelperIntSize,
+                                HelperIntSize
+                            ).apply {
+                                setMargins(0, 0, 20, 0)
+                            }
+                        }
+
+                        // O Círculo do Avatar com a inicial do usuário: gradiente
+                        // violeta em vez de fundo chapado escuro.
+                        val txtAvatar = TextView(this).apply {
+                            text = avatarLabel(name)
+                            setTextColor(Color.parseColor("#F1EEFA"))
+                            textSize = 12f
+                            setTypeface(null, Typeface.BOLD)
+                            gravity = android.view.Gravity.CENTER
+                            val d = GradientDrawable(
+                                GradientDrawable.Orientation.TL_BR,
+                                intArrayOf(Color.parseColor("#3B2A6B"),
+                                           Color.parseColor("#241B45"))
+                            ).apply {
+                                shape = GradientDrawable.OVAL
+                                val isCc = usr.optBoolean("cc", false)
+                                setStroke(dp(2), Color.parseColor(if (isCc) "#F87171" else "#8B5CF6"))
+                            }
+                            background = d
+                            layoutParams = FrameLayout.LayoutParams(48, 48) // 24dp diameter
+                        }
+
+                        // Pequena Bolinha de Status sobreposta no canto inferior
+                        // direito, com anel escuro para "cortar" o avatar.
+                        val viewStatusDot = View(this).apply {
+                            val d = GradientDrawable().apply {
+                                shape = GradientDrawable.OVAL
+                                setColor(Color.parseColor(if (isTalking) "#4ADE80" else "#3E434A"))
+                                setStroke(dp(2), Color.parseColor("#16141F"))
+                            }
+                            background = d
+                            val dotParams = FrameLayout.LayoutParams(14, 14).apply {
+                                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.RIGHT
+                            }
+                            layoutParams = dotParams
+                        }
+
+                        avatarContainer.addView(txtAvatar)
+                        avatarContainer.addView(viewStatusDot)
+
+                        // Nome do usuário: branco suave; falando ganha o verde
+                        // de destaque (tom menos neon que o original).
+                        val isAwayUsr = usr.optBoolean("away", false)
+                        val awayText = if (isAwayUsr) getString(R.string.away_suffix) else ""
+                        val txtUser = TextView(this).apply {
+                                text = "$displayName$awayText"
+                            setTextColor(Color.parseColor(if (isTalking) "#4ADE80" else "#E7E5F0"))
+                            textSize = 14f
+                            layoutParams = LinearLayout.LayoutParams(
+                                0,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                1f
+                            )
+                        }
+
+                        // Status do microfone/fones cortado
+                        val txtStatusIcon = TextView(this).apply {
+                            val micMuted = usr.optBoolean("mic", false)
+                            val spkMuted = usr.optBoolean("spk", false)
+                            text = if (spkMuted) "🎧🔇 " else if (micMuted) "🎙️🔇 " else ""
+                            setTextColor(Color.parseColor("#F87171"))
+                            textSize = 12f
+                        }
+
+                        userRow.addView(avatarContainer)
+                        userRow.addView(txtUser)
+                        if (showBadges) {
+                            val badgeSize = (28 * resources.displayMetrics.density).toInt()
+                            BadgeRegistry.badgesForUid(usr.optString("uid", ""))
+                                .filter { it.bitmap != null }
+                                .take(4)
+                                .forEach { badge ->
+                                    userRow.addView(ImageView(this).apply {
+                                        setImageBitmap(badge.bitmap)
+                                        contentDescription = "${badge.name}: ${badge.description}"
+                                        tooltipText = contentDescription
+                                        layoutParams = LinearLayout.LayoutParams(badgeSize, badgeSize).apply {
+                                            setMargins(5, 0, 5, 0)
+                                        }
+                                    })
+                                }
+                        }
+                        if (usr.optBoolean("screensharing", false)) {
+                            val liveBadge = TextView(this).apply {
+                                text = "● LIVE"
+                                setTextColor(Color.WHITE)
+                                textSize = 10f
+                                setTypeface(null, Typeface.BOLD)
+                                gravity = android.view.Gravity.CENTER
+                                background = GradientDrawable().apply {
+                                    cornerRadius = 18f
+                                    setColor(Color.parseColor("#B91C1C"))
+                                    setStroke(1, Color.parseColor("#EF4444"))
+                                }
+                                setPadding(10, 3, 10, 3)
+                                layoutParams = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT
+                                ).apply { setMargins(8, 0, 8, 0) }
+                            }
+                            userRow.addView(liveBadge)
+                        }
+                        userRow.addView(txtStatusIcon)
+
+                        userRow.setOnLongClickListener {
+                            showUserOptionsDialog(usr)
+                            true
+                        }
+                        userRow.setOnClickListener {
+                            showUserOptionsDialog(usr)
+                        }
+
+                        contentLayout.addView(userRow)
+                }
+            }
 
             cardContainer.addView(contentLayout)
             containerChannels.addView(cardContainer)
 
-            if (recursive && !listCollapsed) {
-                for (child in sortedChildChannels(chanId)) {
-                    addChannelCard(child, depth + 1)
-                }
+            // Renderiza subcanais dentro da árvore, em vez de deixar todos os
+            // canais no mesmo nível visual. O estado collapsed do pai oculta
+            // recursivamente toda a sua descendência.
+            for (child in sortedChildChannels(chanId)) {
+                renderChannel(child, depth + 1)
             }
         }
 
-        // ===== Cabeçalho de categoria (=★ NOME ★=) ============================
-
-        fun addCategoryHeader(cat: JSONObject) {
-            val catId = cat.optInt("id", 0)
-            if (!subtreeMatches(cat)) return
-            val catName = cat.optString("name", "").trimStart()
-            val expanded = searching || !collapsedChannels.contains(catId)
-
-            val header = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(10), dp(10), dp(10))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
-                background = RippleDrawable(
-                    ColorStateList.valueOf(Color.parseColor("#1F8B5CF6")),
-                    ContextCompat.getDrawable(this@MainActivity,
-                        R.drawable.bg_category_header)!!, null)
-                setOnClickListener {
-                    if (collapsedChannels.contains(catId)) collapsedChannels.remove(catId)
-                    else collapsedChannels.add(catId)
-                    rebuildChannelTree()
-                }
-                setOnLongClickListener {
-                    showChannelDescriptionDialog(catId, catName)
-                    true
-                }
-            }
-
-            header.addView(TextView(this).apply {
-                text = "=★"
-                setTextColor(Color.parseColor("#6B7280"))
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-            })
-            header.addView(TextView(this).apply {
-                text = catName.uppercase()
-                setTextColor(Color.WHITE)
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-                letterSpacing = 0.08f
-                gravity = android.view.Gravity.CENTER
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                maxLines = 1
-                layoutParams = LinearLayout.LayoutParams(0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            header.addView(TextView(this).apply {
-                text = "★="
-                setTextColor(Color.parseColor("#6B7280"))
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-            })
-            header.addView(TextView(this).apply {
-                text = if (expanded) "  ▾" else "  ▸"
-                setTextColor(Color.parseColor("#8E89A8"))
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-            })
-
-            containerChannels.addView(header)
-
-            if (expanded) {
-                // A própria categoria pode conter usuários: card dedicado.
-                if (usersOfChannel(catId).isNotEmpty()) {
-                    addChannelCard(cat, 1, recursive = false)
-                }
-                for (child in sortedChildChannels(catId)) {
-                    addChannelCard(child, 1)
-                }
-            }
-        }
-
-        // Canais raiz: com filhos viram categoria; sem filhos, card comum.
+        // Começa pelos canais raiz e respeita a posição persistida pelo
+        // servidor, independentemente da ordem do JSON recebido.
         for (root in sortedChildChannels(0)) {
-            if (hasSubchannels(root.optInt("id", 0))) addCategoryHeader(root)
-            else addChannelCard(root, 0)
+            renderChannel(root, 0)
         }
+    }
+
+    // O canal (ou qualquer descendente) corresponde à busca por nome de canal
+    // ou por nome de usuário conectado dentro dele.
+    private fun subtreeMatchesSearch(chan: JSONObject, query: String): Boolean {
+        val chanId = chan.optInt("id", 0)
+        if (chan.optString("name", "").lowercase().contains(query)) return true
+        for (i in 0 until usersData.length()) {
+            val usr = usersData.optJSONObject(i) ?: continue
+            if (getChannelOfUser(usr.optInt("id", 0)) == chanId
+                    && usr.optString("name", "").lowercase().contains(query)) return true
+        }
+        for (child in sortedChildChannels(chanId)) {
+            if (subtreeMatchesSearch(child, query)) return true
+        }
+        return false
     }
 
     // Rótulo do avatar: nomes iniciados por número usam o número completo
     // (ex.: "06-Farley" -> "06"); os demais usam a inicial maiúscula.
     private fun avatarLabel(name: String): String {
-        val match = Regex("^(\\d{1,3})").find(name)
+        val match = Regex("^(\d{1,3})").find(name)
         return match?.groupValues?.get(1) ?: name.take(1).uppercase()
     }
 
