@@ -289,6 +289,12 @@ Download and install now?</string>
     <string name="privilege_message">Paste the key provided by the server administrator.</string>
     <string name="privilege_title">Privilege key</string>
     <string name="required_fields">Fill in all required fields!</string>
+    <string name="choose_nickname_title">Choose a nickname</string>
+    <string name="choose_nickname_message">Enter the nickname you will use in %1$s.</string>
+    <string name="nickname_in_use_title">Nickname in use</string>
+    <string name="nickname_in_use_message">This nickname is already in use in %1$s. Choose another one to join.</string>
+    <string name="nickname_required">Enter a nickname to continue.</string>
+    <string name="nickname_confirm">Join</string>
     <string name="save_upper">SAVE</string>
     <string name="searching">Searching...</string>
     <string name="server_list_updated">Server list updated.</string>

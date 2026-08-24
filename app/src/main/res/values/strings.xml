@@ -289,6 +289,12 @@ Deseja baixar e instalar agora?</string>
     <string name="privilege_message">Cole a chave fornecida pelo administrador do servidor.</string>
     <string name="privilege_title">Chave de privilégio</string>
     <string name="required_fields">Preencha todos os campos obrigatórios!</string>
+    <string name="choose_nickname_title">Escolha um apelido</string>
+    <string name="choose_nickname_message">Digite o apelido com que você vai entrar em %1$s.</string>
+    <string name="nickname_in_use_title">Apelido em uso</string>
+    <string name="nickname_in_use_message">Este apelido já está em uso em %1$s. Escolha outro para entrar.</string>
+    <string name="nickname_required">Informe um apelido para continuar.</string>
+    <string name="nickname_confirm">Entrar</string>
     <string name="save_upper">SALVAR</string>
     <string name="searching">Buscando...</string>
     <string name="server_list_updated">Lista de servidores atualizada.</string>

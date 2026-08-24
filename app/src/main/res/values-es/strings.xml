@@ -289,6 +289,12 @@ Notas de la versión:
     <string name="privilege_message">Pega la clave proporcionada por el administrador.</string>
     <string name="privilege_title">Clave de privilegio</string>
     <string name="required_fields">¡Completa todos los campos obligatorios!</string>
+    <string name="choose_nickname_title">Elige un apodo</string>
+    <string name="choose_nickname_message">Escribe el apodo con el que entrarás en %1$s.</string>
+    <string name="nickname_in_use_title">Apodo en uso</string>
+    <string name="nickname_in_use_message">Este apodo ya está en uso en %1$s. Elige otro para entrar.</string>
+    <string name="nickname_required">Introduce un apodo para continuar.</string>
+    <string name="nickname_confirm">Entrar</string>
     <string name="save_upper">GUARDAR</string>
     <string name="searching">Buscando...</string>
     <string name="server_list_updated">Lista de servidores actualizada.</string>

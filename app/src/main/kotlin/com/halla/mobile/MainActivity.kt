@@ -281,6 +281,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Servidores salvos persistidos
     private var savedServers = JSONArray()
 
+    // Servidor oficial pré-salvo na primeira execução (sem apelido: o app
+    // pergunta o nome na hora de conectar — ver companion object).
+
+    // Última tentativa de conexão a partir de um cartão salvo — usada para
+    // repetir a conexão com outro apelido quando o servidor responde
+    // name_in_use/bad_nick.
+    private var lastConnectAttempt: JSONObject? = null
+
     // Controle de telas ativo
     private var activeScreenId = R.id.layoutConnect
 
@@ -1616,19 +1624,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun loadSavedServers() {
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("saved_servers", "[]")
-        try {
-            savedServers = JSONArray(jsonStr)
-            for (i in 0 until savedServers.length()) {
-                val server = savedServers.getJSONObject(i)
-                val key = serverPasswordKey(server)
-                val legacy = server.optString("pass", "")
-                if (legacy.isNotEmpty()) HallaCore.storeSecret(this, key, legacy)
-                server.put("pass", HallaCore.readSecret(this, key))
-            }
-            persistServersOnly()
-        } catch (e: Exception) {
+        val jsonStr = prefs.getString("saved_servers", null)
+        if (jsonStr == null) {
+            // Primeira execução: o servidor oficial já vem pré-salvo, sem
+            // apelido — o app pergunta o nome na hora de conectar (o
+            // servidor também recusa apelidos em uso com name_in_use).
             savedServers = JSONArray()
+            savedServers.put(JSONObject().apply {
+                put("name", OFFICIAL_SERVER_NAME)
+                put("nick", "")
+                put("host", OFFICIAL_SERVER_HOST)
+                put("port", OFFICIAL_SERVER_PORT)
+                put("pass", "")
+                put("identity_uid", "")
+                put("slots", "0/32")
+            })
+        } else {
+            try {
+                savedServers = JSONArray(jsonStr)
+                for (i in 0 until savedServers.length()) {
+                    val server = savedServers.getJSONObject(i)
+                    val key = serverPasswordKey(server)
+                    val legacy = server.optString("pass", "")
+                    if (legacy.isNotEmpty()) HallaCore.storeSecret(this, key, legacy)
+                    server.put("pass", HallaCore.readSecret(this, key))
+                }
+                persistServersOnly()
+            } catch (e: Exception) {
+                savedServers = JSONArray()
+            }
         }
         rebuildServerList()
     }
@@ -2583,7 +2607,60 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val host = srv.getString("host")
         val port = srv.getInt("port")
         val nick = srv.getString("nick")
+
+        // Entrar sem nome não é permitido: o servidor oficial vem pré-salvo
+        // com o apelido vazio justamente para o app perguntar aqui.
+        if (nick.isBlank()) {
+            promptForNickname(srv)
+            return
+        }
+        connectToSavedServerWithNick(srv, nick)
+    }
+
+    // Pede um apelido (campo vazio, servidor devolveu name_in_use/bad_nick)
+    // e reconecta em seguida com o nome escolhido.
+    private fun promptForNickname(srv: JSONObject, inUse: Boolean = false) {
+        val input = android.widget.EditText(this).apply {
+            hint = getString(R.string.nickname_hint)
+            setText(srv.optString("nick", ""))
+            setSingleLine()
+        }
+        val container = android.widget.FrameLayout(this).apply {
+            val pad = (20 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        val titleRes = if (inUse) R.string.nickname_in_use_title else R.string.choose_nickname_title
+        val msgRes = if (inUse) R.string.nickname_in_use_message else R.string.choose_nickname_message
+        val serverName = srv.optString("name", srv.optString("host", ""))
+        AlertDialog.Builder(this)
+            .setTitle(getString(titleRes))
+            .setMessage(getString(msgRes, serverName))
+            .setView(container)
+            .setPositiveButton(getString(R.string.nickname_confirm)) { dialog, _ ->
+                val chosen = input.text.toString().trim()
+                if (chosen.isEmpty()) {
+                    Toast.makeText(this, getString(R.string.nickname_required),
+                        Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
+                    return@setPositiveButton
+                }
+                srv.put("nick", chosen)
+                saveServersToStorage()
+                connectToSavedServerWithNick(srv, chosen)
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
+    private fun connectToSavedServerWithNick(srv: JSONObject, nick: String) {
+        val host = srv.getString("host")
+        val port = srv.getInt("port")
         val pass = srv.optString("pass", "")
+
+        // Guarda a tentativa para poder repetir a conexão com outro apelido
+        // quando o servidor recusar (name_in_use/bad_nick).
+        lastConnectAttempt = srv
 
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         prefs.edit().putString("last_srv_host", host)
@@ -2879,6 +2956,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onConnected(serverName: String, motd: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
+        lastConnectAttempt = null // login aceito: nada para repetir
         runOnUiThread {
             btnConnectStatusNormal()
             showScreen(R.id.layoutServer) // Transiciona as telas de forma centralizada e sem bugs!
@@ -3139,6 +3217,15 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 else audioManager.forceStopTalking()
             }
             Toast.makeText(this, msg.ifEmpty { code }, Toast.LENGTH_SHORT).show()
+            // Apelido recusado durante o login: pede outro nome e reconecta.
+            // O servidor devolve name_in_use quando o nome já pertence a
+            // outra identidade online; bad_nick quando veio vazio/inválido.
+            if (code == "name_in_use" || code == "bad_nick") {
+                val attempt = lastConnectAttempt
+                if (attempt != null && !HallaService.isRunning()) {
+                    promptForNickname(attempt, inUse = true)
+                }
+            }
         }
     }
 
@@ -5819,5 +5906,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         private const val SPEECH_CUE_REQUEST = 7401
         private const val ADDON_INSTALL_REQUEST = 7402
         private const val SCREEN_SHARE_REQUEST = 7403
+
+        // Servidor oficial pré-salvo na primeira execução (sem apelido).
+        const val OFFICIAL_SERVER_NAME = "HALLA OFFICIAL SERVER"
+        const val OFFICIAL_SERVER_HOST = "163.176.35.133"
+        const val OFFICIAL_SERVER_PORT = 9987
     }
 }

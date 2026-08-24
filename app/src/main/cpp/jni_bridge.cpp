@@ -1477,6 +1477,13 @@ private:
                 writeLog("Erro do servidor recebido: " + code + " - " + msg);
                 if (!m_authenticated) {
                     m_connected = false;
+                    // Erros de apelido durante o login precisam chegar ao
+                    // Kotlin COM o código: a Activity usa name_in_use/bad_nick
+                    // para abrir o diálogo "escolha outro apelido" e tentar
+                    // reconectar em seguida.
+                    if (code == "name_in_use" || code == "bad_nick") {
+                        invokeOnError(code, msg);
+                    }
                     invokeOnConnectionFailed(msg.empty() ? code : msg);
                 } else {
                     // Erros de permissão, senha de canal etc. são eventos da
