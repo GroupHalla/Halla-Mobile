@@ -361,3 +361,10 @@ Android nativo descrito acima. O build real, local e no CI, usa
 exclusivamente o Gradle (`./gradlew assembleDebug`/`assembleRelease`); esse
 `CMakeLists.txt` da raiz continua sendo código morto e pode ser removido com
 segurança.
+
+## Licença
+
+Domínio público ([Unlicense](https://unlicense.org)): livre para todos,
+para tudo — usar, copiar, modificar, vender ou redistribuir, com ou sem
+crédito. Ver [`LICENSE`](LICENSE). Componentes de terceiros (Opus, mbedTLS,
+WebRTC Android SDK) seguem as respectivas licenças originais.
