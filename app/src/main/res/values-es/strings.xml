@@ -359,18 +359,12 @@ Notas de la versión:
 </string>
     <string name="uid_generate_hint">Pega una UID (vacía para generar)</string>
     <string name="user_info_group">Grupo: %1$s</string>
-    <string name="user_info_ip">IP: %1$s
-</string>
-    <string name="user_info_name">Nombre: %1$s
-</string>
-    <string name="user_info_ping">Ping: %1$s ms
-</string>
-    <string name="user_info_platform">Plataforma: %1$s
-</string>
-    <string name="user_info_uptime">Tiempo activo: %1$s s
-</string>
-    <string name="user_info_version">Versión de la app: %1$s
-</string>
+    <string name="user_info_ip">IP: %1$s\n</string>
+    <string name="user_info_name">Nombre: %1$s\n</string>
+    <string name="user_info_ping">Ping: %1$s ms\n</string>
+    <string name="user_info_platform">Plataforma: %1$s\n</string>
+    <string name="user_info_uptime">Tiempo activo: %1$s s\n</string>
+    <string name="user_info_version">Versión de la app: %1$s\n</string>
     <string name="user_title">Usuario: %1$s</string>
     <string name="whisper_list_item">%1$s · %2$s</string>
     <string name="whisper_list_message">Crea una lista para dirigir tu voz a canales o usuarios.</string>

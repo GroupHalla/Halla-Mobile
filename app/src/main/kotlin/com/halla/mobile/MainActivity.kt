@@ -5528,7 +5528,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val version = usr.optString("ver", "1.0.0")
         val platform = usr.optString("platform", "Android")
         val uptime = usr.optInt("uptime", 0)
+        // Grupos múltiplos chegam separados por quebra de linha (uma linha por
+        // cargo, com ícone). Exibidos em linha única separados por " · ".
         val group = usr.optString("group", getString(R.string.member_default))
+            .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+            .joinToString(" · ")
+            .ifEmpty { getString(R.string.member_default) }
 
         val info = getString(R.string.user_info_name, name) +
                    getString(R.string.user_info_ip, ip) +

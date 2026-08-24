@@ -1568,9 +1568,14 @@ private:
             }
 
             if (t == "poke") {
-                std::string from = jsonExtractString(line, "fromName");
-                std::string msg = jsonExtractString(line, "msg");
-                invokeOnPoke(from, msg);
+                // Eco de confirmação enviado de volta ao próprio remetente:
+                // não é um poke recebido — descartado para não vibrar/notificar.
+                const bool selfEcho = jsonExtractInt(line, "self") == 1;
+                if (!selfEcho) {
+                    std::string from = jsonExtractString(line, "fromName");
+                    std::string msg = jsonExtractString(line, "msg");
+                    invokeOnPoke(from, msg);
+                }
                 return;
             }
 

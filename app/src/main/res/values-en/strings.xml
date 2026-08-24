@@ -359,18 +359,12 @@ Download and install now?</string>
 </string>
     <string name="uid_generate_hint">Paste a UID (empty to generate)</string>
     <string name="user_info_group">Group: %1$s</string>
-    <string name="user_info_ip">IP: %1$s
-</string>
-    <string name="user_info_name">Name: %1$s
-</string>
-    <string name="user_info_ping">Ping: %1$s ms
-</string>
-    <string name="user_info_platform">Platform: %1$s
-</string>
-    <string name="user_info_uptime">Uptime: %1$s s
-</string>
-    <string name="user_info_version">App version: %1$s
-</string>
+    <string name="user_info_ip">IP: %1$s\n</string>
+    <string name="user_info_name">Name: %1$s\n</string>
+    <string name="user_info_ping">Ping: %1$s ms\n</string>
+    <string name="user_info_platform">Platform: %1$s\n</string>
+    <string name="user_info_uptime">Uptime: %1$s s\n</string>
+    <string name="user_info_version">App version: %1$s\n</string>
     <string name="user_title">User: %1$s</string>
     <string name="whisper_list_item">%1$s · %2$s</string>
     <string name="whisper_list_message">Create a list to direct your voice to channels or users.</string>
