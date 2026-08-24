@@ -1118,6 +1118,23 @@ public:
     void setCurrentChannelFromClient(int channelId) { setCurrentChannel(channelId); }
     void installChannelKeyFromClient(int channelId, const std::string& keyB64) { installChannelKey(channelId, keyB64); }
 
+    // Acessores para diagnóstico: permitem à Activity saber se a camada
+    // nativa está pronta para transmitir voz (TCP/UDP conectados, token de
+    // voz válido, encoder Opus inicializado) e por que os frames podem
+    // estar sendo descartados silenciosamente.
+    bool isConnected() const { return m_connected.load(); }
+    bool isAuthenticated() const { return m_authenticated.load(); }
+    int udpPort() const { return m_udpPort.load(); }
+    int udpSocket() const { return m_udpSocket.load(); }
+    bool hasVoiceToken() const { return m_hasVoiceToken.load(); }
+    bool encoderReady() const {
+        std::lock_guard<std::mutex> lock(m_codecMutex);
+        return m_encoder != nullptr;
+    }
+    uint16_t voiceSeq() const { return m_voiceSeq; }
+    uint32_t selfId() const { return m_selfId.load(); }
+    int currentChannelId() const { return m_currentChannelId; }
+
 private:
     HallaClientCore() : m_tcpSocket(-1), m_udpSocket(-1), m_connected(false),
                          m_authenticated(false), m_pingPending(false),
@@ -2182,6 +2199,27 @@ Java_com_halla_mobile_HallaCore_pluginSendData(JNIEnv* env, jclass, jstring plug
 
     env->ReleaseStringUTFChars(pluginId, nativePlugin);
     env->ReleaseStringUTFChars(topic, nativeTopic);
+}
+
+// Diagnóstico da camada nativa de voz: informa à Activity o estado interno
+// da conexão TCP/UDP, do codec Opus e da credencial de voz. Usado pelo
+// painel "Diagnóstico de voz" para identificar por que o microfone não
+// transmite (PTT/VAD alternado, mas nada chega ao servidor).
+JNIEXPORT jstring JNICALL
+Java_com_halla_mobile_HallaCore_voiceDiagnosticsJson(JNIEnv* env, jclass) {
+    auto& core = HallaClientCore::getInstance();
+    std::string json = "{";
+    json += "\"connected\":" + std::string(core.isConnected() ? "true" : "false");
+    json += ",\"authenticated\":" + std::string(core.isAuthenticated() ? "true" : "false");
+    json += ",\"udpPort\":" + std::to_string(core.udpPort());
+    json += ",\"udpSocket\":" + std::to_string(core.udpSocket());
+    json += ",\"hasVoiceToken\":" + std::string(core.hasVoiceToken() ? "true" : "false");
+    json += ",\"encoderReady\":" + std::string(core.encoderReady() ? "true" : "false");
+    json += ",\"voiceSeq\":" + std::to_string(core.voiceSeq());
+    json += ",\"selfId\":" + std::to_string(core.selfId());
+    json += ",\"currentChannel\":" + std::to_string(core.currentChannelId());
+    json += "}";
+    return env->NewStringUTF(json.c_str());
 }
 
 }

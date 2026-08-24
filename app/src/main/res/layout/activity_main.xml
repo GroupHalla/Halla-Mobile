@@ -518,20 +518,18 @@
                     <!-- Módulo 3: Destaque central do PTT (FALAR) -->
                     <!-- O botão FALAR é o MAIOR do dock: squircle alto com -->
                     <!-- gradiente roxo vibrante e glow, no estilo do mockup. -->
+                    <!-- Sem margins negativas: em alguns dispositivos elas -->
+                    <!-- reduzem a área de hit-test do toque. -->
                     <LinearLayout
                         android:id="@+id/btnPttModule"
                         android:layout_width="0dp"
-                        android:layout_height="76dp"
+                        android:layout_height="72dp"
                         android:layout_weight="1.6"
                         android:layout_marginStart="6dp"
                         android:layout_marginEnd="6dp"
-                        android:layout_marginTop="-6dp"
-                        android:layout_marginBottom="-6dp"
                         android:layout_gravity="center_vertical"
                         android:gravity="center"
-                        android:orientation="vertical"
-                        android:paddingTop="4dp"
-                        android:paddingBottom="4dp">
+                        android:orientation="vertical">
 
                         <ImageView
                             android:layout_width="40dp"

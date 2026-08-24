@@ -525,14 +525,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12, 0, 0) }
             setOnClickListener {
+                // Container rolável: o diagnóstico agora inclui estado nativo
+                // (C++/rede) e pode ficar maior que a tela em aparelhos
+                // pequenos. Sem isso, o AlertDialog cortava o conteúdo.
+                val scrollView = ScrollView(this@MainActivity)
                 val output = TextView(this@MainActivity).apply {
                     setPadding(32, 24, 32, 24)
-                    // AlertDialog padrão usa superfície clara; texto branco deixava
-                    // o diagnóstico existente, porém invisível.
                     setTextColor(Color.BLACK)
-                    textSize = 14f
+                    textSize = 13f
+                    typeface = android.graphics.Typeface.MONOSPACE
                 }
-                val dialog = AlertDialog.Builder(this@MainActivity).setTitle("Diagnóstico de voz").setView(output)
+                scrollView.addView(output)
+                val dialog = AlertDialog.Builder(this@MainActivity).setTitle("Diagnóstico de voz").setView(scrollView)
                     .setPositiveButton("Fechar", null).create()
                 val refresh = object : Runnable { override fun run() {
                     output.text = if (HallaService.isRunning()) HallaService.voiceDiagnostics() else audioManager.diagnosticsText()

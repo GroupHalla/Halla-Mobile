@@ -408,9 +408,10 @@ class HallaAudioManager(private val cacheDir: File) {
     fun isLocalRecording(): Boolean = isLocalRecording
 
     fun diagnosticsText(): String = """
+        === Kotlin (captura) ===
         Captura: ${if (isRecordingMic) "ativa" else "parada"}
         Reprodução: ${if (isPlayingAudio) "ativa" else "parada"}
-        Transmissão: ${if (transmitEnabled) "permitida" else "mutada"}
+        Transmissão: ${if (transmitEnabled) "permitida" else "mutada (microfone mutado)"}
         Alto-falantes: ${if (speakerEnabled) "ativos" else "mutados"}
         Modo: ${when (transmissionMode) { 1 -> "PTT"; 2 -> "Contínuo"; else -> "Detecção de voz" }}
         PTT: ${if (isPttPressed) "pressionado" else "solto"}
@@ -418,7 +419,59 @@ class HallaAudioManager(private val cacheDir: File) {
         RMS atual: ${"%.2f".format(currentVoiceLevel)}%
         Supressão de ruído: ${if (noiseSuppressionOn) "ligada" else "desligada"}
         Cancelamento de eco: ${if (echoCancellationOn) "ligado" else "desligado"}
+
+        === Nativo (C++ / rede) ===
+        ${nativeDiagnostics()}
     """.trimIndent()
+
+    /**
+     * Resumo legível do estado nativo: diz exatamente onde a cadeia de
+     * transmissão de voz está quebrada — conexão TCP, autenticação do
+     * handshake TLS, socket UDP, token de voz recebido no welcome,
+     * encoder Opus inicializado, número de frames já enviados.
+     */
+    private fun nativeDiagnostics(): String {
+        val json = try { HallaCore.voiceDiagnosticsJson() } catch (_: Throwable) { return "indisponível" }
+        if (json.isBlank()) return "indisponível"
+        // Parse simples (evita dependência de org.json neste módulo).
+        fun pick(key: String): String {
+            val m = Regex("\"$key\"\\s*:\\s*(\\\"[^\\\"]*\\\"|\\d+|true|false)").find(json)
+            return m?.groupValues?.get(1)?.trim('"') ?: "?"
+        }
+        val connected = pick("connected") == "true"
+        val authed = pick("authenticated") == "true"
+        val udpPort = pick("udpPort").toIntOrNull() ?: 0
+        val udpSock = pick("udpSocket").toIntOrNull() ?: -1
+        val token = pick("hasVoiceToken") == "true"
+        val enc = pick("encoderReady") == "true"
+        val seq = pick("voiceSeq").toIntOrNull() ?: 0
+        val sid = pick("selfId").toIntOrNull() ?: 0
+        val chan = pick("currentChannel").toIntOrNull() ?: 0
+        val verdict = when {
+            !connected -> "PROBLEMA: TCP desconectado"
+            !authed -> "PROBLEMA: handshake TLS ainda não completou"
+            udpPort == 0 -> "PROBLEMA: servidor não enviou porta UDP no welcome"
+            udpSock == -1 -> "PROBLEMA: socket UDP não foi aberto"
+            !token -> "PROBLEMA: token de voz inválido/ausente — frames descartados"
+            !enc -> "PROBLEMA: encoder Opus não inicializado"
+            sid == 0 -> "PROBLEMA: selfId ainda é 0"
+            chan == 0 -> "PROBLEMA: canal atual é 0 (ainda não entrou em canal nenhum)"
+            seq == 0 -> "ALERTA: nenhum frame enviado — verifique PTT/VAD/mic mutado"
+            else -> "OK: pipeline pronto, $seq frames enviados"
+        }
+        return """
+            Conectado: ${if (connected) "sim" else "não"}
+            Autenticado: ${if (authed) "sim" else "não"}
+            Porta UDP: $udpPort
+            Socket UDP: $udpSock
+            Token de voz: ${if (token) "válido" else "inválido/ausente"}
+            Encoder Opus: ${if (enc) "pronto" else "indisponível"}
+            Self ID: $sid
+            Canal atual: $chan
+            Frames enviados: $seq
+            Veredito: $verdict
+        """.trimIndent()
+    }
 
     fun stop() {
         forceStopTalking()

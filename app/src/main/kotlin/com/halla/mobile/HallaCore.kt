@@ -388,6 +388,11 @@ object HallaCore {
     @JvmStatic
     external fun sendMoveOther(userId: Int, channelId: Int)
 
+    // Diagnóstico nativo: retorna JSON com estado de TCP/UDP/codec/token.
+    // Ajuda a identificar por que a voz do usuário não chega aos outros.
+    @JvmStatic
+    external fun voiceDiagnosticsJson(): String
+
     @JvmStatic
     external fun sendUsePrivilegeKey(key: String)
 
