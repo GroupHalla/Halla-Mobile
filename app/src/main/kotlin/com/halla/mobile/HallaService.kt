@@ -342,11 +342,10 @@ class HallaService : Service(), HallaCore.Callbacks {
                 }
                 whisperViews.clear()
                 activeWhispers.clear()
-                if (overlayView != null) {
-                    showWhisperOverlays()
-                } else if (hasFloatingWhisperLists()) {
-                    showWhisperOverlays()
-                }
+                // Sempre tenta criar os overlays de sussurro: a função interna
+                // verifica permissão e flag "floating" por lista. Removida a
+                // condição externa que podia impedir a criação do botão.
+                showWhisperOverlays()
             }
             ACTION_START_SCREEN_SHARE -> startScreenShare(intent)
             ACTION_STOP_SCREEN_SHARE -> stopScreenShare(true)

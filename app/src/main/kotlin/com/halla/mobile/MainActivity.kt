@@ -3820,11 +3820,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(32, 12, 32, 4)
             setBackgroundColor(Color.parseColor("#151322"))
         }
+        // HallaInputEditText tem texto PRETO por design (contraste com fundo
+        // claro). Antes o fundo era sobrescrito para #0D0E15 (quase preto),
+        // tornando o texto invisível. Agora o fundo claro nativo é mantido.
         val nameInput = HallaInputEditText(this).apply {
             hint = getString(R.string.whisper_name_hint)
             setText(existing?.optString("name", "") ?: "")
-            setBackgroundColor(Color.parseColor("#0D0E15"))
-            setPadding(16, 12, 16, 12)
         }
         layout.addView(nameInput)
 
@@ -3856,12 +3857,33 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setPadding(0, 16, 0, 4)
         }
         layout.addView(targetsTitle)
+
+        // ScrollView com altura máxima para a lista de canais/usuários:
+        // sem ele, canais demais não rolam e ficam invisíveis.
+        val targetsScroll = android.widget.ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            // Altura máxima: ~40% da tela — passou disso, rola.
+            val maxH = (resources.displayMetrics.heightPixels * 0.4).toInt()
+            viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+                override fun onGlobalLayout() {
+                    if (height > maxH) {
+                        layoutParams.height = maxH
+                        requestLayout()
+                    }
+                    viewTreeObserver.removeOnGlobalLayoutListener(this)
+                }
+            })
+        }
         val targetsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(8, 4, 8, 4)
             setBackgroundColor(Color.parseColor("#0D0E15"))
         }
-        layout.addView(targetsLayout)
+        targetsScroll.addView(targetsLayout)
+        layout.addView(targetsScroll)
 
         val floating = Switch(this).apply {
             text = getString(R.string.floating_list_button)
