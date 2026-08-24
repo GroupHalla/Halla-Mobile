@@ -24,13 +24,23 @@ class ChannelAdministrationPolicyTest {
         val source = activity()
         assertTrue(source.contains("hasPermission(\"chanCreateSemi\")"))
         assertTrue(source.contains("hasPermission(\"chanCreatePerm\")"))
-        // o tipo enviado de fato acompanha o radio selecionado
+        // o tipo enviado de fato acompanha o cartão selecionado
         val createBlock = source.substringAfter("private fun showCreateChannelDialog")
             .substringBefore("private fun deleteChannel")
-        assertTrue(createBlock.contains("typeSemi.id -> 1"))
-        assertTrue(createBlock.contains("typePerm.id -> 2"))
+        assertTrue(createBlock.contains("buildChannelTypeSelector(0, canSemi, canPerm)"))
+        assertTrue(createBlock.contains("put(\"type\", selectedType())"))
         assertTrue(createBlock.contains("put(\"topic\", inputTopic.text.toString())"))
         assertTrue(createBlock.contains("put(\"codec\", 4 + codecSpinner.selectedItemPosition)"))
+        // o seletor em cartões continua oferecendo os três tipos e tarifando
+        // semi/perm atrás das permissões (cartões bloqueados com cadeado)
+        val selectorBlock = source.substringAfter("private fun buildChannelTypeSelector")
+            .substringBefore("private fun buildAdvancedSettingsToggle")
+        assertTrue(selectorBlock.contains("R.string.channel_type_temporary_short"))
+        assertTrue(selectorBlock.contains("R.string.channel_type_semi_short"))
+        assertTrue(selectorBlock.contains("R.string.channel_type_permanent_short"))
+        assertTrue(selectorBlock.contains("allowSemi"))
+        assertTrue(selectorBlock.contains("allowPerm"))
+        assertTrue(selectorBlock.contains("channel_type_requires_perm"))
     }
 
     @Test
