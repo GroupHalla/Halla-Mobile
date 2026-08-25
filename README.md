@@ -364,7 +364,8 @@ segurança.
 
 ## Licença
 
-Domínio público ([Unlicense](https://unlicense.org)): livre para todos,
-para tudo — usar, copiar, modificar, vender ou redistribuir, com ou sem
-crédito. Ver [`LICENSE`](LICENSE). Componentes de terceiros (Opus, mbedTLS,
-WebRTC Android SDK) seguem as respectivas licenças originais.
+Livre para uso não comercial ([`LICENSE`](LICENSE)): usar, estudar,
+modificar e redistribuir gratuitamente, sem pedir permissão. Vender,
+alugar ou embutir em produto comercial exige autorização escrita dos
+mantenedores. Componentes de terceiros (Opus, mbedTLS, WebRTC Android
+SDK) seguem as respectivas licenças originais.
