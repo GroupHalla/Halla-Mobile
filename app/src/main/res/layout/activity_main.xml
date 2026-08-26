@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/drawerLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -242,7 +243,7 @@
 
                 <!-- Textos e Subtítulos -->
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_centerVertical="true"
                     android:layout_marginStart="16dp"
@@ -250,20 +251,34 @@
                     android:layout_toStartOf="@+id/btnBannerSettings"
                     android:orientation="vertical">
 
-                    <TextView
+                    <!-- Nome do servidor: encolhe automaticamente (AutoSize)
+                         de 20sp até 11sp conforme o tamanho do nome. Se ainda
+                         assim não couber em uma linha, vira "...". Assim as
+                         badges de online/membros/ping abaixo nunca somem. -->
+                    <androidx.appcompat.widget.AppCompatTextView
                         android:id="@+id/txtActiveServerName"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
                         android:text="@string/server_default"
                         android:textColor="#FFFFFF"
                         android:textSize="20sp"
-                        android:textStyle="bold" />
+                        android:textStyle="bold"
+                        app:autoSizeMaxTextSize="20sp"
+                        app:autoSizeMinTextSize="11sp"
+                        app:autoSizeStepGranularity="0.5sp"
+                        app:autoSizeTextType="uniform" />
 
-                    <TextView
+                    <!-- MoTD: truncado com "..." se maior que a largura
+                         disponível, para não quebrar em várias linhas. -->
+                    <androidx.appcompat.widget.AppCompatTextView
                         android:id="@+id/txtActiveMotd"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
                         android:text="@string/server_motd"
                         android:textColor="#94A3B8"
                         android:textSize="12sp" />
