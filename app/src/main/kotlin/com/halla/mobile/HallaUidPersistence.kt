@@ -1,6 +1,6 @@
 package com.halla.mobile
 
-import android.annotation.RequiresApi
+import androidx.annotation.RequiresApi
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
