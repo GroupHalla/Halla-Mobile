@@ -1,5 +1,6 @@
 #include "plugin_host.h"
 #include "halla_plugin_api.h"
+#include "RadioVoiceDsp.h"
 
 #include <android/log.h>
 #include <dlfcn.h>
@@ -118,34 +119,16 @@ bool validPluginDataId(const std::string& id) {
 }
 
 // ------------------------------------------------------------------ DSP ----
-// Porta fiel do RadioVoiceEffect do Halla Desktop (banda estreita + chiado).
-struct RadioStreamState {
-    float previousInput = 0.0f;
-    float highPass = 0.0f;
-    float lowPass = 0.0f;
-    uint32_t noiseState = 0;
-};
+// O complemento oficial de voz por rádio executa no host nativo. Todo o DSP
+// vive em RadioVoiceDsp.h (cópia fiel de src/plugins/RadioVoiceDsp.h do Halla
+// Desktop — manter os dois arquivos sincronizados).
 
-void applyRadioDsp(RadioStreamState& state, int userId, float intensity,
+// Roda o DSP de rádio de um fluxo, semeando o ruído na primeira passagem.
+void applyRadioDsp(RadioVoiceDsp& dsp, uint32_t seedBase, float intensity,
                    float noiseLevel, float gain, int16_t* samples, uint32_t frames) {
-    if (state.noiseState == 0) {
-        state.noiseState = 0xA341316Cu ^ uint32_t(userId * 2654435761u);
-        if (state.noiseState == 0) state.noiseState = 1;
-    }
-    for (uint32_t i = 0; i < frames; ++i) {
-        const float input = float(samples[i]);
-        state.highPass = 0.94f * (state.highPass + input - state.previousInput);
-        state.previousInput = input;
-        state.lowPass += 0.30f * (state.highPass - state.lowPass);
-        const float compressed = std::tanh(state.lowPass / 11500.0f) * 17500.0f;
-        state.noiseState = state.noiseState * 1664525u + 1013904223u;
-        const float random = float((state.noiseState >> 16) & 0xffffu) / 32767.5f - 1.0f;
-        const float radio = compressed + random * (1900.0f * noiseLevel);
-        float output = (input * (1.0f - intensity) + radio * intensity) * gain;
-        if (output > 32767.0f) output = 32767.0f;
-        if (output < -32768.0f) output = -32768.0f;
-        samples[i] = static_cast<int16_t>(output);
-    }
+    if (!dsp.seeded()) dsp.seed(0xA341316Cu ^ seedBase);
+    dsp.configure(intensity, noiseLevel, gain);
+    dsp.process(samples, frames);
 }
 
 struct NativePlugin;
@@ -164,7 +147,7 @@ struct PluginHost::Impl {
 
     // Estado de áudio controlado por plugins (aplicado no estágio remoto).
     std::map<int32_t, PluginUserAudioState> userAudio;
-    std::map<uint64_t, RadioStreamState> radioStates;
+    std::map<uint64_t, RadioVoiceDsp> radioStates;
 
     // Complemento oficial de rádio (executa no host, sem .so).
     bool officialRadioEnabled = false;
@@ -870,8 +853,8 @@ void PluginHost::processCapture(int selfUserId, int16_t* samples, uint32_t frame
     if (radioOn && (sendMode == "normal" || sendMode == "both")) {
         std::lock_guard<std::mutex> lock(d->mutex);
         const uint64_t key = (uint64_t(1) << 48) | uint32_t(selfUserId);
-        applyRadioDsp(d->radioStates[key], selfUserId, intensity, noise, gain,
-                      samples, frames);
+        applyRadioDsp(d->radioStates[key], uint32_t(selfUserId) * 2654435761u,
+                      intensity, noise, gain, samples, frames);
     }
 
     for (NativePlugin* plugin : processors) {
@@ -937,7 +920,7 @@ void PluginHost::processRemote(int fromUserId, int16_t* samples, uint32_t frames
     if (userRadio || (radioOn && (receiveMode == "normal" || receiveMode == "both"))) {
         std::lock_guard<std::mutex> lock(d->mutex);
         const uint64_t key = (uint64_t(2) << 48) | uint32_t(fromUserId);
-        applyRadioDsp(d->radioStates[key], fromUserId,
+        applyRadioDsp(d->radioStates[key], uint32_t(fromUserId) * 2654435761u,
                       userRadio ? userState.radioStrength : intensity,
                       userRadio ? userState.radioNoise : noise,
                       userRadio ? 1.0f : gain,
