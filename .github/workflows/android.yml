@@ -86,6 +86,44 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs HallaMobile.apk
           sha256sum HallaMobile.apk > HallaMobile.apk.sha256
 
+      # Bibliotecas do complemento oficial "Voz de rádio policial" para o
+      # pacote .halla-addon do catálogo (Halla-Addons). Não entram no APK: o
+      # CI publica os .so das quatro ABIs como artefato, que alimenta o
+      # pacote multiplataforma junto à DLL do Halla Desktop.
+      - name: Build radio-voice addon libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_SDK_ROOT/ndk/25.2.9519653"
+          [[ -d "$NDK" ]] || { echo "NDK 25.2.9519653 não encontrado" >&2; exit 1; }
+          for abi in arm64-v8a armeabi-v7a x86_64 x86; do
+            cmake -S app/src/main/cpp/addons/radio-voice -B "build-addon-$abi" \
+              -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+              -DANDROID_ABI="$abi" \
+              -DANDROID_PLATFORM=android-26 \
+              -DCMAKE_BUILD_TYPE=Release
+            cmake --build "build-addon-$abi"
+          done
+          mkdir -p dist-addon/android-arm64 dist-addon/android-arm \
+                   dist-addon/android-x86_64 dist-addon/android-x86
+          cp build-addon-arm64-v8a/libradio_voice.so dist-addon/android-arm64/
+          cp build-addon-armeabi-v7a/libradio_voice.so dist-addon/android-arm/
+          cp build-addon-x86_64/libradio_voice.so dist-addon/android-x86_64/
+          cp build-addon-x86/libradio_voice.so dist-addon/android-x86/
+          (cd dist-addon && sha256sum android-*/*.so)
+
+      - name: Upload radio-voice addon libraries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: halla-radio-voice-android
+          if-no-files-found: error
+          retention-days: 90
+          path: |
+            dist-addon/android-arm64/libradio_voice.so
+            dist-addon/android-arm/libradio_voice.so
+            dist-addon/android-x86_64/libradio_voice.so
+            dist-addon/android-x86/libradio_voice.so
+
       - name: Upload CI artifact
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

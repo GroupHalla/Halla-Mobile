@@ -1350,7 +1350,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             ).apply { bottomMargin = dp(10) }
         }
 
-        val localId = AddonCatalog.localIdFor(entry.id)
+        val localId = AddonCatalog.localIdFor(context, entry.id)
         val local = installed[localId]
 
         val title = TextView(context).apply {
@@ -1615,12 +1615,25 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
                 "choice" -> {
                     val options = field.optJSONArray("options") ?: JSONArray()
-                    val values = (0 until options.length()).map { options.optString(it) }
+                    // O formato canônico do Desktop usa objetos {"value","label"}; o
+                    // complemento embutido usa strings + "optionLabels". Aceita ambos.
+                    val values = (0 until options.length()).mapNotNull { idx ->
+                        val entry = options.opt(idx)
+                        if (entry is JSONObject) {
+                            entry.optString("value").takeIf { it.isNotEmpty() }
+                        } else {
+                            options.optString(idx).takeIf { it.isNotEmpty() }
+                        }
+                    }
                     // "optionLabels" (opcional no schema) fornece o texto amigável
                     // exibido para cada valor técnico; sem ele, mostra o valor cru.
                     val optionLabels = field.optJSONArray("optionLabels")
                     val display = values.mapIndexed { idx, value ->
-                        optionLabels?.optString(idx)?.takeIf { it.isNotEmpty() } ?: value
+                        val objectLabel = (options.opt(idx) as? JSONObject)
+                            ?.optString("label")?.takeIf { it.isNotEmpty() }
+                        objectLabel
+                            ?: optionLabels?.optString(idx)?.takeIf { it.isNotEmpty() }
+                            ?: value
                     }
                     val adapter = object : ArrayAdapter<String>(this@MainActivity,
                         android.R.layout.simple_spinner_item, display) {

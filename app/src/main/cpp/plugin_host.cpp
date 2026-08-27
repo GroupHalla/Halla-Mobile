@@ -843,7 +843,14 @@ void PluginHost::processCapture(int selfUserId, int16_t* samples, uint32_t frame
         gain = d->officialRadioGain;
         for (auto& pair : d->plugins) {
             NativePlugin* p = pair.second;
-            if (p->audioProcessor && (p->audioStageMask & HALLA_AUDIO_CAPTURE))
+            // A decisão de transmissão (VAD/PTT) já aconteceu na camada Kotlin,
+            // então a captura é reportada como HALLA_AUDIO_CAPTURE e o estágio
+            // HALLA_AUDIO_CAPTURE_AFTER_VAD é aceito como sinônimo — o pacote
+            // oficial de rádio registra AFTER_VAD para usar o mesmo ponto do
+            // pipeline nos dois aplicativos.
+            if (p->audioProcessor
+                    && (p->audioStageMask
+                        & (HALLA_AUDIO_CAPTURE | HALLA_AUDIO_CAPTURE_AFTER_VAD)))
                 processors.push_back(p);
         }
     }

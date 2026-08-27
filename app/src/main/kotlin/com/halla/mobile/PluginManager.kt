@@ -27,6 +27,12 @@ object PluginManager {
 
     const val OFFICIAL_RADIO_ID = "com.halla.radio-voice"
 
+    /** ID do catálogo do pacote externo do mesmo complemento (substitui o embutido). */
+    const val CATALOG_RADIO_ID = "official.radio-voice"
+
+    /** Versão do DSP embutido (RadioVoiceDsp.h) — independente da versão do app. */
+    const val OFFICIAL_RADIO_VERSION = "1.1.0"
+
     data class AddonInfo(
         val id: String,
         val name: String,
@@ -65,9 +71,14 @@ object PluginManager {
 
     // ------------------------------------------------------------ listagem
 
+    /** O pacote oficial de rádio baixado do catálogo está instalado? */
+    fun externalRadioInstalled(context: Context): Boolean =
+        File(File(addonsDir(context), CATALOG_RADIO_ID), "manifest.json").isFile
+
     fun addons(context: Context): List<AddonInfo> {
         val result = mutableListOf<AddonInfo>()
-        result.add(officialRadioInfo(context))
+        // O pacote oficial do catálogo substitui o complemento embutido.
+        if (!externalRadioInstalled(context)) result.add(officialRadioInfo(context))
         val root = addonsDir(context)
         root.listFiles()?.sortedBy { it.name }?.forEach { dir ->
             if (!dir.isDirectory) return@forEach
@@ -121,7 +132,7 @@ object PluginManager {
         return AddonInfo(
             id = OFFICIAL_RADIO_ID,
             name = context.getString(R.string.addon_radio_name),
-            version = BuildConfig.VERSION_NAME.removeSuffix("-debug"),
+            version = OFFICIAL_RADIO_VERSION,
             author = "Halla",
             description = context.getString(R.string.addon_radio_description),
             capabilities = listOf("audio.capture", "audio.playback"),
@@ -181,6 +192,10 @@ object PluginManager {
             val id = manifest.optString("id")
             if (!idPattern.matches(id) || id == OFFICIAL_RADIO_ID)
                 return context.getString(R.string.addon_error_id)
+            // O pacote oficial de rádio do catálogo substitui o embutido; um
+            // pacote de terceiro não pode se passar por ele.
+            if (id == CATALOG_RADIO_ID && !manifest.optBoolean("official", false))
+                return context.getString(R.string.addon_error_id)
             if (manifest.optInt("apiVersion", 0) != 1)
                 return context.getString(R.string.addon_error_api)
             val type = manifest.optString("type")
@@ -188,6 +203,10 @@ object PluginManager {
                 return context.getString(R.string.addon_error_api)
 
             val target = File(addonsDir(context), id)
+            // Atualização de pacote em uso: descarrega antes de substituir o
+            // arquivo para recarregar a biblioteca nova em seguida.
+            val wasLoaded = HallaCore.pluginIsLoaded(id)
+            if (wasLoaded) HallaCore.pluginUnloadNative(id)
             target.deleteRecursively()
             target.mkdirs()
 
@@ -231,6 +250,18 @@ object PluginManager {
                     }
                 }
             }
+            // Recarrega a versão nova se o complemento estava ativo.
+            if (wasLoaded) setEnabled(context, id, true)
+            if (id == CATALOG_RADIO_ID) {
+                // O pacote oficial substitui o embutido: guarda o estado dele
+                // e desliga o DSP interno para o pacote assumir sem filtrar
+                // a mesma voz duas vezes.
+                prefs(context).edit()
+                    .putBoolean("radioWasEnabledBeforePackage",
+                        isEnabled(context, OFFICIAL_RADIO_ID))
+                    .apply()
+                setEnabled(context, OFFICIAL_RADIO_ID, false)
+            }
             return null
         }
     }
@@ -239,7 +270,15 @@ object PluginManager {
         if (id == OFFICIAL_RADIO_ID) return false
         setEnabled(context, id, false)
         prefs(context).edit().remove("settings.$id").apply()
-        return File(addonsDir(context), id).deleteRecursively()
+        val removed = File(addonsDir(context), id).deleteRecursively()
+        if (removed && id == CATALOG_RADIO_ID) {
+            // Remover o pacote oficial devolve o complemento embutido no
+            // estado de ativação que ele tinha antes da substituição.
+            val restore = prefs(context).getBoolean("radioWasEnabledBeforePackage", false)
+            prefs(context).edit().remove("radioWasEnabledBeforePackage").apply()
+            if (restore) setEnabled(context, OFFICIAL_RADIO_ID, true)
+        }
+        return removed
     }
 
     // ------------------------------------------------------ ativar/desativar
@@ -285,7 +324,9 @@ object PluginManager {
 
     /** Recarrega no host os complementos marcados como ativos (boot do app). */
     fun restoreEnabledAddons(context: Context) {
-        pushOfficialRadioSettings(context)
+        // O DSP interno só é restaurado quando o pacote oficial de rádio não
+        // está instalado — instalado, o pacote o substitui.
+        if (!externalRadioInstalled(context)) pushOfficialRadioSettings(context)
         addons(context).forEach { addon ->
             if (addon.enabled && addon.id != OFFICIAL_RADIO_ID
                 && addon.hasNativeLibrary && !HallaCore.pluginIsLoaded(addon.id)) {

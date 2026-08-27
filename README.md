@@ -162,8 +162,16 @@ O sistema de complementos do Halla Desktop agora existe também no Mobile, em
   pelo canal TLS. O servidor exige `pluginData`, limita alvos ao mesmo canal e
   reserva broadcasts globais a `pluginDataGlobal`; o Mobile negocia v5 no `hello`.
 - **Complemento oficial embutido**: **Voz de rádio policial**, o mesmo DSP do
-  Desktop (banda estreita, compressão, chiado configurável), aplicável ao
-  enviar e/ou ao ouvir, sem precisar de `.so` externo.
+  Desktop (AGC, banda estreita de radiocomunicação, saturação, squelch e
+  estática), aplicável ao enviar e/ou ao ouvir, sem precisar de `.so` externo.
+- **Atualização do complemento oficial pelo catálogo**: o mesmo efeito também
+  é publicado em pacote `.halla-addon` na central
+  [Halla-Addons](https://grouphalla.github.io/Halla-Addons/) — instalado pelo
+  **Catálogo online**, o pacote `official.radio-voice` **substitui** o
+  embutido; removido, devolve o embutido ao estado anterior. É assim que o
+  filtro de rádio é aprimorado sem publicar um novo APK: a fonte da
+  biblioteca Android vive em `app/src/main/cpp/addons/radio-voice/` e o CI
+  publica os `.so` das quatro ABIs como artefato.
 - Funções sem equivalente no Android (hotkeys globais, mute local por usuário
   do lado do host) retornam `HALLA_RESULT_UNAVAILABLE`, conforme previsto pela
   especificação da ABI — plugins devem tolerar ausências.

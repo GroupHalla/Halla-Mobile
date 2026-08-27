@@ -47,9 +47,19 @@ object AddonCatalog {
                 sha256.length != 64
     }
 
-    /** IDs do catálogo que correspondem a complementos embutidos com outro id no Mobile. */
-    fun localIdFor(catalogId: String): String =
-        if (catalogId == "official.radio-voice") PluginManager.OFFICIAL_RADIO_ID else catalogId
+    /**
+     * IDs do catálogo que correspondem a complementos embutidos com outro id
+     * no Mobile. Quando o pacote oficial de rádio está instalado, ele MESMO é
+     * o complemento local (substitui o embutido de id com.halla.radio-voice).
+     */
+    fun localIdFor(context: Context, catalogId: String): String =
+        if (catalogId == "official.radio-voice") {
+            if (PluginManager.externalRadioInstalled(context)) {
+                PluginManager.CATALOG_RADIO_ID
+            } else {
+                PluginManager.OFFICIAL_RADIO_ID
+            }
+        } else catalogId
 
     /** Versão "x.y.z" do catálogo é mais nova que a instalada? */
     fun isNewer(candidate: String, current: String): Boolean {
