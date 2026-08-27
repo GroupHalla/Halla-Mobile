@@ -1305,6 +1305,16 @@
                                 android:textColor="#FFFFFF"
                                 android:textStyle="bold" />
 
+                            <Button
+                                android:id="@+id/btnAddonCatalog"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:backgroundTint="#2A2440"
+                                android:text="@string/addon_catalog_button"
+                                android:textColor="#C4B5FD"
+                                android:textStyle="bold" />
+
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"

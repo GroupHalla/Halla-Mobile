@@ -943,6 +943,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }, ADDON_INSTALL_REQUEST)
         }
 
+        findViewById<Button>(R.id.btnAddonCatalog).setOnClickListener {
+            showAddonCatalog()
+        }
+
         btnSettingsCheckUpdates.setOnClickListener {
             checkUpdatesFromSettings()
         }
@@ -1246,6 +1250,191 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         PluginManager.addons(this).forEach { addon ->
             containerAddons.addView(createAddonCard(addon))
         }
+    }
+
+    // ------------------------------------------------------ catálogo online
+
+    /** Abre o catálogo oficial (https://grouphalla.github.io/Halla-Addons/). */
+    private fun showAddonCatalog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(4), dp(2), dp(4))
+        }
+        container.addView(TextView(this).apply {
+            text = getString(R.string.addon_catalog_loading)
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 13f
+            setPadding(dp(10), dp(10), dp(10), dp(12))
+        })
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.addon_catalog_title))
+            .setView(ScrollView(this).apply { addView(container) })
+            .setPositiveButton(R.string.addon_catalog_site) { _, _ ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AddonCatalog.SITE_URL)))
+            }
+            .setNegativeButton(R.string.close, null)
+            .show()
+
+        thread {
+            val entries = try {
+                AddonCatalog.fetch()
+            } catch (e: Exception) {
+                populateAddonCatalogDialog(dialog, container, null, e)
+                return@thread
+            }
+            populateAddonCatalogDialog(dialog, container, entries, null)
+        }
+    }
+
+    private fun populateAddonCatalogDialog(
+        dialog: AlertDialog,
+        container: LinearLayout,
+        entries: List<AddonCatalog.Entry>?,
+        error: Exception?
+    ) {
+        runOnUiThread {
+            if (!dialog.isShowing) return@runOnUiThread
+            container.removeAllViews()
+            val context = this
+
+            if (entries == null) {
+                container.addView(TextView(context).apply {
+                    text = getString(R.string.addon_catalog_error, error?.message ?: "?")
+                    setTextColor(Color.parseColor("#F87171"))
+                    textSize = 13f
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                })
+                return@runOnUiThread
+            }
+            if (entries.isEmpty()) {
+                container.addView(TextView(context).apply {
+                    text = getString(R.string.addon_catalog_empty)
+                    setTextColor(Color.parseColor("#94A3B8"))
+                    textSize = 13f
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                })
+                return@runOnUiThread
+            }
+
+            val installed = PluginManager.addons(context).associateBy { it.id }
+            entries.forEach { entry ->
+                container.addView(createCatalogEntryCard(entry, installed))
+            }
+        }
+    }
+
+    private fun catalogPlatformLabel(entry: AddonCatalog.Entry): String {
+        val desktop = entry.platforms.contains("desktop")
+        val mobile = entry.platforms.contains("mobile")
+        return when {
+            desktop && mobile -> getString(R.string.addon_platform_both)
+            mobile -> getString(R.string.addon_platform_mobile)
+            desktop -> getString(R.string.addon_platform_desktop)
+            else -> getString(R.string.addon_platform_both)
+        }
+    }
+
+    private fun createCatalogEntryCard(
+        entry: AddonCatalog.Entry,
+        installed: Map<String, PluginManager.AddonInfo>
+    ): View {
+        val context = this
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#1E1B2E"))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+
+        val localId = AddonCatalog.localIdFor(entry.id)
+        val local = installed[localId]
+
+        val title = TextView(context).apply {
+            text = if (entry.official)
+                "${entry.name}  •  ${getString(R.string.addon_official_badge)}"
+            else entry.name
+            setTextColor(
+                if (entry.forMobile) Color.WHITE else Color.parseColor("#64748B")
+            )
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        card.addView(title)
+
+        val details = TextView(context).apply {
+            val version = if (entry.version.isNotEmpty()) "v${entry.version}" else ""
+            val author = if (entry.author.isNotEmpty()) " — ${entry.author}" else ""
+            val updateNote = if (local != null && AddonCatalog.isNewer(entry.version, local.version))
+                "  ⬆ ${getString(R.string.addon_catalog_update_available)}"
+            else ""
+            text = "${catalogPlatformLabel(entry)}  •  $version$author$updateNote\n${entry.description}"
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 12f
+            setPadding(0, dp(4), 0, 0)
+        }
+        card.addView(details)
+
+        when {
+            !entry.forMobile -> {
+                card.addView(TextView(context).apply {
+                    text = getString(R.string.addon_catalog_only_desktop)
+                    setTextColor(Color.parseColor("#64748B"))
+                    textSize = 12f
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }
+            entry.bundled -> {
+                card.addView(TextView(context).apply {
+                    text = getString(R.string.addon_catalog_included)
+                    setTextColor(Color.parseColor("#4ADE80"))
+                    textSize = 12f
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }
+            else -> {
+                val button = Button(context).apply {
+                    text = when {
+                        local == null -> getString(R.string.addon_catalog_install)
+                        AddonCatalog.isNewer(entry.version, local.version) ->
+                            getString(R.string.addon_catalog_update)
+                        else -> getString(R.string.addon_catalog_reinstall)
+                    }
+                    setAllCaps(false)
+                    setTextColor(Color.WHITE)
+                    backgroundTintList = ColorStateList.valueOf(Color.parseColor("#8B5CF6"))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(10) }
+                    setOnClickListener {
+                        isEnabled = false
+                        Toast.makeText(context,
+                            getString(R.string.addon_catalog_downloading, entry.name),
+                            Toast.LENGTH_SHORT).show()
+                        thread {
+                            val error = AddonCatalog.downloadAndInstall(context, entry)
+                            runOnUiThread {
+                                isEnabled = true
+                                if (error == null) {
+                                    Toast.makeText(context,
+                                        getString(R.string.addon_catalog_installed),
+                                        Toast.LENGTH_LONG).show()
+                                    refreshAddonsPanel()
+                                } else {
+                                    Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                }
+                card.addView(button)
+            }
+        }
+        return card
     }
 
     private fun createAddonCard(addon: PluginManager.AddonInfo): View {

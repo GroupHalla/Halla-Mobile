@@ -160,6 +160,10 @@ object PluginManager {
         }
     }
 
+    /** Instala um pacote .halla-addon já baixado em arquivo local (catálogo online). */
+    fun installDownloadedPackage(context: Context, packageFile: File): String? =
+        installFromFile(context, packageFile)
+
     private fun installFromFile(context: Context, packageFile: File): String? {
         ZipFile(packageFile).use { zip ->
             val manifestEntry = zip.getEntry("manifest.json")
