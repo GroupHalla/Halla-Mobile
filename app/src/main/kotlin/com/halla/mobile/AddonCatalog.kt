@@ -79,7 +79,8 @@ object AddonCatalog {
             if (json.optInt("version", 0) != 1) throw IOException("unsupported catalog")
             val arr = json.optJSONArray("addons") ?: return emptyList()
             val out = mutableListOf<Entry>()
-            for (i in 0 until arr.length() && out.size < MAX_ENTRIES) {
+            for (i in 0 until arr.length()) {
+                if (out.size >= MAX_ENTRIES) break
                 val o = arr.optJSONObject(i) ?: continue
                 val id = o.optString("id")
                 if (id.isEmpty()) continue
