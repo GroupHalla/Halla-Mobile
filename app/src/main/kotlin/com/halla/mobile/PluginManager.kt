@@ -255,12 +255,15 @@ object PluginManager {
             if (id == CATALOG_RADIO_ID) {
                 // O pacote oficial substitui o embutido: guarda o estado dele
                 // e desliga o DSP interno para o pacote assumir sem filtrar
-                // a mesma voz duas vezes.
+                // a mesma voz duas vezes. Se o embutido estava ativo, o pacote
+                // assume direto — o efeito não pode "sumir" até uma ativação
+                // manual (o Desktop já preserva o estado pelo id compartilhado).
+                val internoAtivo = isEnabled(context, OFFICIAL_RADIO_ID)
                 prefs(context).edit()
-                    .putBoolean("radioWasEnabledBeforePackage",
-                        isEnabled(context, OFFICIAL_RADIO_ID))
+                    .putBoolean("radioWasEnabledBeforePackage", internoAtivo)
                     .apply()
                 setEnabled(context, OFFICIAL_RADIO_ID, false)
+                if (internoAtivo && !wasLoaded) setEnabled(context, id, true)
             }
             return null
         }
