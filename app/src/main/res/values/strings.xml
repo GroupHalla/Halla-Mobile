@@ -201,6 +201,7 @@ Deseja baixar e instalar agora?</string>
     <string name="identity_imported">Identidade importada com sucesso.</string>
     <string name="identity_created">Identidade criada.</string>
     <string name="default_identity">Padrão (Celular)</string>
+    <string name="uid_restored">UID restaurado automaticamente do backup deste aparelho</string>
     <string name="select_identity">Escolher identidade</string>
     <string name="saved">Salvo</string>
     <string name="cancel">Cancelar</string>

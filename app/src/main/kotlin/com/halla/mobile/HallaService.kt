@@ -393,6 +393,11 @@ class HallaService : Service(), HallaCore.Callbacks {
             .ifEmpty { HallaCore.readSecret(this, "last-server-password") }
         uid = intent.getStringExtra(EXTRA_UID).orEmpty()
             .ifEmpty { saved.getString("client_uid", "").orEmpty() }
+            // Reinstalação: recupera o UID do backup público em Downloads/Halla
+            .ifEmpty { HallaUidPersistence.restore(this) }
+        if (uid.isNotEmpty()) {
+            HallaUidPersistence.ensurePersisted(this, uid)
+        }
         val pinDirectory = File(noBackupFilesDir, "tls-pins").apply { mkdirs() }
         cachePath = pinDirectory.absolutePath
         explicitDisconnect = false
@@ -1263,7 +1268,6 @@ class HallaService : Service(), HallaCore.Callbacks {
                             server.put("motd", obj.optString("motd"))
                             lastMotd = obj.optString("motd")
                         }
-                        if (obj.has("banner")) server.put("banner", obj.optString("banner", ""))
                     }
                 }
                 else -> { /* eventos irrelevantes para o cache */ }

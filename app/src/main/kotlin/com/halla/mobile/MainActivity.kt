@@ -8,7 +8,6 @@ import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -48,7 +47,6 @@ import android.text.TextUtils
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.MotionEvent
-import android.view.ViewOutlineProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -100,7 +98,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Controles do Servidor Ativo Redesenhado Premium (Tema Roxo/Violeta do Mockup)
     private lateinit var txtActiveServerName: TextView
     private lateinit var txtActiveMotd: TextView
-    private lateinit var imgServerBanner: ImageView
     private lateinit var containerChannels: LinearLayout
     private lateinit var txtActiveUsersCountBadge: TextView
     private lateinit var txtNetworkQuality: TextView
@@ -357,7 +354,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Controles do Servidor Ativo Redesenhado Premium
         txtActiveServerName = findViewById(R.id.txtActiveServerName)
         txtActiveMotd = findViewById(R.id.txtActiveMotd)
-        imgServerBanner = findViewById(R.id.imgServerBanner)
         containerChannels = findViewById(R.id.containerChannels)
         txtActiveUsersCountBadge = findViewById(R.id.txtActiveUsersCountBadge)
         txtNetworkQuality = findViewById(R.id.txtNetworkQuality)
@@ -374,6 +370,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnBannerSettings = findViewById(R.id.btnBannerSettings)
         BadgeRegistry.addListener(badgeRegistryListener)
         BadgeRegistry.initialize(applicationContext)
+
+        // UID do cliente: restaura automaticamente do backup público salvo em
+        // Downloads/Halla (caso de reinstalação) e mantém o arquivo atualizado.
+        getOrCreateClientUid()
 
         // Módulos do Dock Flutuante Inferior
         btnMuteMicModule = findViewById(R.id.btnMuteMicModule)
@@ -671,8 +671,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         panelGeral.addView(btnLanguage)
 
         // Estiliza o Cartão compacto do Servidor: gradiente violeta profundo
-        // do mockup oficial (topo escuro -> base iluminada). O banner
-        // personalizado, quando existe, vira um cartão próprio acima dele.
+        // do mockup oficial (topo escuro -> base iluminada). O mobile não exibe
+        // banner personalizado — o servidor é apresentado só por este card.
         val bannerCardContent = findViewById<RelativeLayout>(R.id.bannerCardContent)
         val bannerGradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
@@ -682,16 +682,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             setStroke(dp(1), Color.parseColor("#1AFFFFFF"))
         }
         bannerCardContent.background = bannerGradient
-
-        // Banner personalizado: cantos arredondados iguais aos do cartão
-        // (clipToOutline recorta o ImageView) — a altura proporcional à
-        // proporção da imagem é definida em applyServerBanner().
-        imgServerBanner.clipToOutline = true
-        imgServerBanner.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, dp(20).toFloat())
-            }
-        }
 
         // Avatar do servidor: círculo translúcido com anel sutil (o ponto de
         // status online vem do XML sobre o círculo).
@@ -1821,12 +1811,22 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         var uid = prefs.getString("client_uid", "") ?: ""
         if (uid.isEmpty()) {
-            val random = java.util.UUID.randomUUID().toString().replace("-", "")
-            val rawBytes = random.take(20).toByteArray()
-            uid = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP).trim()
-            if (uid.length > 27) uid = uid.substring(0, 27) + "="
+            // Reinstalação? Antes de gerar um UID novo, procura o backup salvo
+            // na pasta pública Downloads/Halla — que sobrevive à desinstalação.
+            uid = HallaUidPersistence.restore(this)
+            if (uid.isNotEmpty()) {
+                Toast.makeText(this, getString(R.string.uid_restored), Toast.LENGTH_SHORT).show()
+            }
+            if (uid.isEmpty()) {
+                val random = java.util.UUID.randomUUID().toString().replace("-", "")
+                val rawBytes = random.take(20).toByteArray()
+                uid = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP).trim()
+                if (uid.length > 27) uid = uid.substring(0, 27) + "="
+            }
             prefs.edit().putString("client_uid", uid).apply()
         }
+        // Mantém o backup público em dia (grava em segundo plano, só se mudou).
+        HallaUidPersistence.ensurePersisted(this, uid)
         return uid
     }
 
@@ -3254,7 +3254,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 screenShareMaxBitrateKbps =
                     (serverObj?.optInt("screenshare_bitrate", 8000) ?: 8000)
                         .coerceIn(500, 50000)
-                applyServerBanner(serverObj?.optString("banner", ""))
                 val maxClients = (serverObj?.optInt("maxClients", -1) ?: -1)
                     .takeIf { it > 0 }
                     ?: (serverObj?.optInt("max", -1) ?: -1).takeIf { it > 0 }
@@ -3284,48 +3283,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val channelId = names.next().toIntOrNull() ?: continue
             val key = keys.optString(channelId.toString(), "")
             if (key.isNotEmpty()) HallaCore.installChannelKey(channelId, key)
-        }
-    }
-
-    private fun applyServerBanner(encoded: String?) {
-        if (encoded.isNullOrBlank()) {
-            imgServerBanner.visibility = View.GONE
-            imgServerBanner.setImageDrawable(null)
-            return
-        }
-        try {
-            val bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
-            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            if (bitmap != null) {
-                imgServerBanner.setImageBitmap(bitmap)
-                sizeServerBannerImage(bitmap)
-                imgServerBanner.visibility = View.VISIBLE
-            } else {
-                imgServerBanner.visibility = View.GONE
-            }
-        } catch (_: Exception) {
-            imgServerBanner.visibility = View.GONE
-        }
-    }
-
-    /**
-     * Altura do banner proporcional à largura disponível (o cartão tem 16dp
-     * de margem em cada lado), presa entre 96dp e 180dp: banners largos
-     * (ex. 3:1) ficam com a altura exata da proporção e NADA é cortado;
-     * imagens quadradas/retrato são limitadas e apenas levemente aparadas
-     * pelo centerCrop. Antes o banner era esticado atrás dos textos do
-     * cartão de 110dp e perdia metade da largura — o bug do "banner
-     * todo bugado" no mobile.
-     */
-    private fun sizeServerBannerImage(bitmap: android.graphics.Bitmap) {
-        val availableW = resources.displayMetrics.widthPixels - dp(32)
-        if (availableW <= 0) return
-        val ratio = bitmap.height.toFloat() / bitmap.width.toFloat()
-        val target = (availableW * ratio).toInt().coerceIn(dp(96), dp(180))
-        val lp = imgServerBanner.layoutParams ?: return
-        if (lp.height != target) {
-            lp.height = target
-            imgServerBanner.layoutParams = lp
         }
     }
 
@@ -3379,7 +3336,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                             txtActiveServerName.text = it
                         }
                         if (obj.has("motd")) txtActiveMotd.text = obj.optString("motd")
-                        if (obj.has("banner")) applyServerBanner(obj.optString("banner", ""))
                     } else if (t == "group_list") {
                         serverGroupsData = obj.optJSONArray("groups") ?: JSONArray()
                         finishServerPanel("groups")
@@ -4544,6 +4500,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     saveIdentities(promoted)
                     getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
                         .putString("client_uid", result.alias).apply()
+                    // O UID ativo mudou: atualiza também o backup público em
+                    // Downloads/Halla para sobreviver a desinstalações.
+                    HallaUidPersistence.ensurePersisted(this, result.alias)
                     Toast.makeText(this,
                         getString(R.string.identity_backup_imported, result.uid.take(12)),
                         Toast.LENGTH_LONG).show()

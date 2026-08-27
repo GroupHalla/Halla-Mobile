@@ -198,6 +198,7 @@ Download and install now?</string>
     <string name="identity_imported">Identity imported successfully.</string>
     <string name="identity_created">Identity created.</string>
     <string name="default_identity">Default (Phone)</string>
+    <string name="uid_restored">UID automatically restored from this device\'s backup</string>
     <string name="select_identity">Choose identity</string>
     <string name="saved">Saved</string>
     <string name="cancel">Cancel</string>

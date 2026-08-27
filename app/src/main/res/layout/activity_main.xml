@@ -191,10 +191,9 @@
             android:background="#0B0C10"
             android:visibility="gone">
 
-            <!-- Card de Destaque do Servidor. Quando o administrador define um -->
-            <!-- banner personalizado, ele vira um CARTÃO PRÓPRIO de largura total -->
-            <!-- acima do cartão compacto (estilo Discord) — nunca mais um fundo -->
-            <!-- cortado atrás dos textos. Sem banner, só o cartão compacto aparece. -->
+            <!-- Card de Destaque do Servidor: card compacto único com gradiente, -->
+            <!-- logo, nome/MoTD e badges. O banner personalizado é exclusivo do -->
+            <!-- Desktop; no mobile o servidor é apresentado só por este card. -->
             <RelativeLayout
                 android:id="@+id/layoutServerBanner"
                 android:layout_width="match_parent"
@@ -204,25 +203,12 @@
                 android:layout_marginEnd="16dp"
                 android:layout_marginBottom="16dp">
 
-            <!-- Banner personalizado enviado pelo administrador do servidor. -->
-            <!-- Altura calculada em código pela proporção da imagem (nada é -->
-            <!-- cortado em banners largos); cantos arredondados via clipToOutline. -->
-            <!-- Oculto quando o servidor não tem banner. -->
-            <ImageView
-                android:id="@+id/imgServerBanner"
-                android:layout_width="match_parent"
-                android:layout_height="140dp"
-                android:layout_alignParentTop="true"
-                android:layout_marginBottom="10dp"
-                android:scaleType="centerCrop"
-                android:visibility="gone" />
-
             <!-- Cartão compacto de informações: gradiente + logo + nome/MoTD/badges. -->
             <RelativeLayout
                 android:id="@+id/bannerCardContent"
                 android:layout_width="match_parent"
                 android:layout_height="110dp"
-                android:layout_below="@+id/imgServerBanner"
+                android:layout_alignParentTop="true"
                 android:padding="16dp">
 
             <!-- Logo oficial no banner do servidor -->

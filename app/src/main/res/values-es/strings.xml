@@ -198,6 +198,7 @@ Notas de la versión:
     <string name="identity_imported">Identidad importada correctamente.</string>
     <string name="identity_created">Identidad creada.</string>
     <string name="default_identity">Predeterminada (Teléfono)</string>
+    <string name="uid_restored">UID restaurado automáticamente desde la copia de este dispositivo</string>
     <string name="select_identity">Elegir identidad</string>
     <string name="saved">Guardado</string>
     <string name="cancel">Cancelar</string>
