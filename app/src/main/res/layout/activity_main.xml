@@ -191,29 +191,39 @@
             android:background="#0B0C10"
             android:visibility="gone">
 
-            <!-- Card de Destaque do Servidor (Top Banner Gradiente Metálico Roxo) -->
+            <!-- Card de Destaque do Servidor. Quando o administrador define um -->
+            <!-- banner personalizado, ele vira um CARTÃO PRÓPRIO de largura total -->
+            <!-- acima do cartão compacto (estilo Discord) — nunca mais um fundo -->
+            <!-- cortado atrás dos textos. Sem banner, só o cartão compacto aparece. -->
             <RelativeLayout
                 android:id="@+id/layoutServerBanner"
                 android:layout_width="match_parent"
-                android:layout_height="110dp"
+                android:layout_height="wrap_content"
                 android:layout_marginStart="16dp"
                 android:layout_marginTop="16dp"
                 android:layout_marginEnd="16dp"
-                android:layout_marginBottom="16dp"
-                android:padding="16dp">
+                android:layout_marginBottom="16dp">
 
             <!-- Banner personalizado enviado pelo administrador do servidor. -->
+            <!-- Altura calculada em código pela proporção da imagem (nada é -->
+            <!-- cortado em banners largos); cantos arredondados via clipToOutline. -->
+            <!-- Oculto quando o servidor não tem banner. -->
             <ImageView
                 android:id="@+id/imgServerBanner"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:layout_alignParentStart="true"
+                android:layout_height="140dp"
                 android:layout_alignParentTop="true"
-                android:layout_alignParentEnd="true"
-                android:layout_alignParentBottom="true"
-                android:alpha="0.72"
+                android:layout_marginBottom="10dp"
                 android:scaleType="centerCrop"
                 android:visibility="gone" />
+
+            <!-- Cartão compacto de informações: gradiente + logo + nome/MoTD/badges. -->
+            <RelativeLayout
+                android:id="@+id/bannerCardContent"
+                android:layout_width="match_parent"
+                android:layout_height="110dp"
+                android:layout_below="@+id/imgServerBanner"
+                android:padding="16dp">
 
             <!-- Logo oficial no banner do servidor -->
             <RelativeLayout
@@ -349,6 +359,8 @@
                     android:layout_alignParentEnd="true"
                     android:layout_alignParentTop="true"
                     android:background="@drawable/ic_settings" />
+
+            </RelativeLayout>
 
             </RelativeLayout>
 
@@ -490,13 +502,19 @@
 
                         <TextView
                             android:id="@+id/txtMicText"
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
+                            android:gravity="center_horizontal"
+                            android:maxLines="2"
                             android:text="@string/mute_mic"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
-                            android:textStyle="bold" />
+                            android:textStyle="bold"
+                            app:autoSizeMaxTextSize="11sp"
+                            app:autoSizeMinTextSize="7sp"
+                            app:autoSizeStepGranularity="0.5sp"
+                            app:autoSizeTextType="uniform" />
 
                     </LinearLayout>
 
@@ -520,13 +538,19 @@
 
                         <TextView
                             android:id="@+id/txtDeafenText"
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
+                            android:gravity="center_horizontal"
+                            android:maxLines="2"
                             android:text="@string/speakers"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
-                            android:textStyle="bold" />
+                            android:textStyle="bold"
+                            app:autoSizeMaxTextSize="11sp"
+                            app:autoSizeMinTextSize="7sp"
+                            app:autoSizeStepGranularity="0.5sp"
+                            app:autoSizeTextType="uniform" />
 
                     </LinearLayout>
 
@@ -581,13 +605,19 @@
                             android:src="@drawable/ic_chat" />
 
                         <TextView
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
+                            android:gravity="center_horizontal"
+                            android:maxLines="2"
                             android:text="@string/messages"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
-                            android:textStyle="bold" />
+                            android:textStyle="bold"
+                            app:autoSizeMaxTextSize="11sp"
+                            app:autoSizeMinTextSize="7sp"
+                            app:autoSizeStepGranularity="0.5sp"
+                            app:autoSizeTextType="uniform" />
 
                     </LinearLayout>
 
@@ -611,13 +641,19 @@
 
                         <TextView
                             android:id="@+id/txtScreenShareText"
-                            android:layout_width="wrap_content"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="4dp"
+                            android:gravity="center_horizontal"
+                            android:maxLines="2"
                             android:text="@string/transmit"
                             android:textColor="#94A3B8"
                             android:textSize="11sp"
-                            android:textStyle="bold" />
+                            android:textStyle="bold"
+                            app:autoSizeMaxTextSize="11sp"
+                            app:autoSizeMinTextSize="7sp"
+                            app:autoSizeStepGranularity="0.5sp"
+                            app:autoSizeTextType="uniform" />
 
                     </LinearLayout>
 

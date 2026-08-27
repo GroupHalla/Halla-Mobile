@@ -8,6 +8,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Outline
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -47,6 +48,7 @@ import android.text.TextUtils
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.MotionEvent
+import android.view.ViewOutlineProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -668,9 +670,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         panelGeral.addView(btnLanguage)
 
-        // Estiliza o Card de Destaque do Servidor: gradiente violeta profundo
-        // do mockup oficial (topo escuro -> base iluminada).
-        val layoutServerBanner = findViewById<RelativeLayout>(R.id.layoutServerBanner)
+        // Estiliza o Cartão compacto do Servidor: gradiente violeta profundo
+        // do mockup oficial (topo escuro -> base iluminada). O banner
+        // personalizado, quando existe, vira um cartão próprio acima dele.
+        val bannerCardContent = findViewById<RelativeLayout>(R.id.bannerCardContent)
         val bannerGradient = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(Color.parseColor("#1A1033"), Color.parseColor("#4C1D95"))
@@ -678,7 +681,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             cornerRadius = dp(20).toFloat()
             setStroke(dp(1), Color.parseColor("#1AFFFFFF"))
         }
-        layoutServerBanner.background = bannerGradient
+        bannerCardContent.background = bannerGradient
+
+        // Banner personalizado: cantos arredondados iguais aos do cartão
+        // (clipToOutline recorta o ImageView) — a altura proporcional à
+        // proporção da imagem é definida em applyServerBanner().
+        imgServerBanner.clipToOutline = true
+        imgServerBanner.outlineProvider = object : ViewOutlineProvider() {
+            override fun getOutline(view: View, outline: Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, dp(20).toFloat())
+            }
+        }
 
         // Avatar do servidor: círculo translúcido com anel sutil (o ponto de
         // status online vem do XML sobre o círculo).
@@ -3285,12 +3298,34 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             if (bitmap != null) {
                 imgServerBanner.setImageBitmap(bitmap)
+                sizeServerBannerImage(bitmap)
                 imgServerBanner.visibility = View.VISIBLE
             } else {
                 imgServerBanner.visibility = View.GONE
             }
         } catch (_: Exception) {
             imgServerBanner.visibility = View.GONE
+        }
+    }
+
+    /**
+     * Altura do banner proporcional à largura disponível (o cartão tem 16dp
+     * de margem em cada lado), presa entre 96dp e 180dp: banners largos
+     * (ex. 3:1) ficam com a altura exata da proporção e NADA é cortado;
+     * imagens quadradas/retrato são limitadas e apenas levemente aparadas
+     * pelo centerCrop. Antes o banner era esticado atrás dos textos do
+     * cartão de 110dp e perdia metade da largura — o bug do "banner
+     * todo bugado" no mobile.
+     */
+    private fun sizeServerBannerImage(bitmap: android.graphics.Bitmap) {
+        val availableW = resources.displayMetrics.widthPixels - dp(32)
+        if (availableW <= 0) return
+        val ratio = bitmap.height.toFloat() / bitmap.width.toFloat()
+        val target = (availableW * ratio).toInt().coerceIn(dp(96), dp(180))
+        val lp = imgServerBanner.layoutParams ?: return
+        if (lp.height != target) {
+            lp.height = target
+            imgServerBanner.layoutParams = lp
         }
     }
 
