@@ -65,6 +65,8 @@ static jmethodID g_onPingMethod = nullptr;
 static jmethodID g_onPokeMethod = nullptr;
 static jmethodID g_onScreenShareFrameMethod = nullptr;
 static jmethodID g_onWebRtcSignalMethod = nullptr;
+static jmethodID g_onIconDataMethod = nullptr;
+static jmethodID g_onIconUploadedMethod = nullptr;
 static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
 static jmethodID g_onPluginNotificationMethod = nullptr;
@@ -582,6 +584,44 @@ void invokeOnUserList(const std::string& usersJson) {
         jstring jJson = env->NewStringUTF(usersJson.c_str());
         env->CallStaticVoidMethod(g_coreClass, g_onUserListMethod, jJson);
         env->DeleteLocalRef(jJson);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+// Ícones de cargo: resposta do icon_get (bytes em base64) e o broadcast
+// icon_uploaded quando um administrador envia/substitui a imagem.
+void invokeOnIconData(const std::string& name, const std::string& dataB64) {
+    if (!g_vm || !g_coreClass || !g_onIconDataMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jName = env->NewStringUTF(name.c_str());
+        jstring jData = env->NewStringUTF(dataB64.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onIconDataMethod, jName, jData);
+        env->DeleteLocalRef(jName);
+        env->DeleteLocalRef(jData);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+void invokeOnIconUploaded(const std::string& name) {
+    if (!g_vm || !g_coreClass || !g_onIconUploadedMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jName = env->NewStringUTF(name.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onIconUploadedMethod, jName);
+        env->DeleteLocalRef(jName);
     }
     if (attached) g_vm->DetachCurrentThread();
 }
@@ -1619,6 +1659,28 @@ private:
                 return;
             }
 
+            if (t == "icon_data") {
+                // Bytes (base64) de um ícone de cargo pedido pelo app
+                // (icon_get). O Kotlin guarda no RoleIconCache e atualiza a
+                // interface se o painel de informações estiver aberto.
+                const std::string name = jsonExtractString(line, "name");
+                const std::string data = jsonExtractString(line, "data");
+                if (!name.empty() && !data.empty()) {
+                    invokeOnIconData(name, data);
+                }
+                return;
+            }
+
+            if (t == "icon_uploaded") {
+                // Um administrador enviou/substituiu a imagem: todos os
+                // clientes invalidam a cópia local e re-buscaram.
+                const std::string name = jsonExtractString(line, "name");
+                if (!name.empty()) {
+                    invokeOnIconUploaded(name);
+                }
+                return;
+            }
+
             if (t == "user_joined" || t == "user_left" || t == "user_moved" ||
                 t == "chan_update" || t == "chan_removed" || t == "user_state" ||
                 t == "user_nick" || t == "user_desc" || t == "user_group" ||
@@ -1924,6 +1986,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onScreenShareFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnScreenShareFrame", "(I[B)V");
     g_onWebRtcSignalMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWebRtcSignal", "(Ljava/lang/String;)V");
+    g_onIconDataMethod = env->GetStaticMethodID(g_coreClass, "triggerOnIconData", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onIconUploadedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnIconUploaded", "(Ljava/lang/String;)V");
     g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
     g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
     g_onPluginNotificationMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginNotification", "(Ljava/lang/String;Ljava/lang/String;)V");

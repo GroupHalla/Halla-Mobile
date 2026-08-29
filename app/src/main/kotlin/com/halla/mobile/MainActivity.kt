@@ -192,6 +192,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var complaintsData = JSONArray()
     private var pendingServerPanel: String? = null
 
+    // Ícones de cargo: escopo por servidor conectado e views do painel de
+    // informações aguardando a imagem (icon_get em voo).
+    private var activeServerKey = ""
+    private val pendingRoleIconViews = HashMap<String, MutableList<ImageView>>()
+
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
     private lateinit var btnRecordTop: Button
@@ -370,6 +375,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnBannerSettings = findViewById(R.id.btnBannerSettings)
         BadgeRegistry.addListener(badgeRegistryListener)
         BadgeRegistry.initialize(applicationContext)
+        RoleIconCache.configure(applicationContext)
 
         // UID do cliente: restaura automaticamente do backup público salvo em
         // Downloads/Halla (caso de reinstalação) e mantém o arquivo atualizado.
@@ -2887,6 +2893,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
 
+        // Escopo do cache de ícones de cargo para este servidor.
+        activeServerKey = RoleIconCache.serverKey(host, port)
+
         val uid = if (srv.has("identity_uid") && srv.getString("identity_uid").isNotEmpty()) {
             srv.getString("identity_uid")
         } else {
@@ -2927,6 +2936,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
         txtError.visibility = View.GONE
         btnConnectStatusConnecting()
+
+        // Escopo do cache de ícones de cargo para este servidor.
+        activeServerKey = RoleIconCache.serverKey(host, port)
 
         var uid = getOrCreateClientUid()
         for (i in 0 until savedServers.length()) {
@@ -3173,6 +3185,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         lastConnectAttempt = null // login aceito: nada para repetir
         runOnUiThread {
+            // Reconexão do serviço (tela apagada) não passa pelo fluxo da
+            // Activity: recupera o escopo dos ícones aqui também.
+            val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
+            val host = prefs.getString("last_srv_host", "") ?: ""
+            val port = prefs.getInt("last_srv_port", 0)
+            if (host.isNotEmpty() && port != 0 && activeServerKey.isEmpty()) {
+                activeServerKey = RoleIconCache.serverKey(host, port)
+            }
+            RoleIconCache.clearSessionState()
+
             btnConnectStatusNormal()
             showScreen(R.id.layoutServer) // Transiciona as telas de forma centralizada e sem bugs!
 
@@ -3270,6 +3292,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                 updateActiveServerSlots(clientsCount, maxClients)
                 rebuildChannelTree()
+
+                // Pré-busca dos ícones de cargo dos usuários online: quando o
+                // usuário abrir as informações de um cliente, o ícone já está
+                // no cache na maioria dos casos.
+                prefetchRoleIcons()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -3362,6 +3389,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 updateActiveServerSlots(usersData.length(), activeMaxClients)
 
                 rebuildChannelTree()
+
+                // Cargos podem ter mudado (user_group/user_joined): mantém os
+                // ícones de cargo pré-buscados em dia.
+                prefetchRoleIcons()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -3401,6 +3432,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     override fun onError(code: String, msg: String) {
+        // Ícone de cargo referenciado por um cargo mas ainda não enviado ao
+        // servidor: o cache re-tenta a cada 5 s sozinho — não é um erro que o
+        // usuário precise ver no banner.
+        if (code == "not_found" && msg == "Ícone não encontrado") return
         pendingServerPanel = null
         runOnUiThread {
             txtError.text = if (msg.isNotEmpty()) getString(R.string.error_details, code, msg) else code
@@ -6048,6 +6083,72 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
+    // ==================================================== ícones de cargo (v1.0.90)
+    // O campo "group" dos usuários chega como "<icone> <nome>" por cargo
+    // (ex.: "rota.png ROTA"). O painel de informações renderiza a IMAGEM do
+    // ícone (buscada por icon_get e guardada no RoleIconCache) ao lado do
+    // nome do cargo — antes a linha era impressa como texto puro e o app
+    // mostrava literalmente "rota.png ROTA".
+
+    override fun onIconDataReceived(name: String, dataB64: String) {
+        if (activeServerKey.isEmpty()) return
+        runOnUiThread {
+            try {
+                val bytes = android.util.Base64.decode(dataB64, android.util.Base64.NO_WRAP)
+                RoleIconCache.store(activeServerKey, name, bytes)
+                refreshPendingRoleIconViews(name)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    override fun onIconUploaded(name: String) {
+        if (activeServerKey.isEmpty()) return
+        runOnUiThread {
+            RoleIconCache.invalidate(activeServerKey, name)
+            requestRoleIcon(name)
+        }
+    }
+
+    /** Envia icon_get respeitando a política do cache (throttle de 5 s). */
+    private fun requestRoleIcon(name: String) {
+        if (activeServerKey.isEmpty() || name.isEmpty() || !HallaService.isRunning()) return
+        val haveIt = RoleIconCache.bitmap(activeServerKey, name) != null
+        if (RoleIconCache.shouldRequest(activeServerKey, name, haveIt)) {
+            try {
+                HallaCore.sendRawJson(
+                    JSONObject().put("t", "icon_get").put("name", name).toString())
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** Busca os ícones de imagem de todos os cargos online (welcome/updates). */
+    private fun prefetchRoleIcons() {
+        if (activeServerKey.isEmpty()) return
+        val names = LinkedHashSet<String>()
+        for (i in 0 until usersData.length()) {
+            val user = usersData.optJSONObject(i) ?: continue
+            for (line in user.optString("group", "").split("\n")) {
+                val trimmed = line.trim()
+                if (trimmed.isEmpty()) continue
+                val (icon, _) = RoleIconCache.splitRoleLine(trimmed)
+                if (icon.isNotEmpty()) names.add(icon)
+            }
+        }
+        names.forEach { requestRoleIcon(it) }
+    }
+
+    /** icon_data chegou: atualiza as views do painel de informações aberto. */
+    private fun refreshPendingRoleIconViews(name: String) {
+        val views = pendingRoleIconViews[name] ?: return
+        val bitmap = RoleIconCache.bitmap(activeServerKey, name) ?: return
+        for (view in views) {
+            view.setImageBitmap(bitmap)
+            view.visibility = View.VISIBLE
+        }
+    }
+
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
         if (watchingStreamUserId == 0 || jpegData.isEmpty()) return
         // Em algumas combinações de servidor/cliente, o ID do stream pode não
@@ -6132,25 +6233,88 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val version = usr.optString("ver", "1.0.0")
         val platform = usr.optString("platform", "Android")
         val uptime = usr.optInt("uptime", 0)
-        // Grupos múltiplos chegam separados por quebra de linha (uma linha por
-        // cargo, com ícone). Exibidos em linha única separados por " · ".
-        val group = usr.optString("group", getString(R.string.member_default))
+        // Grupos múltiplos chegam separados por quebra de linha: uma linha por
+        // cargo no formato "<icone> <nome>" (ex.: "rota.png ROTA"). Ícone de
+        // IMAGEM vira imagem (RoleIconCache); emoji/letra/sigla e cargo sem
+        // ícone seguem como texto — o nome do ARQUIVO nunca vaza para a UI.
+        val roles = usr.optString("group", "")
             .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-            .joinToString(" · ")
-            .ifEmpty { getString(R.string.member_default) }
 
-        val info = getString(R.string.user_info_name, name) +
-                   getString(R.string.user_info_ip, ip) +
-                   getString(R.string.user_info_ping, ping.toString()) +
-                   getString(R.string.user_info_version, version) +
-                   getString(R.string.user_info_platform, platform) +
-                   getString(R.string.user_info_uptime, uptime.toString()) +
-                   getString(R.string.user_info_group, group)
+        val scroll = ScrollView(context)
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(6))
+        }
+
+        fun addText(text: String) {
+            content.addView(TextView(context).apply {
+                this.text = text
+                setTextColor(Color.parseColor("#E2E8F0"))
+                textSize = 14f
+                setPadding(0, dp(3), 0, dp(3))
+            })
+        }
+
+        addText(getString(R.string.user_info_name, name).trim())
+        addText(getString(R.string.user_info_ip, ip).trim())
+        addText(getString(R.string.user_info_ping, ping.toString()).trim())
+        addText(getString(R.string.user_info_version, version).trim())
+        addText(getString(R.string.user_info_platform, platform).trim())
+        addText(getString(R.string.user_info_uptime, uptime.toString()).trim())
+
+        if (roles.isNotEmpty()) {
+            content.addView(TextView(context).apply {
+                text = getString(R.string.user_info_group, "").trim().trimEnd(':')
+                setTextColor(Color.parseColor("#94A3B8"))
+                textSize = 12f
+                setTypeface(null, Typeface.BOLD)
+                setPadding(0, dp(10), 0, dp(2))
+            })
+            for (role in roles) {
+                val (iconName, label) = RoleIconCache.splitRoleLine(role)
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, dp(2), 0, dp(2))
+                }
+                if (iconName.isNotEmpty() && activeServerKey.isNotEmpty()) {
+                    val iconView = ImageView(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                            rightMargin = dp(8)
+                        }
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        visibility = View.GONE
+                    }
+                    val bitmap = RoleIconCache.bitmap(activeServerKey, iconName)
+                    if (bitmap != null) {
+                        iconView.setImageBitmap(bitmap)
+                        iconView.visibility = View.VISIBLE
+                    } else {
+                        // Ainda não temos os bytes: mostra só o nome do cargo e
+                        // pede ao servidor — a imagem entra quando o icon_data
+                        // chegar (refreshPendingRoleIconViews).
+                        pendingRoleIconViews.getOrPut(iconName) { mutableListOf() }.add(iconView)
+                        requestRoleIcon(iconName)
+                    }
+                    row.addView(iconView)
+                }
+                row.addView(TextView(context).apply {
+                    // Cargo com ícone de imagem: só o NOME. Sem ícone de
+                    // imagem: a linha inteira (emoji/letra renderizam nativos).
+                    text = if (iconName.isNotEmpty()) label else role
+                    setTextColor(Color.parseColor("#F1EEFA"))
+                    textSize = 14f
+                })
+                content.addView(row)
+            }
+        }
+        scroll.addView(content)
 
         AlertDialog.Builder(context)
             .setTitle(getString(R.string.client_details, name))
-            .setMessage(info)
+            .setView(scroll)
             .setPositiveButton(getString(R.string.close), null)
+            .setOnDismissListener { pendingRoleIconViews.clear() }
             .show()
     }
 

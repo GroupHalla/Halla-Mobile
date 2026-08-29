@@ -439,6 +439,11 @@ object HallaCore {
         fun onPokeReceived(fromName: String, msg: String)
         fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray)
         fun onWebRtcSignalReceived(signalJson: String)
+
+        // Ícones de cargo (icon_get/icon_data). Implementação padrão vazia:
+        // só a Activity renderiza ícones — o serviço foreground não precisa.
+        fun onIconDataReceived(name: String, dataB64: String) {}
+        fun onIconUploaded(name: String) {}
     }
 
     private val callbacks = CopyOnWriteArraySet<Callbacks>()
@@ -523,6 +528,18 @@ object HallaCore {
     @JvmStatic
     fun triggerOnWebRtcSignal(signalJson: String) {
         callbacks.forEach { it.onWebRtcSignalReceived(signalJson) }
+    }
+
+    // Ícones de cargo: bytes (base64) enviados pelo servidor em resposta ao
+    // icon_get, e o broadcast icon_uploaded quando um admin troca a imagem.
+    @JvmStatic
+    fun triggerOnIconData(name: String, dataB64: String) {
+        callbacks.forEach { it.onIconDataReceived(name, dataB64) }
+    }
+
+    @JvmStatic
+    fun triggerOnIconUploaded(name: String) {
+        callbacks.forEach { it.onIconUploaded(name) }
     }
 
     // ---- Callbacks do host de complementos (chamados pelo C++) ----
