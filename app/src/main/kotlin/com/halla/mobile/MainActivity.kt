@@ -1254,6 +1254,36 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    // ============================================================================
+    // Cores de texto de diálogo (contraste em qualquer tema do aparelho)
+    // ============================================================================
+    //
+    // O AlertDialog herda o tema DayNight da Activity: num aparelho em modo
+    // claro o diálogo é BRANCO, no escuro ele é escuro. Texto com cor fixa do
+    // tema escuro do app (#F1EEFA, #E2E8F0 etc.) fica quase invisível sobre o
+    // diálogo claro — e texto preto fixo sumiria no escuro. Estes helpers
+    // resolvem textColorPrimary/textColorSecondary do tema VIGENTE, então o
+    // texto acompanha a superfície do diálogo nos dois modos (mesma cor do
+    // título e dos botões do diálogo). Diálogos com fundo escuro forçado
+    // (#151322) continuam usando cores claras fixas — lá o contraste já é
+    // garantido pela própria superfície.
+
+    /** Cor de destaque (valores e textos principais de diálogo). */
+    private fun dialogTextPrimary(): Int {
+        val ta = obtainStyledAttributes(intArrayOf(android.R.attr.textColorPrimary))
+        val color = ta.getColor(0, Color.BLACK)
+        ta.recycle()
+        return color
+    }
+
+    /** Cor de apoio (rótulos, dicas e textos secundários de diálogo). */
+    private fun dialogTextSecondary(): Int {
+        val ta = obtainStyledAttributes(intArrayOf(android.R.attr.textColorSecondary))
+        val color = ta.getColor(0, Color.GRAY)
+        ta.recycle()
+        return color
+    }
+
     private fun refreshAddonsPanel() {
         containerAddons.removeAllViews()
         PluginManager.addons(this).forEach { addon ->
@@ -1271,7 +1301,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         container.addView(TextView(this).apply {
             text = getString(R.string.addon_catalog_loading)
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(dialogTextSecondary())
             textSize = 13f
             setPadding(dp(10), dp(10), dp(10), dp(12))
         })
@@ -1310,7 +1340,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (entries == null) {
                 container.addView(TextView(context).apply {
                     text = getString(R.string.addon_catalog_error, error?.message ?: "?")
-                    setTextColor(Color.parseColor("#F87171"))
+                    // Vermelho legível tanto no diálogo claro quanto no escuro.
+                    setTextColor(Color.parseColor("#DC2626"))
                     textSize = 13f
                     setPadding(dp(10), dp(10), dp(10), dp(10))
                 })
@@ -1319,7 +1350,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             if (entries.isEmpty()) {
                 container.addView(TextView(context).apply {
                     text = getString(R.string.addon_catalog_empty)
-                    setTextColor(Color.parseColor("#94A3B8"))
+                    setTextColor(dialogTextSecondary())
                     textSize = 13f
                     setPadding(dp(10), dp(10), dp(10), dp(10))
                 })
@@ -2349,7 +2380,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val siglaPlacementLabel = TextView(this).apply {
             text = getString(R.string.group_sigla_position)
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(dialogTextSecondary())
             setPadding(0, 16, 0, 4)
         }
         val siglaPlacement = Spinner(this).apply {
@@ -2367,7 +2398,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val orderEnabled = CheckBox(this).apply {
             text = getString(R.string.group_order_enabled)
-            setTextColor(Color.WHITE)
+            setTextColor(dialogTextPrimary())
             isChecked = source.optBoolean("orderEnabled", true)
         }
         val icon = HallaInputEditText(this).apply {
@@ -2407,7 +2438,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         for ((key, label) in permissionLabels) {
             val check = CheckBox(this).apply {
                 text = label
-                setTextColor(Color.WHITE)
+                setTextColor(dialogTextPrimary())
                 isChecked = perms.optBoolean(key, false)
                 if ((key == "*" || key == "pluginDataGlobal")
                     && !hasPermission("*")) isEnabled = false
@@ -4956,7 +4987,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (limitedTemporaryOwner) {
             layout.addView(TextView(context).apply {
                 text = getString(R.string.temporary_owner_limits)
-                setTextColor(Color.parseColor("#CBD5E1"))
+                setTextColor(dialogTextSecondary())
                 setPadding(0, 0, 0, 16)
             })
         }
@@ -4970,7 +5001,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val hideSymbol = CheckBox(context).apply {
             text = getString(R.string.hide_channel_symbol)
-            setTextColor(Color.WHITE)
+            setTextColor(dialogTextPrimary())
             isChecked = initialNoSymbol
         }
         val inputDesc = HallaInputEditText(context).apply {
@@ -4981,7 +5012,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val descriptionHint = TextView(context).apply {
             text = getString(R.string.description_format_hint)
-            setTextColor(Color.parseColor("#94A3B8"))
+            setTextColor(dialogTextSecondary())
             textSize = 12f
             setPadding(0, 4, 0, 10)
         }
@@ -5003,7 +5034,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         val removePassword = CheckBox(context).apply {
             text = getString(R.string.remove_channel_password)
-            setTextColor(Color.WHITE)
+            setTextColor(dialogTextPrimary())
         }
         // Campos administrativos completos (paridade com o cliente desktop):
         // tipo, codec, qualidade e moderação — visíveis para quem tem
@@ -5034,7 +5065,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         codecSpinner.setSelection((initialCodec - 4).coerceIn(0, 1))
         val qualityValue = TextView(context).apply {
             text = getString(R.string.audio_quality_value, initialQuality)
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(dialogTextSecondary())
             textSize = 13f
             setPadding(0, dp(10), 0, dp(2))
         }
@@ -5053,17 +5084,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         })
         val moderated = CheckBox(context).apply {
             text = getString(R.string.channel_moderated)
-            setTextColor(Color.WHITE)
+            setTextColor(dialogTextPrimary())
             isChecked = initialModerated
         }
         val typeLabel = TextView(context).apply {
             text = getString(R.string.channel_type_label)
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(dialogTextSecondary())
             setPadding(0, 10, 0, 2)
         }
         val codecLabel = TextView(context).apply {
             text = getString(R.string.channel_codec_label)
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(dialogTextSecondary())
             setPadding(0, 10, 0, 2)
         }
 
@@ -5249,7 +5280,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private fun buildAdvancedSettingsToggle(body: LinearLayout): TextView {
         val header = TextView(this).apply {
             text = "▸  ${getString(R.string.advanced_settings)}"
-            setTextColor(Color.parseColor("#A78BFA"))
+            // Roxo da marca legível no diálogo claro OU escuro (o violeta
+            // claro perdia contraste no fundo branco do modo claro).
+            setTextColor(Color.parseColor("#8B5CF6"))
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setPadding(0, dp(14), 0, dp(6))
@@ -5540,17 +5573,19 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         val rows = HashMap<String, Triple<RadioGroup, RadioButton, RadioButton>>()
         for ((key, label) in permKeys) {
             layout.addView(TextView(context).apply {
-                text = label; setTextColor(Color.WHITE); setPadding(0, 10, 0, 2)
+                text = label; setTextColor(dialogTextPrimary()); setPadding(0, 10, 0, 2)
             })
             val group = RadioGroup(context).apply { orientation = RadioGroup.HORIZONTAL }
             val inherit = RadioButton(context).apply {
-                text = getString(R.string.perm_inherit); setTextColor(Color.LTGRAY)
+                text = getString(R.string.perm_inherit); setTextColor(dialogTextSecondary())
             }
             val allow = RadioButton(context).apply {
-                text = getString(R.string.perm_allow); setTextColor(Color.GREEN)
+                // Verdes/vermelhos médios: legíveis tanto no diálogo claro
+                // quanto no escuro (Color.GREEN puro quase some no branco).
+                text = getString(R.string.perm_allow); setTextColor(Color.parseColor("#16A34A"))
             }
             val deny = RadioButton(context).apply {
-                text = getString(R.string.perm_deny); setTextColor(Color.RED)
+                text = getString(R.string.perm_deny); setTextColor(Color.parseColor("#DC2626"))
             }
             group.addView(inherit); group.addView(allow); group.addView(deny)
             val state = current.optInt(key, -1)
@@ -5756,7 +5791,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
         fun label(textValue: String) = TextView(this).apply {
             text = textValue
-            setTextColor(Color.parseColor("#CBD5E1"))
+            setTextColor(dialogTextSecondary())
             setPadding(0, 10, 0, 4)
         }
         val resolutionSpinner = Spinner(this).apply {
@@ -6249,7 +6284,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         fun addText(text: String) {
             content.addView(TextView(context).apply {
                 this.text = text
-                setTextColor(Color.parseColor("#E2E8F0"))
+                // Cor do tema do diálogo: legível com a superfície clara OU
+                // escura do DayNight (cor fixa clara sumia no modo claro).
+                setTextColor(dialogTextPrimary())
                 textSize = 14f
                 setPadding(0, dp(3), 0, dp(3))
             })
@@ -6265,7 +6302,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (roles.isNotEmpty()) {
             content.addView(TextView(context).apply {
                 text = getString(R.string.user_info_group, "").trim().trimEnd(':')
-                setTextColor(Color.parseColor("#94A3B8"))
+                setTextColor(dialogTextSecondary())
                 textSize = 12f
                 setTypeface(null, Typeface.BOLD)
                 setPadding(0, dp(10), 0, dp(2))
@@ -6302,7 +6339,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     // Cargo com ícone de imagem: só o NOME. Sem ícone de
                     // imagem: a linha inteira (emoji/letra renderizam nativos).
                     text = if (iconName.isNotEmpty()) label else role
-                    setTextColor(Color.parseColor("#F1EEFA"))
+                    setTextColor(dialogTextPrimary())
                     textSize = 14f
                 })
                 content.addView(row)
