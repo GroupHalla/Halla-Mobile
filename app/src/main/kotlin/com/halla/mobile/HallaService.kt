@@ -1408,7 +1408,7 @@ class HallaService : Service(), HallaCore.Callbacks {
     }
 
     override fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray) {
-        audio.handleIncomingVoice(pcmData)
+        audio.handleIncomingVoice(fromUserId, pcmData)
     }
 
     override fun onConnectionFailed(reason: String) {

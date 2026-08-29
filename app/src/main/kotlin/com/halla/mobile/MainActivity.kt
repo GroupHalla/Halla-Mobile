@@ -3387,7 +3387,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     override fun onAudioFrameReceived(fromUserId: Int, pcmData: ByteArray) {
         // O foreground service reproduz o áudio mesmo com a Activity fora da
         // tela. O fallback local só é usado se o serviço não estiver ativo.
-        if (!HallaService.isRunning()) audioManager.handleIncomingVoice(pcmData)
+        if (!HallaService.isRunning()) audioManager.handleIncomingVoice(fromUserId, pcmData)
     }
 
     override fun onConnectionFailed(reason: String) {

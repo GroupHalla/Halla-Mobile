@@ -11,6 +11,8 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.concurrent.thread
 import kotlin.math.sqrt
 
@@ -37,6 +39,23 @@ class HallaAudioManager(private val cacheDir: File) {
 
     @Volatile private var transmitEnabled = true
     @Volatile private var speakerEnabled = true
+
+    // ---- Jitter buffer e mixagem da voz recebida ----
+    // Antes cada pacote decodificado era escrito DIRETO no AudioTrack: com
+    // dois falantes ao mesmo tempo os quadros de 20 ms se intercalavam em
+    // série (cada voz picotada no meio da outra) e qualquer atraso de rede
+    // virava um buraco audível. Agora os quadros entram em uma fila POR
+    // USUÁRIO e uma thread dedicada mistura um quadro de cada falante por
+    // instante de 20 ms — o mesmo modelo do Desktop.
+    private val voiceQueues = ConcurrentHashMap<Int, ConcurrentLinkedQueue<ByteArray>>()
+    private val voicePrimed = ConcurrentHashMap.newKeySet<Int>()
+    @Volatile private var voiceTargetFrames = 3   // 2..6 quadros de 20 ms
+    @Volatile private var voiceUnderruns = 0L
+    @Volatile private var voiceSheds = 0L
+    private var voiceLastUnderrunCount = 0
+    private var voiceLastAdaptMs = 0L
+    private var voiceUnderrunsAtLastAdapt = 0L
+    @Volatile private var voiceDrainThread: Thread? = null
 
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
@@ -320,31 +339,172 @@ class HallaAudioManager(private val cacheDir: File) {
                 .build()
             audioTrack = track
             track.play()
+            startVoiceDrainLoop()
         } catch (e: Exception) {
             e.printStackTrace()
             isPlayingAudio = false
         }
     }
 
-    fun handleIncomingVoice(pcmData: ByteArray) {
+    fun handleIncomingVoice(fromUserId: Int, pcmData: ByteArray) {
         if (!speakerEnabled || pcmData.isEmpty()) return
         if (!isPlayingAudio || audioTrack == null) {
             // Se o primeiro frame chegar antes do onConnected terminar de abrir
             // o AudioTrack, não descarte: abra a reprodução preguiçosamente.
             startPlayback()
         }
-        if (isPlayingAudio && speakerEnabled) {
-            try {
-                val written = audioTrack?.write(pcmData, 0, pcmData.size) ?: 0
-                if (isLocalRecording && written > 0) {
-                    localRecordFile?.write(pcmData, 0, written)
-                    localRecordBytes += written
+        if (!isPlayingAudio || !speakerEnabled) return
+        val frame = normalizeVoiceFrame(pcmData) ?: return
+        val queue = voiceQueues.getOrPut(fromUserId) { ConcurrentLinkedQueue() }
+        queue.add(frame)
+        // ~500 ms por usuário como rede de segurança final.
+        while (queue.size > 25) queue.poll()
+    }
+
+    /** Quadros sempre de 1920 bytes (20 ms, mono 48 kHz, 16-bit). */
+    private fun normalizeVoiceFrame(pcm: ByteArray): ByteArray? {
+        if (pcm.size == 1920) return pcm
+        if (pcm.isEmpty() || pcm.size > 1920 * 4) return null
+        return ByteArray(1920).also { System.arraycopy(pcm, 0, it, 0, pcm.size) }
+    }
+
+    /**
+     * Thread de drena/mixagem: um quadro misturado de 20 ms por iteração.
+     * O write() bloqueante do AudioTrack faz o pacing natural do loop.
+     */
+    private fun startVoiceDrainLoop() {
+        if (voiceDrainThread?.isAlive == true) return
+        voiceDrainThread = thread(name = "HallaVoicePlayback") {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+            while (isPlayingAudio) {
+                try {
+                    if (!speakerEnabled) {
+                        voiceQueues.clear()
+                        voicePrimed.clear()
+                        Thread.sleep(20)
+                        continue
+                    }
+                    val track = audioTrack
+                    if (track == null) {
+                        Thread.sleep(20)
+                        continue
+                    }
+                    adaptVoiceTarget(track)
+                    val mixed = mixOneFrame()
+                    if (mixed == null) {
+                        Thread.sleep(5)
+                        continue
+                    }
+                    val written = try {
+                        track.write(mixed, 0, mixed.size)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        isPlayingAudio = false
+                        break
+                    }
+                    if (written > 0 && isLocalRecording) {
+                        try {
+                            localRecordFile?.write(mixed, 0, written)
+                            localRecordBytes += written
+                        } catch (_: Exception) {}
+                    }
+                } catch (e: InterruptedException) {
+                    break
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Thread.sleep(20)
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                isPlayingAudio = false
+            }
+            voiceQueues.clear()
+            voicePrimed.clear()
+        }
+    }
+
+    /**
+     * Alvo adaptativo: underrun real (dispositivo secou com voz primada
+     * ativa) cresce o prebuffer e manda reconstruí-lo; 15 s estáveis decaem
+     * o alvo de volta, para a latência não ficar presa num momento ruim de
+     * rede. Underruns durante silêncio (ninguém falando) são ignorados.
+     */
+    private fun adaptVoiceTarget(track: AudioTrack) {
+        val count = try { track.underrunCount } catch (_: Throwable) { 0 }
+        if (count > voiceLastUnderrunCount) {
+            val realUnderrun = voicePrimed.isNotEmpty()
+            voiceLastUnderrunCount = count
+            if (realUnderrun) {
+                voiceUnderruns++
+                if (voiceTargetFrames < 6) voiceTargetFrames++
+                voicePrimed.clear()
             }
         }
+        val now = System.currentTimeMillis()
+        if (voiceLastAdaptMs == 0L) {
+            // Primeira rodada: só marca a referência, sem decair na largada.
+            voiceLastAdaptMs = now
+            voiceUnderrunsAtLastAdapt = voiceUnderruns
+            return
+        }
+        if (now - voiceLastAdaptMs >= 15_000) {
+            if (voiceTargetFrames > 2 && voiceUnderruns == voiceUnderrunsAtLastAdapt) {
+                // 15 s sem um único underrun: a rede aguenta um alvo menor.
+                voiceTargetFrames--
+            }
+            voiceUnderrunsAtLastAdapt = voiceUnderruns
+            voiceLastAdaptMs = now
+        }
+    }
+
+    /** Mistura um quadro de 20 ms de cada falante primado; null se ocioso. */
+    private fun mixOneFrame(): ByteArray? {
+        var mixed: IntArray? = null
+        var hasFrame = false
+        val emptyUsers = ArrayList<Int>()
+        for ((uid, queue) in voiceQueues) {
+            if (!voicePrimed.contains(uid)) {
+                // Prebuffer por usuário: segura os primeiros quadros até
+                // acumular o alvo e só então começa a tocar.
+                if (queue.size < voiceTargetFrames) continue
+                voicePrimed.add(uid)
+            }
+            // Controle de latência: rajada acumulada acima do alvo + 5
+            // descarta os mais antigos em vez de tocar tudo atrasado.
+            if (queue.size > voiceTargetFrames + 5) {
+                var shed = 0
+                while (queue.size > voiceTargetFrames) {
+                    queue.poll()
+                    shed++
+                }
+                voiceSheds += shed
+            }
+            val frame = queue.poll()
+            if (frame == null) {
+                emptyUsers.add(uid)
+                continue
+            }
+            hasFrame = true
+            val acc = mixed ?: IntArray(960).also { mixed = it }
+            var i = 0
+            while (i + 1 < frame.size && i / 2 < 960) {
+                val sample = ((frame[i].toInt() and 0xFF) or
+                        (frame[i + 1].toInt() shl 8)).toShort().toInt()
+                acc[i / 2] = (acc[i / 2] + sample).coerceIn(-32768, 32767)
+                i += 2
+            }
+            if (queue.isEmpty()) emptyUsers.add(uid)
+        }
+        for (uid in emptyUsers) {
+            voiceQueues.remove(uid)
+            voicePrimed.remove(uid)
+        }
+        if (!hasFrame) return null
+        val acc = mixed ?: return null
+        val out = ByteArray(1920)
+        for (s in 0 until 960) {
+            val v = acc[s].coerceIn(-32768, 32767)
+            out[s * 2] = (v and 0xFF).toByte()
+            out[s * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+        }
+        return out
     }
 
     fun startLocalRecording(filename: String): Boolean {
@@ -407,6 +567,12 @@ class HallaAudioManager(private val cacheDir: File) {
 
     fun setSpeakersEnabled(on: Boolean) {
         speakerEnabled = on
+        if (!on) {
+            // Sem alto-falante não faz sentido manter quadros retidos: a
+            // próxima fala recomeça com prebuffer limpo.
+            voiceQueues.clear()
+            voicePrimed.clear()
+        }
     }
 
     fun forceStopTalking() {
@@ -434,6 +600,9 @@ class HallaAudioManager(private val cacheDir: File) {
         RMS atual: ${"%.2f".format(currentVoiceLevel)}%
         Supressão de ruído: ${if (noiseSuppressionOn) "ligada" else "desligada"}
         Cancelamento de eco: ${if (echoCancellationOn) "ligado" else "desligado"}
+        Jitter de voz: alvo ${voiceTargetFrames * 20} ms (${voiceTargetFrames} quadros)
+        Underruns: $voiceUnderruns, descartes de latência: $voiceSheds
+        Falantes em fila: ${voiceQueues.size}, primados: ${voicePrimed.size}
 
         === Nativo (C++ / rede) ===
         ${nativeDiagnostics()}
@@ -512,5 +681,7 @@ class HallaAudioManager(private val cacheDir: File) {
             audioTrack?.release()
         } catch (_: Exception) {}
         audioTrack = null
+        voiceQueues.clear()
+        voicePrimed.clear()
     }
 }
