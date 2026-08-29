@@ -109,4 +109,86 @@ class RoleIconCacheTest {
         assertTrue(RoleIconCache.serverKey("a.com", 1) != RoleIconCache.serverKey("a.com", 2))
         assertTrue(RoleIconCache.serverKey("a.com", 1) != RoleIconCache.serverKey("b.com", 1))
     }
+
+    // ---------------------------------------------------------- acceptsIconBytes
+
+    @Test
+    fun acceptsIconBytesMatchesDesktopCeiling() {
+        // Mesmo teto de leitura do Desktop (256 KiB): ícones legados maiores
+        // que o limite de upload do servidor continuam válidos.
+        assertTrue(RoleIconCache.acceptsIconBytes(64 * 1024))
+        assertTrue(RoleIconCache.acceptsIconBytes(128 * 1024 + 1))
+        assertTrue(RoleIconCache.acceptsIconBytes(256 * 1024))
+    }
+
+    @Test
+    fun acceptsIconBytesRejectsEmptyAndOversized() {
+        assertFalse(RoleIconCache.acceptsIconBytes(0))
+        assertFalse(RoleIconCache.acceptsIconBytes(-1))
+        assertFalse(RoleIconCache.acceptsIconBytes(256 * 1024 + 1))
+        assertFalse(RoleIconCache.acceptsIconBytes(10 * 1024 * 1024))
+    }
+
+    // ------------------------------------------------------------ sampleSizeFor
+
+    @Test
+    fun sampleSizeForKeepsSmallImagesAtFullResolution() {
+        // Ícones pequenos não são subamostrados: nada abaixo do alvo de
+        // exibição (88 px) perde resolução.
+        assertEquals(1, RoleIconCache.sampleSizeFor(64, 64))
+        assertEquals(1, RoleIconCache.sampleSizeFor(88, 88))
+        assertEquals(1, RoleIconCache.sampleSizeFor(100, 40))
+    }
+
+    @Test
+    fun sampleSizeForSubsamplesLargeImagesAsPowerOfTwo() {
+        // Regressão do bug "só aparece o primeiro ícone": imagens maiores que
+        // 512 px eram REJEITADAS em silêncio; agora são subamostradas —
+        // qualquer dimensão é aceita, gasta pouca memória e mantém qualidade.
+        for (dim in intArrayOf(513, 600, 1024, 2000, 4000)) {
+            val sample = RoleIconCache.sampleSizeFor(dim, dim)
+            assertTrue("sample deve ser potência de 2 (dim=$dim)",
+                sample > 0 && (sample and (sample - 1)) == 0)
+            // Nunca subamostra abaixo do alvo de exibição: o ícone escalado
+            // continua nítido.
+            assertTrue("dim/sample deve ficar >= 88 (dim=$dim, sample=$sample)",
+                dim / sample >= 88)
+        }
+    }
+
+    @Test
+    fun sampleSizeForNeverSubsamplesBelowDisplayTarget() {
+        // Propriedade para QUALQUER imagem >= alvo: a versão decodificada
+        // continua >= 88 px no maior lado (margem 2x na prática).
+        val cases = listOf(
+            512 to 512,      // antigo teto: ainda aceito, subamostra 2x
+            2000 to 2000,
+            4000 to 3000,
+            2000 to 40,      // faixa larga: altura manda, sem subamostra
+            176 to 176
+        )
+        for ((w, h) in cases) {
+            val sample = RoleIconCache.sampleSizeFor(w, h)
+            val dw = w / sample
+            val dh = h / sample
+            val longest = maxOf(dw, dh)
+            assertTrue("subamostrado $w x $h -> ${dw}x$dh não pode ficar < 88",
+                longest >= 88)
+        }
+    }
+
+    @Test
+    fun sampleSizeForHandlesDegenerateDimensions() {
+        assertEquals(1, RoleIconCache.sampleSizeFor(0, 0))
+        assertEquals(1, RoleIconCache.sampleSizeFor(-5, 100))
+        assertEquals(1, RoleIconCache.sampleSizeFor(1, 1))
+    }
+
+    @Test
+    fun sampleSizeForWideBannerKeepsHeightUsable() {
+        // Faixa larga 2000x40: a subamostra seria 1000x20 — a ALTURA é quem
+        // bloqueia (20 < 176), então sample=1 preserva os 40 px de altura
+        // para o escalonamento proporcional.
+        assertEquals(1, RoleIconCache.sampleSizeFor(2000, 40))
+    }
 }

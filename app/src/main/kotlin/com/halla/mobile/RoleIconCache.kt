@@ -3,6 +3,7 @@ package com.halla.mobile
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -31,8 +32,11 @@ import java.util.concurrent.ConcurrentHashMap
 object RoleIconCache {
     private const val TAG = "RoleIconCache"
     private const val RETRY_MS = 5_000L
-    private const val MAX_ICON_BYTES = 128 * 1024
-    private const val MAX_DIMENSION = 512
+
+    // Mesmo teto do Desktop (GroupIconCache lê 256 KiB do disco): ícones
+    // legados colocados manualmente no servidor podem passar do limite de
+    // upload (64 KiB) e ainda são válidos.
+    private const val MAX_ICON_BYTES = 256 * 1024
     private const val DISPLAY_PX = 88 // ~22dp em xxhdpi; escalado por aspecto
 
     /** "serverKey|safeName" -> bitmap pronto para exibir. */
@@ -87,6 +91,14 @@ object RoleIconCache {
         name.endsWith(".gif", ignoreCase = true)
 
     /**
+     * Política de tamanho aceito: mesmo teto de leitura do Desktop
+     * (GroupIconCache lê 256 KiB do disco). O limite de UPLOAD do servidor
+     * (64 KiB) não é o teto de exibição — ícones legados colocados
+     * manualmente no diretório de dados ainda são válidos.
+     */
+    fun acceptsIconBytes(size: Int): Boolean = size in 1..MAX_ICON_BYTES
+
+    /**
      * Divide uma linha de cargo "<icone> <nome>" enviada pelo servidor
      * (applyGroup concatena sem separador explícito). A PRIMEIRA quebra por
      * espaço cujo lado esquerdo é nome de imagem delimita o ícone — cobre
@@ -119,7 +131,7 @@ object RoleIconCache {
         val cacheKey = key(serverKey, name)
         bitmaps[cacheKey]?.let { return it }
         val file = diskFile(serverKey, name) ?: return null
-        if (!file.isFile || file.length() > MAX_ICON_BYTES) return null
+        if (!acceptsIconBytes(file.length().toInt())) return null
         val bytes = try {
             file.readBytes()
         } catch (_: Exception) {
@@ -136,8 +148,16 @@ object RoleIconCache {
 
     /** Guarda os bytes recebidos do servidor: decodifica, escala, memória + disco. */
     fun store(serverKey: String, name: String, bytes: ByteArray) {
-        if (bytes.isEmpty() || bytes.size > MAX_ICON_BYTES) return
-        val scaled = decodeAndScale(bytes) ?: return
+        if (!acceptsIconBytes(bytes.size)) {
+            Log.w(TAG, "Ícone '$name' ignorado: ${bytes.size} bytes acima do teto de 256 KiB")
+            return
+        }
+        val scaled = decodeAndScale(bytes) ?: run {
+            // Motivo visível no logcat: antes este caminho era 100% mudo e o
+            // cargo simplesmente ficava sem ícone sem explicação.
+            Log.w(TAG, "Ícone '$name' com bytes não decodificáveis (imagem inválida)")
+            return
+        }
         bitmaps[key(serverKey, name)] = scaled
         val file = diskFile(serverKey, name) ?: return
         try {
@@ -181,14 +201,41 @@ object RoleIconCache {
         return true
     }
 
+    /**
+     * Fator de subamostragem (potência de 2) para decodificar imagens
+     * grandes direto perto do tamanho de exibição: uma arte de 2000x2000
+     * não ocupa 16 MB de memória, e sim o equivalente a ~250x250.
+     *
+     * Bug que corrige: antes havia um teto de 512 px — imagens maiores eram
+     * DESCARTADAS em silêncio (decode devolvia null) e o cargo aparecia sem
+     * ícone no painel de informações, embora o Desktop renderizasse a mesma
+     * imagem (QImage::fromData + scaled, sem limite de dimensão).
+     */
+    fun sampleSizeFor(width: Int, height: Int): Int {
+        if (width < 1 || height < 1) return 1
+        var sample = 1
+        // Duplica enquanto a versão subamostrada ainda ficar confortavelmente
+        // maior que o alvo de exibição (margem de 2x para o escalonamento
+        // final não perder qualidade).
+        while (width / (sample * 2) >= DISPLAY_PX * 2 &&
+               height / (sample * 2) >= DISPLAY_PX * 2) {
+            sample *= 2
+        }
+        return sample
+    }
+
     private fun decodeAndScale(bytes: ByteArray): Bitmap? {
         if (bytes.size < 12) return null
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        if (bounds.outWidth !in 1..MAX_DIMENSION || bounds.outHeight !in 1..MAX_DIMENSION) {
-            return null
+        // Qualquer dimensão >= 1 é aceita (mesma regra do Desktop): o ícone é
+        // escalado para o tamanho de exibição, nunca rejeitado por ser
+        // grande demais.
+        if (bounds.outWidth < 1 || bounds.outHeight < 1) return null
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight)
         }
-        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
         if (bitmap.width <= 0 || bitmap.height <= 0) return null
         val longest = maxOf(bitmap.width, bitmap.height)
         if (longest <= DISPLAY_PX) return bitmap

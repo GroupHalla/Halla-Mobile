@@ -197,6 +197,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeServerKey = ""
     private val pendingRoleIconViews = HashMap<String, MutableList<ImageView>>()
 
+    // Sweeper do painel de informações: re-checa os ícones pendentes enquanto
+    // o diálogo está aberto (ver startRoleIconSweeper).
+    private var roleIconSweepRunnable: Runnable? = null
+
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
     private lateinit var btnRecordTop: Button
@@ -6182,6 +6186,49 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             view.setImageBitmap(bitmap)
             view.visibility = View.VISIBLE
         }
+        // Preenchido: sai da lista de pendentes para o sweeper não reprocessar.
+        pendingRoleIconViews.remove(name)
+    }
+
+    /**
+     * Enquanto o painel de informações estiver aberto, re-checa a cada 1 s os
+     * ícones de cargo ainda sem imagem: busca no cache (o icon_data pode ter
+     * chegado por outra via) e re-pede ao servidor — o throttle interno do
+     * RoleIconCache (5 s por nome) limita os envios de fato.
+     *
+     * Bug que corrige: se o icon_get da abertura do painel era barrado pelo
+     * throttle (pedido do prefetch < 5 s antes) ou a resposta se perdia, a
+     * view ficava GONE para sempre — o ícone só apareceria se o usuário
+     * fechasse e reabrisse o painel.
+     */
+    private fun startRoleIconSweeper() {
+        stopRoleIconSweeper()
+        val sweep = object : Runnable {
+            override fun run() {
+                if (pendingRoleIconViews.isNotEmpty()) {
+                    for ((name, views) in pendingRoleIconViews.toList()) {
+                        val bitmap = RoleIconCache.bitmap(activeServerKey, name)
+                        if (bitmap != null) {
+                            for (view in views) {
+                                view.setImageBitmap(bitmap)
+                                view.visibility = View.VISIBLE
+                            }
+                            pendingRoleIconViews.remove(name)
+                        } else {
+                            requestRoleIcon(name)
+                        }
+                    }
+                    handler.postDelayed(this, 1_000)
+                }
+            }
+        }
+        roleIconSweepRunnable = sweep
+        handler.postDelayed(sweep, 1_000)
+    }
+
+    private fun stopRoleIconSweeper() {
+        roleIconSweepRunnable?.let { handler.removeCallbacks(it) }
+        roleIconSweepRunnable = null
     }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
@@ -6351,8 +6398,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setTitle(getString(R.string.client_details, name))
             .setView(scroll)
             .setPositiveButton(getString(R.string.close), null)
-            .setOnDismissListener { pendingRoleIconViews.clear() }
+            .setOnDismissListener {
+                pendingRoleIconViews.clear()
+                stopRoleIconSweeper()
+            }
             .show()
+        // Ícones ainda em voo: mantém viva a busca enquanto o painel estiver
+        // aberto (re-request throttled + cache lookup a cada 1 s).
+        startRoleIconSweeper()
     }
 
     private fun showMoveUserDialog(userId: Int, userName: String) {
