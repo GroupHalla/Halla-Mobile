@@ -1687,7 +1687,11 @@ private:
                 t == "user_screenshare_state" ||
                 t == "server_edit" || t == "group_list" || t == "banlist" ||
                 t == "ban_removed" || t == "complaint_list" ||
-                t == "complaint_added" || t == "complaint_cleared") {
+                t == "complaint_added" || t == "complaint_cleared" ||
+                // group_member_update: a lista de membros de um cargo mudou
+                // (atribuição/remoção) — a aba de grupos atualiza em cache
+                // sem fechar e reabrir.
+                t == "group_member_update") {
                 invokeOnUserList(line);
             }
         } catch (const std::exception& e) {

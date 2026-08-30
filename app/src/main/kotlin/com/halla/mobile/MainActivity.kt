@@ -2542,6 +2542,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     .put("op", "add")
                     .toString())
                 Toast.makeText(this, getString(R.string.group_assignment_sent), Toast.LENGTH_SHORT).show()
+                // Recarrega a lista de grupos: a lista de membros do cargo
+                // aparece atualizada sem fechar e reabrir a aba (o servidor
+                // também transmite group_member_update em tempo real).
+                requestServerPanel("groups")
             }
             .setNegativeButton(getString(R.string.cancel), null)
             .show()
@@ -2650,6 +2654,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             "bans" -> showBanListDialog()
             "complaints" -> showComplaintsDialog()
         }
+    }
+
+    // Broadcasts de group_list NÃO incluem "members" (só a resposta ao pedido
+    // do cliente inclui). Sem este merge, qualquer broadcast apagaria os
+    // membros em cache e a aba de grupos mostraria listas vazias.
+    private fun mergeGroupMembers(incoming: JSONArray): JSONArray {
+        for (i in 0 until incoming.length()) {
+            val g = incoming.optJSONObject(i) ?: continue
+            if (g.has("members")) continue
+            val gid = g.optInt("id", 0)
+            for (j in 0 until serverGroupsData.length()) {
+                val cached = serverGroupsData.optJSONObject(j) ?: continue
+                if (cached.optInt("id", 0) != gid) continue
+                if (cached.has("members")) g.put("members", cached.getJSONArray("members"))
+                break
+            }
+        }
+        return incoming
     }
 
     // Formulário de Adicionar / Editar Servidor
@@ -3399,8 +3421,24 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         }
                         if (obj.has("motd")) txtActiveMotd.text = obj.optString("motd")
                     } else if (t == "group_list") {
-                        serverGroupsData = obj.optJSONArray("groups") ?: JSONArray()
+                        // A resposta ao nosso pedido traz "members" por cargo;
+                        // o broadcast de mudança NÃO traz. Sem o merge, o
+                        // broadcast apagaria os membros em cache.
+                        val incoming = obj.optJSONArray("groups") ?: JSONArray()
+                        serverGroupsData = mergeGroupMembers(incoming)
                         finishServerPanel("groups")
+                    } else if (t == "group_member_update") {
+                        // Atribuição/remoção de membro: atualiza o cargo
+                        // tocado em cache — a aba de grupos mostra o novo
+                        // membro sem precisar fechar e reabrir.
+                        val gid = obj.optInt("gid", 0)
+                        val members = obj.optJSONArray("members") ?: JSONArray()
+                        for (i in 0 until serverGroupsData.length()) {
+                            val g = serverGroupsData.optJSONObject(i) ?: continue
+                            if (g.optInt("id", 0) != gid) continue
+                            g.put("members", members)
+                            break
+                        }
                     } else if (t == "banlist") {
                         banListData = obj.optJSONArray("bans") ?: JSONArray()
                         finishServerPanel("bans")
