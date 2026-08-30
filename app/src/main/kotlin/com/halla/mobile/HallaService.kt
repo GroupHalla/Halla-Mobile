@@ -71,6 +71,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_SCREEN_HEIGHT = "screen_height"
         const val EXTRA_SCREEN_FPS = "screen_fps"
         const val EXTRA_SCREEN_BITRATE = "screen_bitrate_bps"
+        const val EXTRA_SCREEN_AUDIO = "screen_with_audio"
 
         const val PREF_MIC_MUTED = "service_mic_muted"
         const val PREF_SPK_MUTED = "service_spk_muted"
@@ -124,7 +125,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         }
 
         fun startScreenShare(context: Context, permissionData: Intent,
-                             width: Int, height: Int, fps: Int, bitrateBps: Int) {
+                             width: Int, height: Int, fps: Int, bitrateBps: Int,
+                             withAudio: Boolean = true) {
             ContextCompat.startForegroundService(context, Intent(context, HallaService::class.java).apply {
                 action = ACTION_START_SCREEN_SHARE
                 putExtra(EXTRA_PROJECTION_DATA, permissionData)
@@ -132,6 +134,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                 putExtra(EXTRA_SCREEN_HEIGHT, height)
                 putExtra(EXTRA_SCREEN_FPS, fps)
                 putExtra(EXTRA_SCREEN_BITRATE, bitrateBps)
+                putExtra(EXTRA_SCREEN_AUDIO, withAudio)
             })
         }
 
@@ -679,6 +682,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         val fps = intent.getIntExtra(EXTRA_SCREEN_FPS, 30).coerceIn(1, 60)
         val bitrateBps = intent.getIntExtra(EXTRA_SCREEN_BITRATE, 2_500_000)
             .coerceIn(500_000, 50_000_000)
+        // Extras antigos (pré-1.0.94) não trazem a flag: áudio segue ligado,
+        // comportamento idêntico ao de sempre.
+        val withAudio = intent.getBooleanExtra(EXTRA_SCREEN_AUDIO, true)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
@@ -687,7 +693,7 @@ class HallaService : Service(), HallaCore.Callbacks {
                     buildNotification(t(R.string.notification_screen_sharing)), types)
             }
             val broadcaster = HallaWebRtcBroadcaster(
-                this, permissionData, width, height, fps, bitrateBps) {
+                this, permissionData, width, height, fps, bitrateBps, withAudio) {
                 handler.post {
                     screenAudioCapture?.stop()
                     screenAudioCapture = null
@@ -698,23 +704,25 @@ class HallaService : Service(), HallaCore.Callbacks {
                 }
             }
             screenBroadcaster = broadcaster
-            broadcaster.mediaProjection()?.let { projection ->
-                val capture = HallaPlaybackAudioCapture(
-                    context = this,
-                    projection = projection,
-                    // O áudio interno capturado alimenta exclusivamente a
-                    // track WebRTC, tanto para viewers Mobile quanto Desktop.
-                    onPcm = broadcaster::pushExternalAudio,
-                    onProlongedSilence = {
-                        handler.post {
-                            updateNotification(t(R.string.notification_screen_audio_silent))
+            if (withAudio) {
+                broadcaster.mediaProjection()?.let { projection ->
+                    val capture = HallaPlaybackAudioCapture(
+                        context = this,
+                        projection = projection,
+                        // O áudio interno capturado alimenta exclusivamente a
+                        // track WebRTC, tanto para viewers Mobile quanto Desktop.
+                        onPcm = broadcaster::pushExternalAudio,
+                        onProlongedSilence = {
+                            handler.post {
+                                updateNotification(t(R.string.notification_screen_audio_silent))
+                            }
                         }
+                    )
+                    if (capture.start()) screenAudioCapture = capture
+                    else {
+                        capture.stop()
+                        android.util.Log.w("HallaScreenAudio", "Internal audio capture did not start")
                     }
-                )
-                if (capture.start()) screenAudioCapture = capture
-                else {
-                    capture.stop()
-                    android.util.Log.w("HallaScreenAudio", "Internal audio capture did not start")
                 }
             }
             screenSharing = true

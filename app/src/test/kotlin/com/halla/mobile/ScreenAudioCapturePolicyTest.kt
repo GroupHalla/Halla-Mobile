@@ -52,16 +52,27 @@ class ScreenAudioCapturePolicyTest {
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
         val activity = projectFile(
             "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
-        assertTrue(broadcaster.contains("videoWidth = captureWidth.coerceIn(640, 3840)"))
+        // A resolução continua limitada ao intervalo seguro — agora a partir do
+        // pedido já limitado ao tamanho físico da tela (sem upscale).
+        assertTrue(broadcaster.contains("coerceIn(640, 3840)"))
         assertTrue(broadcaster.contains("videoFps = captureFps.coerceIn(1, 60)"))
         assertTrue(broadcaster.contains("encoding.minBitrateBps = minVideoBitrateBps"))
         assertTrue(broadcaster.contains("encoding.maxBitrateBps = videoBitrateBps"))
         assertTrue(broadcaster.contains("encoding.bitratePriority = 2.0"))
         assertTrue(broadcaster.contains("DegradationPreference.MAINTAIN_RESOLUTION"))
         assertTrue(broadcaster.contains("suspendBelowMinBitrate = false"))
+        // Teto de FPS na fonte: o espelhamento de tela inteira entrega frames
+        // a até 120 Hz; sem o adaptador, a fila do encoder inunda (era o lag).
+        assertTrue(broadcaster.contains("adaptOutputFormat(videoWidth, videoHeight, videoFps)"))
+        // Captura nunca amplia além do tamanho físico da tela.
+        assertTrue(broadcaster.contains("clampToPhysicalScreen"))
         assertTrue(activity.contains("availableScreenShareResolutions"))
         assertTrue(activity.contains("screenShareMaxBitrateKbps"))
         assertTrue(activity.contains("listOf(480, 720, 1080, 1440, 2160)"))
+        // 1080p é a resolução padrão (2K/4K continuam na lista).
+        assertTrue(activity.contains("it.height <= 1080"))
+        // Opção de transmitir com ou sem o áudio do aparelho.
+        assertTrue(activity.contains("R.string.screen_share_with_audio"))
         assertTrue(activity.contains("quality_resolution"))
         assertTrue(activity.contains("quality_fps"))
         assertTrue(activity.contains("quality_bitrate_kbps"))
@@ -69,6 +80,7 @@ class ScreenAudioCapturePolicyTest {
         val service = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaService.kt")
         assertTrue(service.contains("EXTRA_SCREEN_BITRATE"))
+        assertTrue(service.contains("EXTRA_SCREEN_AUDIO"))
         assertTrue(service.contains("width, height, fps, bitrateBps"))
     }
 
@@ -100,7 +112,10 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(broadcaster.contains("HallaExternalAudioDeviceModule"))
         assertTrue(broadcaster.contains("setAudioDeviceModule"))
         assertTrue(broadcaster.contains("createAudioTrack"))
-        assertTrue(broadcaster.contains("connection.addTrack(audioTrack"))
+        // A track de áudio entra na conexão apenas quando a transmissão foi
+        // iniciada com áudio (checkbox do diálogo de qualidade).
+        assertTrue(broadcaster.contains("audioTrack?.let { track ->"))
+        assertTrue(broadcaster.contains("connection.addTrack(track"))
         assertTrue(broadcaster.contains("googEchoCancellation\", \"false"))
         assertTrue(broadcaster.contains("googAutoGainControl\", \"false"))
         assertTrue(broadcaster.contains("googNoiseSuppression\", \"false"))

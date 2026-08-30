@@ -2,8 +2,11 @@ package com.halla.mobile
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Point
 import android.media.projection.MediaProjection
+import android.os.Build
 import android.util.Log
+import android.view.WindowManager
 import com.halla.webrtc.audio.HallaExternalAudioDeviceModule
 import org.json.JSONArray
 import org.json.JSONObject
@@ -41,16 +44,61 @@ class HallaWebRtcBroadcaster(
     captureHeight: Int,
     captureFps: Int,
     captureBitrateBps: Int,
+    withAudio: Boolean,
     private val onStopped: () -> Unit
 ) {
     companion object {
         private const val TAG = "HallaWebRTCSender"
         private const val MAX_AUDIO_BITRATE = 128_000
+
+        // Limita o pedido de captura ao tamanho FÍSICO da tela (sem distorcer
+        // a proporção pedida): espelhar 1080p ampliando para 4K consome 4x mais
+        // encoder/banda sem ganhar um único pixel de qualidade. Num aparelho
+        // 2K/4K real, 2K/4K continuam sendo usados normalmente.
+        private fun clampToPhysicalScreen(context: Context, width: Int, height: Int): Pair<Int, Int> {
+            if (width <= 0 || height <= 0) return width to height
+            return try {
+                val windowManager =
+                    context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                        ?: return width to height
+                val point = Point()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    val bounds = windowManager.maximumWindowMetrics.bounds
+                    point.x = bounds.width()
+                    point.y = bounds.height()
+                } else {
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay?.getRealSize(point)
+                }
+                if (point.x <= 0 || point.y <= 0) return width to height
+                val screenLong = maxOf(point.x, point.y)
+                val screenShort = minOf(point.x, point.y)
+                val requestLong = maxOf(width, height)
+                val requestShort = minOf(width, height)
+                val scale = minOf(1.0,
+                    screenLong.toDouble() / requestLong,
+                    screenShort.toDouble() / requestShort)
+                if (scale >= 1.0) return width to height
+                val w = maxOf(2, (width * scale).toInt() and -2)
+                val h = maxOf(2, (height * scale).toInt() and -2)
+                w to h
+            } catch (_: Exception) {
+                width to height
+            }
+        }
     }
 
     private val appContext = context.applicationContext
-    private val videoWidth = captureWidth.coerceIn(640, 3840)
-    private val videoHeight = captureHeight.coerceIn(360, 2160)
+    // "Tela inteira" espelha o display no ritmo de atualização da tela
+    // (60/90/120 Hz) sempre que QUALQUER coisa muda — status bar, animações,
+    // o próprio Halla. Sem um teto na fonte, a fila do encoder inunda antes
+    // do detector de sobrecarga reagir: a transmissão congela aos trancos.
+    // A resolução pedida também é limitada ao tamanho FÍSICO da tela: pedir
+    // 4K num aparelho 1080p só faz o encoder trabalhar 4x mais para
+    // ampliar pixels que não existem (a imagem não ganha nada).
+    private val clamped = clampToPhysicalScreen(appContext, captureWidth, captureHeight)
+    private val videoWidth = clamped.first.coerceIn(640, 3840)
+    private val videoHeight = clamped.second.coerceIn(360, 2160)
     private val videoFps = captureFps.coerceIn(1, 60)
     private val videoBitrateBps = captureBitrateBps.coerceIn(500_000, 50_000_000)
     private val minVideoBitrateBps = (videoBitrateBps / 5).coerceIn(300_000, 2_000_000)
@@ -65,8 +113,8 @@ class HallaWebRtcBroadcaster(
     private val surfaceHelper: SurfaceTextureHelper
     private val videoSource: VideoSource
     private val videoTrack: VideoTrack
-    private val audioSource: AudioSource
-    private val audioTrack: AudioTrack
+    private val audioSource: AudioSource?
+    private val audioTrack: AudioTrack?
 
     init {
         PeerConnectionFactory.initialize(
@@ -89,18 +137,33 @@ class HallaWebRtcBroadcaster(
         videoSource = factory.createVideoSource(true)
         capturer.initialize(surfaceHelper, appContext, videoSource.capturerObserver)
         capturer.startCapture(videoWidth, videoHeight, videoFps)
+        // Teto de FPS na PRÓPRIA fonte (VideoAdapter): frames acima do FPS
+        // escolhido são descartados antes de chegar à fila do encoder, com
+        // pacing determinístico — não fica esperando o detector de sobrecarga
+        // de CPU acordar (que é tarde e aos trancos, era o "lag" da tela
+        // inteira). O espelhamento de tela inteira entrega frames a até 120 Hz
+        // quando qualquer pixel do sistema muda; "Um único app" entrega só
+        // quando o app redesenha — por isso um era fluido e o outro não.
+        videoSource.adaptOutputFormat(videoWidth, videoHeight, videoFps)
         videoTrack = factory.createVideoTrack("halla-screen-video", videoSource)
-        val screenAudioConstraints = MediaConstraints().apply {
-            // Áudio de reprodução não é microfone: AEC/AGC/NS/high-pass
-            // distorcem música, jogos e vídeos e ainda podem causar pumping.
-            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "false"))
+        if (withAudio) {
+            val screenAudioConstraints = MediaConstraints().apply {
+                // Áudio de reprodução não é microfone: AEC/AGC/NS/high-pass
+                // distorcem música, jogos e vídeos e ainda podem causar pumping.
+                mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "false"))
+                mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "false"))
+                mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "false"))
+                mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "false"))
+                mandatory.add(MediaConstraints.KeyValuePair("googTypingNoiseDetection", "false"))
+            }
+            audioSource = factory.createAudioSource(screenAudioConstraints)
+            audioTrack = factory.createAudioTrack("halla-screen-audio", audioSource)
+        } else {
+            // Stream só de vídeo: sem track de áudio na oferta, sem captura de
+            // reprodução e sem thread de áudio — quem assiste vê apenas o vídeo.
+            audioSource = null
+            audioTrack = null
         }
-        audioSource = factory.createAudioSource(screenAudioConstraints)
-        audioTrack = factory.createAudioTrack("halla-screen-audio", audioSource)
         running.set(true)
         HallaCore.sendRawJson(JSONObject()
             .put("t", "webrtc_stream_start")
@@ -108,8 +171,11 @@ class HallaWebRtcBroadcaster(
             .put("height", videoHeight)
             .put("fps", videoFps)
             .put("bitrate", videoBitrateBps / 1000)
+            .put("audio", withAudio)
             .toString())
-        Log.i(TAG, "Screen share ${videoWidth}x$videoHeight ${videoFps}fps ${videoBitrateBps}bps")
+        Log.i(TAG, "Screen share ${videoWidth}x$videoHeight ${videoFps}fps " +
+                "${videoBitrateBps}bps audio=$withAudio (pedido " +
+                "${captureWidth}x${captureHeight})")
     }
 
     fun isRunning(): Boolean = running.get()
@@ -118,7 +184,9 @@ class HallaWebRtcBroadcaster(
         (capturer as? ScreenCapturerAndroid)?.mediaProjection
 
     fun pushExternalAudio(pcm16Mono48k: ByteArray) {
-        if (running.get()) externalAudio.pushPcm16Mono48k(pcm16Mono48k)
+        if (running.get() && audioTrack != null) {
+            externalAudio.pushPcm16Mono48k(pcm16Mono48k)
+        }
     }
 
     fun handleSignal(raw: String) {
@@ -202,14 +270,16 @@ class HallaWebRtcBroadcaster(
         if (!sender.setParameters(parameters)) {
             Log.w(TAG, "Could not apply screen sender parameters")
         }
-        val audioSender = connection.addTrack(audioTrack, listOf("halla-screen-stream"))
-        val audioParameters = audioSender.parameters
-        audioParameters.encodings.forEach { encoding ->
-            encoding.maxBitrateBps = MAX_AUDIO_BITRATE
-            encoding.bitratePriority = 3.0
-        }
-        if (!audioSender.setParameters(audioParameters)) {
-            Log.w(TAG, "Could not apply screen-audio sender parameters")
+        audioTrack?.let { track ->
+            val audioSender = connection.addTrack(track, listOf("halla-screen-stream"))
+            val audioParameters = audioSender.parameters
+            audioParameters.encodings.forEach { encoding ->
+                encoding.maxBitrateBps = MAX_AUDIO_BITRATE
+                encoding.bitratePriority = 3.0
+            }
+            if (!audioSender.setParameters(audioParameters)) {
+                Log.w(TAG, "Could not apply screen-audio sender parameters")
+            }
         }
         peers[peerId] = connection
         return connection
@@ -273,8 +343,8 @@ class HallaWebRtcBroadcaster(
         try { capturer.dispose() } catch (_: Exception) { }
         try { videoTrack.dispose() } catch (_: Exception) { }
         try { videoSource.dispose() } catch (_: Exception) { }
-        try { audioTrack.dispose() } catch (_: Exception) { }
-        try { audioSource.dispose() } catch (_: Exception) { }
+        try { audioTrack?.dispose() } catch (_: Exception) { }
+        try { audioSource?.dispose() } catch (_: Exception) { }
         try { surfaceHelper.dispose() } catch (_: Exception) { }
         try { factory.dispose() } catch (_: Exception) { }
         try { externalAudio.close() } catch (_: Exception) { }

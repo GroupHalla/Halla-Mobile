@@ -69,7 +69,8 @@ private data class ScreenShareQualityProfile(
     val width: Int,
     val height: Int,
     val fps: Int,
-    val bitrateKbps: Int
+    val bitrateKbps: Int,
+    val withAudio: Boolean = true
 )
 
 class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
@@ -1097,7 +1098,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val profile = pendingScreenShareProfile
                 HallaService.startScreenShare(
                     this, data, profile.width, profile.height, profile.fps,
-                    profile.bitrateKbps * 1000)
+                    profile.bitrateKbps * 1000, profile.withAudio)
                 Toast.makeText(this,
                     getString(R.string.screen_share_starting_quality,
                         profile.height, profile.fps), Toast.LENGTH_SHORT).show()
@@ -5841,7 +5842,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 android.R.layout.simple_spinner_item, resolutionLabels).also {
                 it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
             }
-            setSelection(resolutions.lastIndex)
+            // 1080p é o padrão: codificadores de hardware rendem bem nele e a
+            // transmissão fica fluida em quase todo aparelho. 2K/4K continuam
+            // disponíveis para quem quiser (e para telas 2K/4K de verdade).
+            val defaultIndex = resolutions.indexOfLast { it.height <= 1080 }
+            setSelection(if (defaultIndex >= 0) defaultIndex else 0)
         }
         val fpsSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity,
@@ -5850,19 +5855,44 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
             setSelection(fpsValues.lastIndex)
         }
-        val highest = resolutions.last()
+        val audioCheckbox = CheckBox(this).apply {
+            text = getString(R.string.screen_share_with_audio)
+            isChecked = true
+            setTextColor(dialogTextSecondary())
+            setPadding(0, 14, 0, 4)
+        }
+        // O bitrate sugerido acompanha a resolução selecionada (antes era
+        // calculado SEMPRE para a maior — abrir em 1080p sugerindo o bitrate
+        // de 4K desperdiçava banda e ajudava a travar a transmissão).
+        var suggestedBitrate = recommendedScreenBitrate(
+            resolutions[resolutionSpinner.selectedItemPosition].width,
+            resolutions[resolutionSpinner.selectedItemPosition].height,
+            fpsValues.last()).toString()
         val bitrateInput = HallaInputEditText(this).apply {
             hint = getString(R.string.quality_bitrate_hint, screenShareMaxBitrateKbps)
-            setText(recommendedScreenBitrate(
-                highest.width, highest.height, fpsValues.last()).toString())
+            setText(suggestedBitrate)
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
+        resolutionSpinner.onItemSelectedListener =
+            object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?,
+                                            position: Int, id: Long) {
+                    if (bitrateInput.text.toString() != suggestedBitrate) return
+                    val profile = resolutions[position]
+                    suggestedBitrate = recommendedScreenBitrate(
+                        profile.width, profile.height,
+                        fpsValues[fpsSpinner.selectedItemPosition]).toString()
+                    bitrateInput.setText(suggestedBitrate)
+                }
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            }
         layout.addView(label(getString(R.string.quality_resolution)))
         layout.addView(resolutionSpinner)
         layout.addView(label(getString(R.string.quality_fps)))
         layout.addView(fpsSpinner)
         layout.addView(label(getString(R.string.quality_bitrate_kbps)))
         layout.addView(bitrateInput)
+        layout.addView(audioCheckbox)
 
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.choose_screen_quality))
@@ -5877,7 +5907,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     ?.coerceIn(500, screenShareMaxBitrateKbps)
                     ?: recommendedScreenBitrate(resolution.width, resolution.height, fps)
                 pendingScreenShareProfile = ScreenShareQualityProfile(
-                    resolution.width, resolution.height, fps, bitrate)
+                    resolution.width, resolution.height, fps, bitrate,
+                    audioCheckbox.isChecked)
                 val projection = getSystemService(
                     Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                 startActivityForResult(

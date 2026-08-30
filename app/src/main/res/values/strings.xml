@@ -522,4 +522,5 @@ Deseja baixar e instalar agora?</string>
     <string name="quality_fps">Taxa de quadros</string>
     <string name="quality_bitrate_kbps">Taxa de bits (kbps)</string>
     <string name="quality_bitrate_hint">Máximo: %1$d kbps</string>
+    <string name="screen_share_with_audio">Transmitir áudio do aparelho</string>
 </resources>
