@@ -72,7 +72,7 @@ object E2eeCrypto {
     // mais antigos o BouncyCastle embutido no app é quem fornece tudo.
     private val bc by lazy { BouncyCastleProvider() }
 
-    private fun random: SecureRandom = SecureRandom()
+    private val random: SecureRandom = SecureRandom()
 
     /**
      * Gera par X25519 (32 bytes crus por lado) pela API de baixo nível do BC
