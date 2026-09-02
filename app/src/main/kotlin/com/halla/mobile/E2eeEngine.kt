@@ -736,7 +736,9 @@ object E2eeEngine {
                     theirDhPub = E2eeCrypto.b64Decode(it)
                 }
             }
-            if (theirDhPub == null || theirDhPub.size != 32) {
+            // val local: smart cast de variável capturada por closure não compila.
+            val offlineDhPub = theirDhPub
+            if (offlineDhPub == null || offlineDhPub.size != 32) {
                 if (directory.containsKey(uid)) {
                     errorNotice("e2ee_nokey",
                         string(R.string.e2ee_no_offline_key))
@@ -748,7 +750,8 @@ object E2eeEngine {
                 return
             }
             val blob = E2eeCrypto.pairwiseEncrypt(
-                dhPriv!!, theirDhPub, E2eeCrypto.DOMAIN_OFFLINE, text.toByteArray(Charsets.UTF_8))
+                dhPriv!!, offlineDhPub, E2eeCrypto.DOMAIN_OFFLINE,
+                text.toByteArray(Charsets.UTF_8))
             if (blob == null) {
                 errorNotice("e2ee_nokey", string(R.string.e2ee_encrypt_fail))
                 return
@@ -837,9 +840,10 @@ object E2eeEngine {
                     theirDhPub = E2eeCrypto.b64Decode(it)
                 }
             }
-            if (theirDhPub != null && theirDhPub.size == 32 && dhPriv != null) {
+            val inboxDhPub = theirDhPub
+            if (inboxDhPub != null && inboxDhPub.size == 32 && dhPriv != null) {
                 val plain = E2eeCrypto.pairwiseDecrypt(
-                    dhPriv!!, theirDhPub, E2eeCrypto.DOMAIN_OFFLINE,
+                    dhPriv!!, inboxDhPub, E2eeCrypto.DOMAIN_OFFLINE,
                     E2eeCrypto.b64Decode(textB64))
                 if (plain != null) {
                     HallaCore.deliverOfflineMsg(fromName, String(plain, Charsets.UTF_8), ts)
