@@ -3340,7 +3340,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     ?: 32
                 activeMaxClients = maxClients
                 val clientsCount = usersData.length()
-                installWelcomeChannelKeys(obj)
+                // v6 E2EE: o welcome NÃO traz chaves de canal — quem gera e
+                // distribui é o cliente mestre (E2eeEngine → setChannelKey).
                 HallaCore.setCurrentChannel(getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
@@ -3358,16 +3359,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-        }
-    }
-
-    private fun installWelcomeChannelKeys(welcome: JSONObject) {
-        val keys = welcome.optJSONObject("channelKeys") ?: return
-        val names = keys.keys()
-        while (names.hasNext()) {
-            val channelId = names.next().toIntOrNull() ?: continue
-            val key = keys.optString(channelId.toString(), "")
-            if (key.isNotEmpty()) HallaCore.installChannelKey(channelId, key)
         }
     }
 
@@ -5672,6 +5663,35 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
+    // v6 E2EE — verificação de identidade por código SAS (fora de banda): as
+    // duas pontas abrem este diálogo e comparam os 9 dígitos de viva voz.
+    // Iguais: ninguém — nem o servidor — trocou chaves entre vocês.
+    private fun showE2eeVerifyDialog(userId: Int, name: String) {
+        val code = E2eeEngine.sasCodeFor(userId)
+        val already = E2eeEngine.isUserVerified(userId)
+        val message = if (code == null) {
+            getString(R.string.e2ee_verify_unavailable)
+        } else {
+            getString(R.string.e2ee_verify_instructions, name) +
+                "\n\n$code\n\n" +
+                getString(if (already) R.string.e2ee_verified_already
+                          else R.string.e2ee_not_verified)
+        }
+        val buttons = mutableListOf(getString(R.string.e2ee_close))
+        if (code != null && !already) buttons.add(0, getString(R.string.e2ee_mark_verified))
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.e2ee_verify_title, name))
+            .setMessage(message)
+            .setItems(buttons.toTypedArray()) { _, which ->
+                if (buttons[which] == getString(R.string.e2ee_mark_verified)) {
+                    E2eeEngine.markUserVerified(userId)
+                    Toast.makeText(this, getString(R.string.e2ee_verified_now),
+                        Toast.LENGTH_SHORT).show()
+                }
+            }
+            .show()
+    }
+
     private fun showUserOptionsDialog(usr: JSONObject) {
         val context = this
         val userId = usr.getInt("id")
@@ -5691,6 +5711,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             options.add("✏️ ${getString(R.string.change_nickname)}")
         } else {
             options.add("👉 ${getString(R.string.poke)}")
+            options.add("🔐 ${getString(R.string.e2ee_verify)}")
             if (usr.optBoolean("screensharing", false) && getChannelOfUser(userId) == getChannelOfUser(selfId)) {
                 options.add("📺 Ver transmissão")
             }
@@ -5740,6 +5761,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     startWatchingScreenShare(userId, name)
                 } else if (choice.contains(getString(R.string.private_message))) {
                     showPrivateMessageDialog(userId, name)
+                } else if (choice.contains(getString(R.string.e2ee_verify))) {
+                    showE2eeVerifyDialog(userId, name)
                 } else if (choice.contains(getString(R.string.client_info))) {
                     showClientInfoDialog(usr)
                 } else if (choice.contains(getString(R.string.move_to_channel))) {

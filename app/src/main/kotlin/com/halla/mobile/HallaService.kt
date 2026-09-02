@@ -965,10 +965,10 @@ class HallaService : Service(), HallaCore.Callbacks {
         audio.forceStopTalking()
         // forceStopTalking limpa os estados de captura; restaura a barreira.
         audio.whisperActivationPending = ids.isNotEmpty()
-        HallaCore.sendRawJson(JSONObject().apply {
-            put("t", "whisper")
-            put("ids", JSONArray(ids))
-        }.toString())
+        // v6 E2EE: além do estado TCP, o motor rastreia os alvos p/ (re-)
+        // embrulhar a chave do MEU canal para quem está fora do componente —
+        // o áudio do sussurro segue cifrado com a chave do canal do remetente.
+        HallaCore.sendWhisperIds(ids)
 
         if (ids.isNotEmpty()) {
             // A pequena barreira dá ao servidor tempo para aplicar o estado
@@ -1191,21 +1191,13 @@ class HallaService : Service(), HallaCore.Callbacks {
             val server = welcome.optJSONObject("server")
             lastServerName = server?.optString("name", lastServerName).orEmpty()
             lastMotd = server?.optString("motd", lastMotd).orEmpty()
-            installWelcomeChannelKeys(welcome)
+            // v6 E2EE: o welcome NÃO traz chaves — o servidor não as conhece.
+            // O motor (E2eeEngine) gera/pede e empurra ao nativo via
+            // setChannelKey quando o mestre distribui os envelopes.
             HallaCore.setCurrentChannel(currentChannelFromWelcome(welcome))
         } catch (_: Exception) { }
         getSharedPreferences("HallaPrefs", MODE_PRIVATE).edit()
             .putString("last_welcome_json", welcomeJson).apply()
-    }
-
-    private fun installWelcomeChannelKeys(welcome: JSONObject) {
-        val keys = welcome.optJSONObject("channelKeys") ?: return
-        val names = keys.keys()
-        while (names.hasNext()) {
-            val channelId = names.next().toIntOrNull() ?: continue
-            val key = keys.optString(channelId.toString(), "")
-            if (key.isNotEmpty()) HallaCore.installChannelKey(channelId, key)
-        }
     }
 
     private fun currentChannelFromWelcome(welcome: JSONObject): Int {

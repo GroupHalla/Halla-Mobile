@@ -69,6 +69,12 @@ static jmethodID g_onIconDataMethod = nullptr;
 static jmethodID g_onIconUploadedMethod = nullptr;
 static jmethodID g_identityPublicKeyMethod = nullptr;
 static jmethodID g_signIdentityNonceMethod = nullptr;
+// v6 E2EE: par X25519 + binding Ed25519 no hello; mensagens que alimentam o
+// motor Kotlin; entregas cifradas (chat/poke/offline) com flag e2ee.
+static jmethodID g_dhPublicKeyMethod = nullptr;
+static jmethodID g_dhSignatureMethod = nullptr;
+static jmethodID g_onServerMessageMethod = nullptr;
+static jmethodID g_onOfflineMsgMethod = nullptr;
 static jmethodID g_onPluginNotificationMethod = nullptr;
 static jmethodID g_onPluginMenuActionMethod = nullptr;
 static jmethodID g_onPluginUiTaskMethod = nullptr;
@@ -227,7 +233,10 @@ std::vector<char> voiceEncryptAead(const char* data, int size, const std::vector
                                    uint32_t senderId, uint16_t seq, uint32_t counter) {
     std::vector<char> out;
     if (!data || size <= 0) return out;
-    if (key.size() < 32) return std::vector<char>(data, data + size);
+    // v6: chave menor que 32 bytes NUNCA cifra em claro — devolve vazio e o
+    // chamador descarta o frame (a rota UDP não tem TLS; um frame claro seria
+    // audível por qualquer ouvinte da rede).
+    if (key.size() < 32) return out;
     std::vector<unsigned char> nonce = makeVoiceNonce(senderId, counter, seq);
     std::vector<unsigned char> cipher(size);
     unsigned char tag[16];
@@ -588,6 +597,52 @@ void invokeOnUserList(const std::string& usersJson) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
+// v6 E2EE: mensagens que alimentam o motor Kotlin (welcome, topologia,
+// e2e_key/e2e_key_request, identity_data). Mesma thread-safety dos demais.
+void invokeOnServerMessage(const std::string& json) {
+    if (!g_vm || !g_coreClass || !g_onServerMessageMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jJson = env->NewStringUTF(json.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onServerMessageMethod, jJson);
+        env->DeleteLocalRef(jJson);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
+// v6 E2EE: mensagem offline recebida (cifrada) — o motor Kotlin decifra e
+// entrega à UI quando o remetente for conhecido (fila + identity_data).
+void invokeOnOfflineMsg(const std::string& fromUid, const std::string& fromName,
+                        const std::string& text, const std::string& ts, bool e2ee) {
+    if (!g_vm || !g_coreClass || !g_onOfflineMsgMethod) return;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    jint res = g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+        g_vm->AttachCurrentThread(&env, nullptr);
+        attached = true;
+    }
+    if (env) {
+        jstring jUid = env->NewStringUTF(fromUid.c_str());
+        jstring jName = env->NewStringUTF(fromName.c_str());
+        jstring jText = env->NewStringUTF(text.c_str());
+        jstring jTs = env->NewStringUTF(ts.c_str());
+        env->CallStaticVoidMethod(g_coreClass, g_onOfflineMsgMethod, jUid, jName,
+                                  jText, jTs, e2ee ? JNI_TRUE : JNI_FALSE);
+        env->DeleteLocalRef(jUid);
+        env->DeleteLocalRef(jName);
+        env->DeleteLocalRef(jText);
+        env->DeleteLocalRef(jTs);
+    }
+    if (attached) g_vm->DetachCurrentThread();
+}
+
 // Ícones de cargo: resposta do icon_get (bytes em base64) e o broadcast
 // icon_uploaded quando um administrador envia/substitui a imagem.
 void invokeOnIconData(const std::string& name, const std::string& dataB64) {
@@ -627,7 +682,7 @@ void invokeOnIconUploaded(const std::string& name) {
 }
 
 void invokeOnChatMessage(const std::string& scope, int fromUserId, int toUserId,
-                         const std::string& fromName, const std::string& text) {
+                         const std::string& fromName, const std::string& text, bool e2ee) {
     writeLog("invokeOnChatMessage chamada!");
     if (!g_vm || !g_coreClass || !g_onChatMessageMethod) return;
     JNIEnv* env = nullptr;
@@ -642,7 +697,8 @@ void invokeOnChatMessage(const std::string& scope, int fromUserId, int toUserId,
         jstring jFrom = env->NewStringUTF(fromName.c_str());
         jstring jText = env->NewStringUTF(text.c_str());
         env->CallStaticVoidMethod(g_coreClass, g_onChatMessageMethod,
-                                  jScope, fromUserId, toUserId, jFrom, jText);
+                                  jScope, fromUserId, toUserId, jFrom, jText,
+                                  e2ee ? JNI_TRUE : JNI_FALSE);
         env->DeleteLocalRef(jScope);
         env->DeleteLocalRef(jFrom);
         env->DeleteLocalRef(jText);
@@ -739,7 +795,8 @@ void invokeOnPing(int pingMs, int packetLossPercent) {
     if (attached) g_vm->DetachCurrentThread();
 }
 
-void invokeOnPoke(const std::string& fromName, const std::string& msg) {
+void invokeOnPoke(const std::string& fromName, const std::string& msg,
+                  bool e2ee, int fromUserId) {
     writeLog("invokeOnPoke chamada!");
     if (!g_vm || !g_coreClass || !g_onPokeMethod) return;
     JNIEnv* env = nullptr;
@@ -752,7 +809,8 @@ void invokeOnPoke(const std::string& fromName, const std::string& msg) {
     if (env) {
         jstring jFrom = env->NewStringUTF(fromName.c_str());
         jstring jMsg = env->NewStringUTF(msg.c_str());
-        env->CallStaticVoidMethod(g_coreClass, g_onPokeMethod, jFrom, jMsg);
+        env->CallStaticVoidMethod(g_coreClass, g_onPokeMethod, jFrom, jMsg,
+                                  e2ee ? JNI_TRUE : JNI_FALSE, fromUserId);
         env->DeleteLocalRef(jFrom);
         env->DeleteLocalRef(jMsg);
     }
@@ -891,6 +949,7 @@ public:
         m_pingTotal = 0;
         m_pingSuccess = 0;
         m_cryptoCounter = 0;
+        m_loggedNoKeyVoice = false;
         {
             std::lock_guard<std::mutex> keyLock(m_keyMutex);
             m_channelKeys.clear();
@@ -990,16 +1049,9 @@ public:
         sendTcp(msg);
     }
 
-    void sendChatMessage(const std::string& text) {
-        sendChatMessageScoped("channel", 0, text);
-    }
-
-    void sendChatMessageScoped(const std::string& scope, int toUserId, const std::string& text) {
-        std::string msg = "{\"t\":\"chat\",\"scope\":\"" + jsonEscape(scope) + "\"";
-        if (toUserId > 0) msg += ",\"to\":" + std::to_string(toUserId);
-        msg += ",\"text\":\"" + jsonEscape(text) + "\"}\n";
-        sendTcp(msg);
-    }
+    // v6 E2EE: o chat/poke/offline é cifrado pelo motor Kotlin (E2eeEngine) e
+    // chega aqui já como JSON completo via sendRawJson — os antigos envios
+    // diretos em claro foram removidos junto com o protocolo v5.
 
     void sendTalking(bool on) {
         sendTcp(std::string("{\"t\":\"talking\",\"on\":") + (on ? "true" : "false") + "}\n");
@@ -1022,12 +1074,6 @@ public:
 
     void sendRename(const std::string& newName) {
         std::string msg = "{\"t\":\"nick\",\"name\":\"" + jsonEscape(newName) + "\"}\n";
-        sendTcp(msg);
-    }
-
-    void sendPoke(int toUserId, const std::string& text) {
-        std::string msg = "{\"t\":\"poke\",\"to\":" + std::to_string(toUserId) +
-                          ",\"msg\":\"" + jsonEscape(text) + "\"}\n";
         sendTcp(msg);
     }
 
@@ -1085,7 +1131,22 @@ public:
         std::vector<char> payload;
         if (size > 0 && pcm != nullptr) {
             std::lock_guard<std::mutex> keyLock(m_keyMutex);
-            payload = voiceEncryptAead(pcm, size, m_currentVoiceKey, m_selfId.load(), seq, ++m_cryptoCounter);
+            // v6 E2EE: sem chave de canal o frame NÃO SAI — a rota UDP não
+            // tem TLS, então um frame em claro seria audível por qualquer
+            // ouvinte da rede. Descarta até a chave chegar (milissegundos
+            // depois do welcome). Registros de endpoint (pcm == nullptr,
+            // size == 0) continuam saindo header-only de propósito.
+            if (m_currentVoiceKey.size() != 32) {
+                if (!m_loggedNoKeyVoice) {
+                    m_loggedNoKeyVoice = true;
+                    writeLog("Voz: frame descartado — chave E2EE do canal ainda não recebida "
+                             "(a fala volta quando a chave chegar).");
+                }
+                return;
+            }
+            payload = voiceEncryptAead(pcm, size, m_currentVoiceKey,
+                                       m_selfId.load(), seq, ++m_cryptoCounter);
+            if (payload.empty()) return; // cifrar falhou: nada em claro sai
         }
 
         constexpr size_t headerSize = 4 + 16 + 2;
@@ -1156,7 +1217,29 @@ public:
     }
 
     void setCurrentChannelFromClient(int channelId) { setCurrentChannel(channelId); }
-    void installChannelKeyFromClient(int channelId, const std::string& keyB64) { installChannelKey(channelId, keyB64); }
+    // v6 E2EE: chaves vêm do motor Kotlin (E2eeEngine.applyGroupKey) — 32
+    // bytes CRUS, sem base64. Sem isto a voz não cifra: a rota UDP exige
+    // chave e o frame sem chave é descartado em sendVoiceFrame.
+    void setChannelKeyFromClient(int channelId, const char* keyBytes, int keyLen) {
+        if (channelId < 0 || keyLen != 32 || keyBytes == nullptr) {
+            writeLog("Cripto voz: chave de canal ignorada (esperados 32 bytes crus).");
+            return;
+        }
+        std::lock_guard<std::mutex> lock(m_keyMutex);
+        m_channelKeys[channelId] = std::vector<char>(keyBytes, keyBytes + 32);
+        if (m_currentChannelId == channelId) {
+            m_currentVoiceKey = m_channelKeys[channelId];
+            writeLog("Cripto voz: chave E2EE instalada para o canal #" +
+                     std::to_string(channelId));
+        }
+    }
+
+    void removeChannelKeyFromClient(int channelId) {
+        std::lock_guard<std::mutex> lock(m_keyMutex);
+        if (m_channelKeys.erase(channelId) > 0 && m_currentChannelId == channelId) {
+            m_currentVoiceKey.clear();
+        }
+    }
 
     // Acessores para diagnóstico: permitem à Activity saber se a camada
     // nativa está pronta para transmitir voz (TCP/UDP conectados, token de
@@ -1279,16 +1362,9 @@ private:
         return true;
     }
 
-    void installChannelKey(int channelId, const std::string& keyB64) {
-        const std::vector<char> key = base64DecodeBytes(keyB64);
-        if (channelId <= 0 || key.size() < 16) return;
-        std::lock_guard<std::mutex> lock(m_keyMutex);
-        m_channelKeys[channelId] = key;
-        if (m_currentChannelId == channelId || m_currentVoiceKey.empty()) {
-            m_currentVoiceKey = key;
-        }
-    }
-
+    // v6 E2EE: a chave de voz do canal atual SEMPRE é a chave do canal em que
+    // estou. Mudar para canal sem chave LIMPA a ativa — frame não sai até a
+    // chave chegar (antes mantinha a chave do canal anterior e cifrava errado).
     void setCurrentChannel(int channelId) {
         if (channelId <= 0) return;
         std::lock_guard<std::mutex> lock(m_keyMutex);
@@ -1297,23 +1373,11 @@ private:
         if (it != m_channelKeys.end()) {
             m_currentVoiceKey = it->second;
             writeLog("Cripto voz: canal atual definido para #" + std::to_string(channelId));
+        } else {
+            m_currentVoiceKey.clear();
+            writeLog("Cripto voz: canal #" + std::to_string(channelId) +
+                     " sem chave E2EE ainda — fala retida até a chave chegar.");
         }
-    }
-
-    void installWelcomeKeys(const std::string& line) {
-        const std::string keysObj = jsonExtractObject(line, "channelKeys");
-        for (const auto& entry : jsonObjectStringMap(keysObj)) {
-            const int channelId = safeStoi(entry.first);
-            const std::vector<char> key = base64DecodeBytes(entry.second);
-            if (channelId > 0 && key.size() >= 16) {
-                std::lock_guard<std::mutex> lock(m_keyMutex);
-                m_channelKeys[channelId] = key;
-                if (m_currentChannelId == channelId || m_currentVoiceKey.empty()) {
-                    m_currentVoiceKey = key;
-                }
-            }
-        }
-        writeLog("Cripto voz: " + std::to_string(m_channelKeys.size()) + " chaves de canal carregadas do welcome");
     }
 
     OpusDecoder* getOrCreateDecoder(uint32_t userId) {
@@ -1423,9 +1487,28 @@ private:
 
         const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
         const std::string idPub = callStaticStringString(g_identityPublicKeyMethod, uid);
-        // proto 5: habilita o transporte plugin_data dos complementos.
-        std::string hello = "{\"t\":\"hello\",\"proto\":5,\"uid\":\"" +
+        // v6 E2EE: login sem par X25519 + assinatura de binding é recusado
+        // pelo servidor novo (bad_identity). Sem material E2EE não há por que
+        // conectar — falha com erro acionável antes do round-trip.
+        const std::string dhPub = callStaticStringString(g_dhPublicKeyMethod, uid);
+        const std::string dhSig = callStaticStringString(g_dhSignatureMethod, uid);
+        if (dhPub.empty() || dhSig.empty()) {
+            writeLog("hello: par X25519 da identidade indisponível");
+            invokeOnConnectionFailed(
+                "Não foi possível preparar a chave de criptografia ponta a ponta "
+                "desta identidade. Abra Identidades e crie uma nova, ou restaure "
+                "seu backup.");
+            m_connected = false;
+            close(m_tcpSocket);
+            m_tcpSocket = -1;
+            return;
+        }
+        // proto 6: E2EE real — o servidor não gera/distribui chaves de canal;
+        // servidores < v6 recusam (bad_proto) com a mensagem clara abaixo.
+        std::string hello = "{\"t\":\"hello\",\"proto\":6,\"uid\":\"" +
                             jsonEscape(uid) + "\",\"idPub\":\"" + jsonEscape(idPub) +
+                            "\",\"dhPub\":\"" + jsonEscape(dhPub) +
+                            "\",\"dhSig\":\"" + jsonEscape(dhSig) +
                             "\",\"nick\":\"" + jsonEscape(m_nick) +
                             "\",\"pass\":\"" + jsonEscape(m_pass) +
                             "\",\"ver\":\"" + jsonEscape(m_clientVersion) +
@@ -1498,6 +1581,16 @@ private:
             std::string t = jsonExtractString(line, "t");
             writeLog("Tipo de pacote extraído (t): " + t);
 
+            // v6 E2EE: alimenta o motor Kotlin (diretório de chaves, envelopes
+            // e2e_key, auto-cura e2e_key_request, identity_data e topologia de
+            // canais p/ eleição de mestre). Só estes tipos sobem — o caminho
+            // quente (áudio) nunca passa por aqui.
+            if (t == "welcome" || t == "user_joined" || t == "user_left" ||
+                t == "user_moved" || t == "chan_update" || t == "chan_removed" ||
+                t == "e2e_key" || t == "e2e_key_request" || t == "identity_data") {
+                invokeOnServerMessage(line);
+            }
+
             if (t == "identity_challenge") {
                 const std::string nonce = jsonExtractString(line, "nonce");
                 const std::string uid = m_uid.empty() ? "HALLAmobile0000000000000000000=" : m_uid;
@@ -1515,6 +1608,14 @@ private:
                 std::string code = jsonExtractString(line, "code");
                 std::string msg = jsonExtractString(line, "msg");
                 writeLog("Erro do servidor recebido: " + code + " - " + msg);
+                // v6: servidores < v6 recusam este cliente (e o servidor novo
+                // recusa clientes < v6). A mensagem do servidor é técnica; o
+                // usuário precisa de uma orientação clara.
+                if (code == "bad_proto") {
+                    msg = "Este servidor não suporta criptografia ponta a ponta "
+                          "(protocolo v6). Atualize o servidor Halla para a versão "
+                          "v6 ou superior e tente novamente.";
+                }
                 if (!m_authenticated) {
                     m_connected = false;
                     // Erros de apelido durante o login precisam chegar ao
@@ -1563,7 +1664,10 @@ private:
                     m_hasVoiceToken.store(tokenOk);
                 }
                 writeLog("welcome: UDP=" + std::to_string(m_udpPort.load()) + ", token v4=" + std::string(m_hasVoiceToken.load() ? "ok" : "invalido"));
-                installWelcomeKeys(line);
+                // v6 E2EE: o welcome NÃO traz chaves — o servidor não as
+                // conhece. Elas chegam embrulhadas (e2e_key) do mestre do
+                // componente/escopo e o motor Kotlin as empurra ao nativo via
+                // setChannelKey quando aplicam.
 
                 // Prepara o UDP ANTES de notificar o Kotlin. O callback de
                 // onConnected inicia a captura; antes isso criava uma janela
@@ -1597,7 +1701,15 @@ private:
             }
 
             if (t == "channel_key") {
-                installChannelKey(jsonExtractInt(line, "channel"), jsonExtractString(line, "key"));
+                // v6: o servidor não gera/distribui chaves de canal — a mensagem
+                // não existe mais no protocolo. Aceitar uma aqui devolveria ao
+                // servidor o controle da chave de grupo (= fim do E2EE).
+                // Violção de protocolo: loga, avisa e ignora.
+                writeLog("ALERTA: servidor enviou channel_key — impossível no v6. Ignorado.");
+                invokeOnError("e2ee_channel_key",
+                              "O servidor enviou \"channel_key\" — impossível no protocolo v6 "
+                              "(o servidor não conhece chaves). A mensagem foi descartada; a "
+                              "criptografia ponta a ponta continua intacta.");
                 return;
             }
 
@@ -1627,7 +1739,22 @@ private:
                 int toId = jsonExtractInt(line, "to");
                 std::string from = jsonExtractString(line, "fromName");
                 std::string text = jsonExtractString(line, "text");
-                invokeOnChatMessage(scope, fromId, toId, from, text);
+                // v6 E2EE: texto cifrado (b64) + flag — o Kotlin decifra no
+                // trigger antes de qualquer ouvinte ver a mensagem.
+                const bool e2ee = jsonExtractString(line, "e2ee") == "true";
+                invokeOnChatMessage(scope, fromId, toId, from, text, e2ee);
+                return;
+            }
+
+            if (t == "offline_msg") {
+                // v6 E2EE: entrega cifrada par-a-par — o motor Kotlin decifra
+                // (fila + identity_data se o remetente não estiver no diretório).
+                invokeOnOfflineMsg(
+                    jsonExtractString(line, "fromUid"),
+                    jsonExtractString(line, "fromName"),
+                    jsonExtractString(line, "text"),
+                    jsonExtractString(line, "ts"),
+                    jsonExtractString(line, "e2ee") == "true");
                 return;
             }
 
@@ -1638,7 +1765,11 @@ private:
                 if (!selfEcho) {
                     std::string from = jsonExtractString(line, "fromName");
                     std::string msg = jsonExtractString(line, "msg");
-                    invokeOnPoke(from, msg);
+                    // v6 E2EE: poke cifrado par-a-par — flag + remetente para
+                    // o Kotlin derivar a chave com o dhPub dele.
+                    invokeOnPoke(from, msg,
+                                 jsonExtractString(line, "e2ee") == "true",
+                                 jsonExtractInt(line, "from"));
                 }
                 return;
             }
@@ -1954,6 +2085,7 @@ private:
     std::vector<char> m_currentVoiceKey;
     int m_currentChannelId = 0;
     std::map<uint32_t, std::map<uint16_t, std::map<int, std::vector<char>>>> m_screenReassembly;
+    bool m_loggedNoKeyVoice = false; // aviso único de frame retido sem chave E2EE
 
     // Recursos nativos do Codec Opus
     OpusEncoder* m_encoder;
@@ -1982,18 +2114,23 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     g_onWelcomeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWelcome", "(Ljava/lang/String;)V");
     g_onChannelListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChannelList", "(Ljava/lang/String;)V");
     g_onUserListMethod = env->GetStaticMethodID(g_coreClass, "triggerOnUserList", "(Ljava/lang/String;)V");
-    g_onChatMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChatMessage", "(Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;)V");
+    g_onChatMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnChatMessage", "(Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;Z)V");
     g_onAudioFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnAudioFrame", "(I[B)V");
     g_onConnectionFailedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnConnectionFailed", "(Ljava/lang/String;)V");
     g_onErrorMethod = env->GetStaticMethodID(g_coreClass, "triggerOnError", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onPingMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPing", "(II)V");
-    g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;)V");
+    g_onPokeMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPoke", "(Ljava/lang/String;Ljava/lang/String;ZI)V");
     g_onScreenShareFrameMethod = env->GetStaticMethodID(g_coreClass, "triggerOnScreenShareFrame", "(I[B)V");
     g_onWebRtcSignalMethod = env->GetStaticMethodID(g_coreClass, "triggerOnWebRtcSignal", "(Ljava/lang/String;)V");
     g_onIconDataMethod = env->GetStaticMethodID(g_coreClass, "triggerOnIconData", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onIconUploadedMethod = env->GetStaticMethodID(g_coreClass, "triggerOnIconUploaded", "(Ljava/lang/String;)V");
     g_identityPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
     g_signIdentityNonceMethod = env->GetStaticMethodID(g_coreClass, "signIdentityNonceBase64", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+    // v6 E2EE: material do hello + mensagens do motor + entrega offline.
+    g_dhPublicKeyMethod = env->GetStaticMethodID(g_coreClass, "identityDhPublicKeyBase64", "(Ljava/lang/String;)Ljava/lang/String;");
+    g_dhSignatureMethod = env->GetStaticMethodID(g_coreClass, "identityDhSignatureBase64", "(Ljava/lang/String;)Ljava/lang/String;");
+    g_onServerMessageMethod = env->GetStaticMethodID(g_coreClass, "triggerOnServerMessage", "(Ljava/lang/String;)V");
+    g_onOfflineMsgMethod = env->GetStaticMethodID(g_coreClass, "triggerOnOfflineMsg", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V");
     g_onPluginNotificationMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginNotification", "(Ljava/lang/String;Ljava/lang/String;)V");
     g_onPluginMenuActionMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginMenuAction", "(Ljava/lang/String;Ljava/lang/String;Z)V");
     g_onPluginUiTaskMethod = env->GetStaticMethodID(g_coreClass, "triggerOnPluginUiTask", "(J)V");
@@ -2028,7 +2165,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_connectToServer(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath, jstring uid, jstring version) {
+Java_com_halla_mobile_HallaCore_connectToServerNative(JNIEnv* env, jclass clazz, jstring host, jint port, jstring nick, jstring pass, jstring cachePath, jstring uid, jstring version) {
     const char* nativeHost = env->GetStringUTFChars(host, nullptr);
     const char* nativeNick = env->GetStringUTFChars(nick, nullptr);
     const char* nativePass = env->GetStringUTFChars(pass, nullptr);
@@ -2066,29 +2203,22 @@ Java_com_halla_mobile_HallaCore_setCurrentChannel(JNIEnv*, jclass, jint channelI
     HallaClientCore::getInstance().setCurrentChannelFromClient(channelId);
 }
 
+// v6 E2EE: o motor Kotlin empurra a chave de grupo (32 bytes CRUS) — a voz
+// cifra no nativo com chachapoly e SEM chave o frame não sai.
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_installChannelKey(JNIEnv* env, jclass, jint channelId, jstring keyB64) {
-    const char* nativeKey = env->GetStringUTFChars(keyB64, nullptr);
-    HallaClientCore::getInstance().installChannelKeyFromClient(channelId, nativeKey);
-    env->ReleaseStringUTFChars(keyB64, nativeKey);
+Java_com_halla_mobile_HallaCore_setChannelKey(JNIEnv* env, jclass, jint channelId, jbyteArray keyBytes) {
+    if (keyBytes == nullptr) return;
+    const jsize len = env->GetArrayLength(keyBytes);
+    jbyte body[64];
+    if (len != 32 || len > static_cast<jsize>(sizeof(body))) return;
+    env->GetByteArrayRegion(keyBytes, 0, len, body);
+    HallaClientCore::getInstance().setChannelKeyFromClient(channelId,
+        reinterpret_cast<const char*>(body), int(len));
 }
 
 JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_sendChatMessage(JNIEnv* env, jclass clazz, jstring text) {
-    const char* nativeText = env->GetStringUTFChars(text, nullptr);
-    HallaClientCore::getInstance().sendChatMessage(nativeText);
-    env->ReleaseStringUTFChars(text, nativeText);
-}
-
-JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_sendChatMessageScoped(JNIEnv* env, jclass clazz,
-                                                       jstring scope, jint toUserId,
-                                                       jstring text) {
-    const char* nativeScope = env->GetStringUTFChars(scope, nullptr);
-    const char* nativeText = env->GetStringUTFChars(text, nullptr);
-    HallaClientCore::getInstance().sendChatMessageScoped(nativeScope, toUserId, nativeText);
-    env->ReleaseStringUTFChars(scope, nativeScope);
-    env->ReleaseStringUTFChars(text, nativeText);
+Java_com_halla_mobile_HallaCore_removeChannelKey(JNIEnv*, jclass, jint channelId) {
+    HallaClientCore::getInstance().removeChannelKeyFromClient(channelId);
 }
 
 JNIEXPORT void JNICALL
@@ -2129,13 +2259,6 @@ Java_com_halla_mobile_HallaCore_sendRename(JNIEnv* env, jclass clazz, jstring ne
     const char* nativeText = env->GetStringUTFChars(newName, nullptr);
     HallaClientCore::getInstance().sendRename(nativeText);
     env->ReleaseStringUTFChars(newName, nativeText);
-}
-
-JNIEXPORT void JNICALL
-Java_com_halla_mobile_HallaCore_sendPoke(JNIEnv* env, jclass clazz, jint toUserId, jstring msg) {
-    const char* nativeText = env->GetStringUTFChars(msg, nullptr);
-    HallaClientCore::getInstance().sendPoke(toUserId, nativeText);
-    env->ReleaseStringUTFChars(msg, nativeText);
 }
 
 JNIEXPORT void JNICALL

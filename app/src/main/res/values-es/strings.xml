@@ -523,4 +523,30 @@ Notas de la versión:
     <string name="quality_bitrate_kbps">Bitrate (kbps)</string>
     <string name="quality_bitrate_hint">Máximo: %1$d kbps</string>
     <string name="screen_share_with_audio">Transmitir audio del dispositivo</string>
+
+    <!-- v6 E2EE: avisos y errores del motor de cifrado de extremo a extremo -->
+    <string name="e2ee_invalid_entry">La entrada de cifrado de %1$s en el servidor no pasó la verificación local (clave pública ausente o firma inválida). Las conversaciones con esta persona seguirán sin cifrar hasta que se reconecte.</string>
+    <string name="e2ee_self_mismatch">El servidor publicó claves de cifrado diferentes de las tuyas locales. Los mensajes privados pueden no descifrarse; verifica el código de seguridad y el certificado TLS del servidor.</string>
+    <string name="e2ee_no_pubkey">No se pudo cifrar el mensaje: la clave pública de %1$s no está disponible/verificada.</string>
+    <string name="e2ee_encrypt_fail">Fallo al cifrar el mensaje.</string>
+    <string name="e2ee_need_channel">Únete a un canal para conversar en el chat del canal.</string>
+    <string name="e2ee_not_connected">No se puede enviar: la conexión aún no está lista.</string>
+    <string name="e2ee_no_offline_key">No se pudo obtener la clave pública de esta identidad para cifrar el mensaje sin conexión.</string>
+    <string name="e2ee_key_timeout">Mensaje no enviado: la clave de cifrado del canal no llegó a tiempo (reconecta o cambia de canal y vuelve).</string>
+    <string name="e2ee_offline_timeout">Mensaje sin conexión no enviado: no se pudo obtener la clave pública del destinatario en este servidor.</string>
+    <string name="e2ee_undecryptable">[mensaje cifrado que no se pudo descifrar]</string>
+    <string name="e2ee_poke_undecryptable">[poke cifrado que no se pudo descifrar]</string>
+    <string name="e2ee_offline_undecryptable">[mensaje cifrado — no se pudo descifrar]</string>
+    <string name="e2ee_identity_changed">ATENCIÓN: la identidad de %1$s CAMBIÓ desde la última verificación. Confirma el nuevo código de seguridad antes de confiar en los mensajes de esta persona.</string>
+
+    <!-- v6 E2EE: verificación SAS -->
+    <string name="e2ee_verify">Verificar cifrado</string>
+    <string name="e2ee_verify_title">Verificar cifrado — %1$s</string>
+    <string name="e2ee_verify_instructions">Pide a %1$s que abra "Verificar cifrado" en su app y comparen los números en voz alta.\nIguales: nadie — ni el servidor — cambió las claves entre ustedes. Diferentes: hay una clave siendo sustituida; no confíes en la conversación hasta resolverlo.</string>
+    <string name="e2ee_verified_already">✔ Ya marcado como verificado.</string>
+    <string name="e2ee_not_verified">Aún no verificado.</string>
+    <string name="e2ee_mark_verified">Marcar como verificado</string>
+    <string name="e2ee_close">Cerrar</string>
+    <string name="e2ee_verified_now">Marcado como verificado.</string>
+    <string name="e2ee_verify_unavailable">No se pudo calcular el código (falta la clave de identidad — la persona debe reconectarse).</string>
 </resources>
