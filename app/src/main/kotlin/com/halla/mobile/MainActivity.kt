@@ -65,7 +65,7 @@ import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 import java.util.concurrent.atomic.AtomicInteger
 
-private data class ScreenShareQualityProfile(
+internal data class ScreenShareQualityProfile(
     val width: Int,
     val height: Int,
     val fps: Int,
@@ -75,7 +75,7 @@ private data class ScreenShareQualityProfile(
 
 class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
-    private lateinit var drawerLayout: DrawerLayout
+    internal lateinit var drawerLayout: DrawerLayout
     private lateinit var navDrawer: LinearLayout
     private lateinit var layoutConnect: RelativeLayout
     private lateinit var layoutServer: RelativeLayout
@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var isMuted = false
     private var isDeaf = false
     private var channelsData = JSONArray()
-    private var usersData = JSONArray()
+    internal var usersData = JSONArray()
     private var myPermissions = JSONObject()
     private var serverGroupsData = JSONArray()
     private var banListData = JSONArray()
@@ -195,12 +195,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     // Ícones de cargo: escopo por servidor conectado e views do painel de
     // informações aguardando a imagem (icon_get em voo).
-    private var activeServerKey = ""
-    private val pendingRoleIconViews = HashMap<String, MutableList<ImageView>>()
+    internal var activeServerKey = ""
 
-    // Sweeper do painel de informações: re-checa os ícones pendentes enquanto
-    // o diálogo está aberto (ver startRoleIconSweeper).
-    private var roleIconSweepRunnable: Runnable? = null
 
     // Novas variáveis para Áudio, Sensor, Identidades e Status
     private lateinit var btnAudioRoute: Button
@@ -220,27 +216,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private val collapsedChannels = HashSet<Int>()
     // Filtro da busca de canais (nome do canal ou de usuários dentro dele).
     private var channelSearchQuery = ""
-    private var selfId = 0
+    internal var selfId = 0
     private var activeMaxClients = 32
-    private var screenShareMaxWidth = 1920
-    private var screenShareMaxHeight = 1080
-    private var screenShareMaxFps = 60
-    private var screenShareMaxBitrateKbps = 8000
-    private var pendingScreenShareProfile = ScreenShareQualityProfile(1280, 720, 30, 2500)
-    private var watchingStreamUserId = 0
-    private var screenSharePreviousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    private var screenShareOverlay: FrameLayout? = null
-    private var screenShareImage: ImageView? = null
-    private var screenShareVideoHost: FrameLayout? = null
-    private var webRtcViewer: HallaWebRtcViewer? = null
-    private var screenShareTitle: TextView? = null
-    private var screenShareViewerControls: LinearLayout? = null
-    private var screenShareMuteButton: Button? = null
-    private var screenShareTapCatcher: View? = null
-    private var screenShareControlsVisible = true
-    private val screenShareControlsHide = Runnable { hideLiveControls() }
-    private var screenShareAudioMuted = false
-    private var screenShareFrameCount = 0
 
     private var pendingIdentityBackupContent: ByteArray? = null
     private val createIdentityBackupDocument = registerForActivityResult(
@@ -280,6 +257,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var awayMessage = ""
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Controladores extraídos do monólito: transmissão de tela (viewer) e
+    // ícones de cargo. O estado deles vive nas próprias classes.
+    internal val screenShare = ScreenShareController(this)
+    internal val roleIcons = RoleIconController(this)
     private var connectionTimeoutRunnable: Runnable? = null
     private val badgeRegistryListener: () -> Unit = {
         runOnUiThread {
@@ -1093,9 +1075,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SCREEN_SHARE_REQUEST) {
+        if (requestCode == ScreenShareController.REQUEST_CODE) {
             if (resultCode == RESULT_OK && data != null) {
-                val profile = pendingScreenShareProfile
+                val profile = screenShare.pendingProfile
                 HallaService.startScreenShare(
                     this, data, profile.width, profile.height, profile.fps,
                     profile.bitrateKbps * 1000, profile.withAudio)
@@ -1282,7 +1264,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     /** Cor de apoio (rótulos, dicas e textos secundários de diálogo). */
-    private fun dialogTextSecondary(): Int {
+    internal fun dialogTextSecondary(): Int {
         val ta = obtainStyledAttributes(intArrayOf(android.R.attr.textColorSecondary))
         val color = ta.getColor(0, Color.GRAY)
         ta.recycle()
@@ -3325,13 +3307,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 }
 
                 val serverObj = obj.optJSONObject("server")
-                screenShareMaxWidth = (serverObj?.optInt("screenshare_w", 1920) ?: 1920)
+                screenShare.maxWidth = (serverObj?.optInt("screenshare_w", 1920) ?: 1920)
                     .coerceIn(640, 3840)
-                screenShareMaxHeight = (serverObj?.optInt("screenshare_h", 1080) ?: 1080)
+                screenShare.maxHeight = (serverObj?.optInt("screenshare_h", 1080) ?: 1080)
                     .coerceIn(360, 2160)
-                screenShareMaxFps = (serverObj?.optInt("screenshare_fps", 60) ?: 60)
+                screenShare.maxFps = (serverObj?.optInt("screenshare_fps", 60) ?: 60)
                     .coerceIn(1, 60)
-                screenShareMaxBitrateKbps =
+                screenShare.maxBitrateKbps =
                     (serverObj?.optInt("screenshare_bitrate", 8000) ?: 8000)
                         .coerceIn(500, 50000)
                 val maxClients = (serverObj?.optInt("maxClients", -1) ?: -1)
@@ -3355,7 +3337,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 // Pré-busca dos ícones de cargo dos usuários online: quando o
                 // usuário abrir as informações de um cliente, o ícone já está
                 // no cache na maioria dos casos.
-                prefetchRoleIcons()
+                roleIcons.prefetch()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -3457,7 +3439,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
                 // Cargos podem ter mudado (user_group/user_joined): mantém os
                 // ícones de cargo pré-buscados em dia.
-                prefetchRoleIcons()
+                roleIcons.prefetch()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -3725,11 +3707,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 break
             }
         }
-        if (!on && watchingStreamUserId == userId) stopWatchingScreenShare()
+        if (!on && screenShare.watchingStreamUserId == userId) screenShare.stopWatching()
         rebuildChannelTree()
     }
 
-    private fun getChannelOfUser(userId: Int): Int {
+    internal fun getChannelOfUser(userId: Int): Int {
         for (i in 0 until channelsData.length()) {
             val chan = channelsData.getJSONObject(i)
             val usersArr = chan.optJSONArray("users") ?: continue
@@ -5752,7 +5734,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 } else if (choice.contains(getString(R.string.poke))) {
                     showSendPokeDialog(userId, name)
                 } else if (choice.contains("Ver transmissão")) {
-                    startWatchingScreenShare(userId, name)
+                    screenShare.startWatching(userId, name)
                 } else if (choice.contains(getString(R.string.private_message))) {
                     showPrivateMessageDialog(userId, name)
                 } else if (choice.contains(getString(R.string.e2ee_verify))) {
@@ -5796,144 +5778,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnScreenShareModule.isActivated = sharing
     }
 
-    private fun availableScreenShareResolutions(): List<ScreenShareQualityProfile> {
-        val labels = listOf(480, 720, 1080, 1440, 2160)
-        val resolutions = ArrayList<ScreenShareQualityProfile>()
-        for (height in labels) {
-            if (height > screenShareMaxHeight) continue
-            var width = (height.toDouble() * screenShareMaxWidth /
-                screenShareMaxHeight).toInt() and -2
-            width = width.coerceIn(2, screenShareMaxWidth)
-            if (width >= 640) resolutions += ScreenShareQualityProfile(width, height, 30, 1200)
-        }
-        if (screenShareMaxHeight !in labels && screenShareMaxHeight >= 360) {
-            resolutions += ScreenShareQualityProfile(
-                screenShareMaxWidth, screenShareMaxHeight, 30, 1200)
-        }
-        if (resolutions.isEmpty()) resolutions += ScreenShareQualityProfile(
-            screenShareMaxWidth, screenShareMaxHeight, 30, 1200)
-        return resolutions
-    }
-
-    private fun recommendedScreenBitrate(width: Int, height: Int, fps: Int): Int {
-        val pair = when {
-            height <= 480 -> 1200 to 2500
-            height <= 720 -> 2500 to 4500
-            height <= 1080 -> 4500 to 8000
-            height <= 1440 -> 9000 to 16000
-            else -> 18000 to 32000
-        }
-        var bitrate = if (fps <= 30) pair.first else
-            pair.first + (pair.second - pair.first) * (fps - 30) / 30
-        val standardWidth = maxOf(1, (height * 16.0 / 9.0).toInt())
-        bitrate = maxOf(500, bitrate * width / standardWidth)
-        return minOf(bitrate, screenShareMaxBitrateKbps)
-    }
-
-    private fun showScreenShareQualityDialog() {
-        val resolutions = availableScreenShareResolutions()
-        val resolutionLabels = resolutions.map { profile ->
-            val qualityName = when (profile.height) {
-                480 -> "480p"
-                720 -> "720p HD"
-                1080 -> "1080p Full HD"
-                1440 -> "1440p 2K"
-                2160 -> "2160p 4K"
-                else -> "${profile.height}p"
-            }
-            "$qualityName (${profile.width}x${profile.height})"
-        }
-        val fpsValues = if (screenShareMaxFps < 30) listOf(screenShareMaxFps)
-            else listOf(30, screenShareMaxFps).distinct()
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 8)
-        }
-        fun label(textValue: String) = TextView(this).apply {
-            text = textValue
-            setTextColor(dialogTextSecondary())
-            setPadding(0, 10, 0, 4)
-        }
-        val resolutionSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity,
-                android.R.layout.simple_spinner_item, resolutionLabels).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            // 1080p é o padrão: codificadores de hardware rendem bem nele e a
-            // transmissão fica fluida em quase todo aparelho. 2K/4K continuam
-            // disponíveis para quem quiser (e para telas 2K/4K de verdade).
-            val defaultIndex = resolutions.indexOfLast { it.height <= 1080 }
-            setSelection(if (defaultIndex >= 0) defaultIndex else 0)
-        }
-        val fpsSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity,
-                android.R.layout.simple_spinner_item, fpsValues.map { "$it FPS" }).also {
-                it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            setSelection(fpsValues.lastIndex)
-        }
-        val audioCheckbox = CheckBox(this).apply {
-            text = getString(R.string.screen_share_with_audio)
-            isChecked = true
-            setTextColor(dialogTextSecondary())
-            setPadding(0, 14, 0, 4)
-        }
-        // O bitrate sugerido acompanha a resolução selecionada (antes era
-        // calculado SEMPRE para a maior — abrir em 1080p sugerindo o bitrate
-        // de 4K desperdiçava banda e ajudava a travar a transmissão).
-        var suggestedBitrate = recommendedScreenBitrate(
-            resolutions[resolutionSpinner.selectedItemPosition].width,
-            resolutions[resolutionSpinner.selectedItemPosition].height,
-            fpsValues.last()).toString()
-        val bitrateInput = HallaInputEditText(this).apply {
-            hint = getString(R.string.quality_bitrate_hint, screenShareMaxBitrateKbps)
-            setText(suggestedBitrate)
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-        }
-        resolutionSpinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: AdapterView<*>?, view: View?,
-                                            position: Int, id: Long) {
-                    if (bitrateInput.text.toString() != suggestedBitrate) return
-                    val profile = resolutions[position]
-                    suggestedBitrate = recommendedScreenBitrate(
-                        profile.width, profile.height,
-                        fpsValues[fpsSpinner.selectedItemPosition]).toString()
-                    bitrateInput.setText(suggestedBitrate)
-                }
-                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            }
-        layout.addView(label(getString(R.string.quality_resolution)))
-        layout.addView(resolutionSpinner)
-        layout.addView(label(getString(R.string.quality_fps)))
-        layout.addView(fpsSpinner)
-        layout.addView(label(getString(R.string.quality_bitrate_kbps)))
-        layout.addView(bitrateInput)
-        layout.addView(audioCheckbox)
-
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.choose_screen_quality))
-            .setMessage(getString(R.string.screen_quality_server_limit,
-                screenShareMaxWidth, screenShareMaxHeight,
-                screenShareMaxFps, screenShareMaxBitrateKbps))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.transmit)) { _, _ ->
-                val resolution = resolutions[resolutionSpinner.selectedItemPosition]
-                val fps = fpsValues[fpsSpinner.selectedItemPosition]
-                val bitrate = bitrateInput.text.toString().toIntOrNull()
-                    ?.coerceIn(500, screenShareMaxBitrateKbps)
-                    ?: recommendedScreenBitrate(resolution.width, resolution.height, fps)
-                pendingScreenShareProfile = ScreenShareQualityProfile(
-                    resolution.width, resolution.height, fps, bitrate,
-                    audioCheckbox.isChecked)
-                val projection = getSystemService(
-                    Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                startActivityForResult(
-                    projection.createScreenCaptureIntent(), SCREEN_SHARE_REQUEST)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
 
     private fun toggleOwnScreenShare() {
         if (HallaService.isScreenSharing()) {
@@ -5946,266 +5790,12 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             Toast.makeText(this, getString(R.string.screen_share_requires_connection), Toast.LENGTH_SHORT).show()
             return
         }
-        showScreenShareQualityDialog()
+        screenShare.showQualityDialog()
     }
 
-    private fun startWatchingScreenShare(userId: Int, name: String) {
-        if (getChannelOfUser(userId) != getChannelOfUser(selfId)) {
-            Toast.makeText(this, "Você precisa estar no mesmo canal para ver a transmissão.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        watchingStreamUserId = userId
-        screenShareFrameCount = 0
-        screenShareAudioMuted = false
-        if (screenShareOverlay?.visibility != View.VISIBLE) {
-            screenSharePreviousOrientation = requestedOrientation
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
-        if (screenShareOverlay == null) {
-            val overlay = FrameLayout(this).apply {
-                setBackgroundColor(Color.BLACK)
-                layoutParams = DrawerLayout.LayoutParams(
-                    DrawerLayout.LayoutParams.MATCH_PARENT,
-                    DrawerLayout.LayoutParams.MATCH_PARENT
-                )
-            }
-            val image = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(Color.BLACK)
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            }
-            val videoHost = FrameLayout(this).apply {
-                setBackgroundColor(Color.TRANSPARENT)
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            }
-            val density = resources.displayMetrics.density
-            fun dp(value: Int) = (value * density).toInt()
-            val title = TextView(this).apply {
-                text = "Transmissão de $name"
-                setTextColor(Color.parseColor("#F1EEFA"))
-                textSize = 13f
-                setTypeface(null, Typeface.BOLD)
-                setPadding(dp(16), dp(8), dp(16), dp(8))
-                background = GradientDrawable().apply {
-                    setColor(0xB30D0B14.toInt())
-                    cornerRadius = dp(18).toFloat()
-                }
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP or Gravity.START
-                ).apply {
-                    setMargins(dp(16), dp(16), dp(16), 0)
-                }
-            }
-            fun roundedButton(color: String) = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(26).toFloat()
-                setColor(Color.parseColor(color))
-                setStroke(dp(1), 0x33FFFFFF)
-            }
-            // Controles flutuantes: duas cápsulas com elevation, sem faixa
-            // fixa no rodapé — a transmissão fica em tela cheia de verdade.
-            val viewerControls = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                ).apply {
-                    setMargins(dp(20), 0, dp(20), dp(20))
-                }
-            }
-            val muteLive = Button(this).apply {
-                text = "🔇  ${getString(R.string.mute_live_audio)}"
-                isAllCaps = false
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#F1EEFA"))
-                background = roundedButton("#2A2438")
-                elevation = dp(6).toFloat()
-                stateListAnimator = null
-                setPadding(dp(20), 0, dp(20), 0)
-                layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                    marginEnd = dp(10)
-                }
-                setOnClickListener {
-                    screenShareAudioMuted = !screenShareAudioMuted
-                    webRtcViewer?.setMuted(screenShareAudioMuted)
-                    text = if (screenShareAudioMuted)
-                        "🔊  ${getString(R.string.unmute_live_audio)}"
-                    else "🔇  ${getString(R.string.mute_live_audio)}"
-                    scheduleLiveControlsHide()
-                }
-            }
-            val stopLive = Button(this).apply {
-                text = "⏹  ${getString(R.string.stop_watching_live)}"
-                isAllCaps = false
-                textSize = 14f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.WHITE)
-                background = roundedButton("#D83B4D")
-                elevation = dp(6).toFloat()
-                stateListAnimator = null
-                setPadding(dp(20), 0, dp(20), 0)
-                layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                    marginStart = dp(10)
-                }
-                setOnClickListener { stopWatchingScreenShare() }
-            }
-            viewerControls.addView(muteLive)
-            viewerControls.addView(stopLive)
-            // Capturador de toques sobre o vídeo: alterna os controles. O
-            // vídeo (WebView legado/WebRTC) recebe gestos normais quando os
-            // controles estão ocultos… na prática um toque simples mostra os
-            // controles; o vídeo em si não precisa de interação.
-            val tapCatcher = View(this).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-                setOnClickListener {
-                    if (screenShareControlsVisible) hideLiveControls()
-                    else showLiveControls()
-                }
-            }
-            overlay.addView(image)
-            overlay.addView(videoHost)
-            overlay.addView(tapCatcher)
-            overlay.addView(title)
-            overlay.addView(viewerControls)
-            drawerLayout.addView(overlay)
-            screenShareOverlay = overlay
-            screenShareImage = image
-            screenShareVideoHost = videoHost
-            screenShareTapCatcher = tapCatcher
-            screenShareTitle = title
-            screenShareViewerControls = viewerControls
-            screenShareMuteButton = muteLive
-        } else {
-            screenShareOverlay?.visibility = View.VISIBLE
-            screenShareTitle?.text = "Transmissão de $name"
-            screenShareMuteButton?.text = "🔇  ${getString(R.string.mute_live_audio)}"
-        }
-        screenShareOverlay?.bringToFront()
-        // A rotação pode relayoutar a árvore de views; reaplica a camada e a
-        // ordem interna (vídeo < capturador de toques < título/botões) logo
-        // depois para garantir que a transmissão fique acima do app e o
-        // toque continue alternando os controles.
-        screenShareOverlay?.postDelayed({
-            screenShareOverlay?.visibility = View.VISIBLE
-            screenShareOverlay?.bringToFront()
-            restackViewerLayers()
-        }, 250)
-        webRtcViewer?.close()
-        screenShareImage?.visibility = View.GONE
-        screenShareVideoHost?.visibility = View.VISIBLE
-        screenShareVideoHost?.let { host ->
-            try {
-                webRtcViewer = HallaWebRtcViewer(
-                    this, userId, host, screenShareAudioMuted)
-            } catch (t: Throwable) {
-                android.util.Log.e("HallaWebRTC", "viewer init failed", t)
-                Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-                return
-            }
-        }
-        // O WebView é criado dentro do videoHost acima; a ordem correta das
-        // camadas é reaplicada sempre DEPOIS da criação (e o viewer não faz
-        // mais bringToFront por conta própria).
-        restackViewerLayers()
-        // Abre a transmissão mostrando os controles; eles somem sozinhos.
-        showLiveControls()
-        HallaCore.sendWebRtcWatchRequest(userId)
-        Toast.makeText(this, "Assistindo transmissão de $name", Toast.LENGTH_SHORT).show()
-    }
-
-    // Ordem canônica das camadas do overlay de transmissão: vídeo (legado e
-    // WebRTC) fica atrás do capturador de toques, que alterna os controles;
-    // título e botões permanecem no topo. Toda mudança de hierarquia
-    // (criação do WebView, rotação, reaplicação do overlay) deve terminar
-    // chamando este método.
-    private fun restackViewerLayers() {
-        screenShareImage?.bringToFront()
-        screenShareVideoHost?.bringToFront()
-        screenShareTapCatcher?.bringToFront()
-        screenShareTitle?.bringToFront()
-        screenShareViewerControls?.bringToFront()
-    }
-
-    // ==== Controles imersivos da transmissão (mostrar/ocultar) ============
-
-    private fun showLiveControls() {
-        screenShareControlsVisible = true
-        screenShareTitle?.visibility = View.VISIBLE
-        screenShareViewerControls?.visibility = View.VISIBLE
-        screenShareTitle?.animate()?.alpha(1f)?.setDuration(180)?.start()
-        screenShareViewerControls?.animate()?.alpha(1f)?.setDuration(180)?.start()
-        scheduleLiveControlsHide()
-    }
-
-    private fun hideLiveControls() {
-        screenShareControlsVisible = false
-        screenShareTitle?.animate()?.alpha(0f)?.setDuration(180)
-            ?.withEndAction { screenShareTitle?.visibility = View.INVISIBLE }?.start()
-        screenShareViewerControls?.animate()?.alpha(0f)?.setDuration(180)
-            ?.withEndAction { screenShareViewerControls?.visibility = View.INVISIBLE }?.start()
-        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
-    }
-
-    private fun scheduleLiveControlsHide() {
-        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
-        screenShareOverlay?.postDelayed(screenShareControlsHide, 3500)
-    }
-
-    private fun stopWatchingScreenShare() {
-        val previous = watchingStreamUserId
-        if (previous > 0) HallaCore.sendWebRtcWatchStop(previous)
-        screenShareOverlay?.removeCallbacks(screenShareControlsHide)
-        screenShareControlsVisible = true
-        webRtcViewer?.close()
-        webRtcViewer = null
-        watchingStreamUserId = 0
-        screenShareAudioMuted = false
-        screenShareMuteButton?.text = "🔇  ${getString(R.string.mute_live_audio)}"
-        screenShareOverlay?.visibility = View.GONE
-        screenShareImage?.setImageDrawable(null)
-        screenShareVideoHost?.removeAllViews()
-        screenShareFrameCount = 0
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-    }
 
     override fun onWebRtcSignalReceived(signalJson: String) {
-        try {
-            val signal = JSONObject(signalJson)
-            val from = signal.optInt("from", 0)
-            if (watchingStreamUserId != 0 && from != 0 && from != watchingStreamUserId) return
-            runOnUiThread {
-                if (webRtcViewer == null && watchingStreamUserId != 0) {
-                    screenShareVideoHost?.let { host ->
-                        try {
-                            webRtcViewer = HallaWebRtcViewer(
-                                this, watchingStreamUserId, host, screenShareAudioMuted)
-                        } catch (t: Throwable) {
-                            android.util.Log.e("HallaWebRTC", "viewer init failed from signal", t)
-                            Toast.makeText(this, "Falha ao abrir WebRTC: ${t.message ?: t.javaClass.simpleName}", Toast.LENGTH_LONG).show()
-                        }
-                        // Reaplica a ordem das camadas após criar o WebView.
-                        restackViewerLayers()
-                    }
-                }
-                webRtcViewer?.handleSignal(signal)
-            }
-        } catch (e: Exception) {
-            android.util.Log.w("HallaWebRTC", "signal failed", e)
-        }
+        screenShare.handleWebRtcSignal(signalJson)
     }
 
     // ==================================================== ícones de cargo (v1.0.90)
@@ -6216,128 +5806,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // mostrava literalmente "rota.png ROTA".
 
     override fun onIconDataReceived(name: String, dataB64: String) {
-        if (activeServerKey.isEmpty()) return
-        runOnUiThread {
-            try {
-                val bytes = android.util.Base64.decode(dataB64, android.util.Base64.NO_WRAP)
-                RoleIconCache.store(activeServerKey, name, bytes)
-                refreshPendingRoleIconViews(name)
-            } catch (_: Exception) {
-            }
-        }
+        roleIcons.onIconDataReceived(name, dataB64)
     }
 
     override fun onIconUploaded(name: String) {
-        if (activeServerKey.isEmpty()) return
-        runOnUiThread {
-            RoleIconCache.invalidate(activeServerKey, name)
-            requestRoleIcon(name)
-        }
+        roleIcons.onIconUploaded(name)
     }
 
-    /** Envia icon_get respeitando a política do cache (throttle de 5 s). */
-    private fun requestRoleIcon(name: String) {
-        if (activeServerKey.isEmpty() || name.isEmpty() || !HallaService.isRunning()) return
-        val haveIt = RoleIconCache.bitmap(activeServerKey, name) != null
-        if (RoleIconCache.shouldRequest(activeServerKey, name, haveIt)) {
-            try {
-                HallaCore.sendRawJson(
-                    JSONObject().put("t", "icon_get").put("name", name).toString())
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    /** Busca os ícones de imagem de todos os cargos online (welcome/updates). */
-    private fun prefetchRoleIcons() {
-        if (activeServerKey.isEmpty()) return
-        val names = LinkedHashSet<String>()
-        for (i in 0 until usersData.length()) {
-            val user = usersData.optJSONObject(i) ?: continue
-            for (line in user.optString("group", "").split("\n")) {
-                val trimmed = line.trim()
-                if (trimmed.isEmpty()) continue
-                val (icon, _) = RoleIconCache.splitRoleLine(trimmed)
-                if (icon.isNotEmpty()) names.add(icon)
-            }
-        }
-        names.forEach { requestRoleIcon(it) }
-    }
-
-    /** icon_data chegou: atualiza as views do painel de informações aberto. */
-    private fun refreshPendingRoleIconViews(name: String) {
-        val views = pendingRoleIconViews[name] ?: return
-        val bitmap = RoleIconCache.bitmap(activeServerKey, name) ?: return
-        for (view in views) {
-            view.setImageBitmap(bitmap)
-            view.visibility = View.VISIBLE
-        }
-        // Preenchido: sai da lista de pendentes para o sweeper não reprocessar.
-        pendingRoleIconViews.remove(name)
-    }
-
-    /**
-     * Enquanto o painel de informações estiver aberto, re-checa a cada 1 s os
-     * ícones de cargo ainda sem imagem: busca no cache (o icon_data pode ter
-     * chegado por outra via) e re-pede ao servidor — o throttle interno do
-     * RoleIconCache (5 s por nome) limita os envios de fato.
-     *
-     * Bug que corrige: se o icon_get da abertura do painel era barrado pelo
-     * throttle (pedido do prefetch < 5 s antes) ou a resposta se perdia, a
-     * view ficava GONE para sempre — o ícone só apareceria se o usuário
-     * fechasse e reabrisse o painel.
-     */
-    private fun startRoleIconSweeper() {
-        stopRoleIconSweeper()
-        val sweep = object : Runnable {
-            override fun run() {
-                if (pendingRoleIconViews.isNotEmpty()) {
-                    for ((name, views) in pendingRoleIconViews.toList()) {
-                        val bitmap = RoleIconCache.bitmap(activeServerKey, name)
-                        if (bitmap != null) {
-                            for (view in views) {
-                                view.setImageBitmap(bitmap)
-                                view.visibility = View.VISIBLE
-                            }
-                            pendingRoleIconViews.remove(name)
-                        } else {
-                            requestRoleIcon(name)
-                        }
-                    }
-                    handler.postDelayed(this, 1_000)
-                }
-            }
-        }
-        roleIconSweepRunnable = sweep
-        handler.postDelayed(sweep, 1_000)
-    }
-
-    private fun stopRoleIconSweeper() {
-        roleIconSweepRunnable?.let { handler.removeCallbacks(it) }
-        roleIconSweepRunnable = null
-    }
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
-        if (watchingStreamUserId == 0 || jpegData.isEmpty()) return
-        // Em algumas combinações de servidor/cliente, o ID do stream pode não
-        // bater com o item tocado, mas o frame ainda pertence a alguém do mesmo
-        // canal. Não descarte: isso deixava a tela preta mesmo com UDP chegando.
-        if (fromUserId != watchingStreamUserId) {
-            val sameChannel = getChannelOfUser(fromUserId) == getChannelOfUser(selfId)
-            if (!sameChannel) return
-            watchingStreamUserId = fromUserId
-        }
-        runOnUiThread {
-            val bitmap = BitmapFactory.decodeByteArray(jpegData, 0, jpegData.size)
-            if (bitmap != null) {
-                screenShareFrameCount++
-                screenShareImage?.visibility = View.VISIBLE
-                screenShareImage?.setImageBitmap(bitmap)
-                screenShareTitle?.text = "Transmissão • ${bitmap.width}x${bitmap.height} • $screenShareFrameCount"
-            } else {
-                Toast.makeText(this, "Frame da transmissão inválido", Toast.LENGTH_SHORT).show()
-            }
-        }
+        screenShare.handleFrame(fromUserId, jpegData)
     }
 
     private fun showAwayMessageDialog() {
@@ -6462,9 +5940,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     } else {
                         // Ainda não temos os bytes: mostra só o nome do cargo e
                         // pede ao servidor — a imagem entra quando o icon_data
-                        // chegar (refreshPendingRoleIconViews).
-                        pendingRoleIconViews.getOrPut(iconName) { mutableListOf() }.add(iconView)
-                        requestRoleIcon(iconName)
+                        // chegar (roleIcons.refreshPendingViews).
+                        roleIcons.addPendingView(iconName, iconView)
+                        roleIcons.request(iconName)
                     }
                     row.addView(iconView)
                 }
@@ -6485,13 +5963,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .setView(scroll)
             .setPositiveButton(getString(R.string.close), null)
             .setOnDismissListener {
-                pendingRoleIconViews.clear()
-                stopRoleIconSweeper()
+                roleIcons.clearPending()
+                roleIcons.stopSweeper()
             }
             .show()
         // Ícones ainda em voo: mantém viva a busca enquanto o painel estiver
         // aberto (re-request throttled + cache lookup a cada 1 s).
-        startRoleIconSweeper()
+        roleIcons.startSweeper()
     }
 
     private fun showMoveUserDialog(userId: Int, userName: String) {
@@ -6636,7 +6114,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         private const val HelperIntSize = 48
         private const val SPEECH_CUE_REQUEST = 7401
         private const val ADDON_INSTALL_REQUEST = 7402
-        private const val SCREEN_SHARE_REQUEST = 7403
 
         // Servidor oficial pré-salvo na primeira execução (sem apelido).
         const val OFFICIAL_SERVER_NAME = "HALLA OFFICIAL SERVER"
