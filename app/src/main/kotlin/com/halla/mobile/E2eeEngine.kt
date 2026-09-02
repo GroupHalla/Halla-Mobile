@@ -94,11 +94,13 @@ object E2eeEngine {
     // encerrada durante um flush de fila). Os argumentos POSICIONAIS são os
     // de formato do resource (%1$s...); sem contexto (ou resource ausente),
     // um texto genérico mantém o aviso entregável.
-    private fun string(resId: Int, vararg args: Any): String = try {
+    private fun string(resId: Int, vararg args: Any): String {
         val ctx = appContext ?: return NO_CONTEXT_NOTICE
-        if (args.isEmpty()) ctx.getString(resId) else ctx.getString(resId, *args)
-    } catch (_: Throwable) {
-        NO_CONTEXT_NOTICE
+        return try {
+            if (args.isEmpty()) ctx.getString(resId) else ctx.getString(resId, *args)
+        } catch (_: Throwable) {
+            NO_CONTEXT_NOTICE
+        }
     }
 
     private const val NO_CONTEXT_NOTICE = "[aviso de criptografia]"
@@ -729,8 +731,10 @@ object E2eeEngine {
             for (u in users.values) {
                 if (u.uid == uid && u.e2eeValid) { theirDhPub = u.dhPub; break }
             }
-            if (theirDhPub == null && directory.containsKey(uid)) {
-                theirDhPub = E2eeCrypto.b64Decode(directory[uid]?.optString("dhPub", ""))
+            if (theirDhPub == null) {
+                directory[uid]?.optString("dhPub", "")?.takeIf { it.isNotEmpty() }?.let {
+                    theirDhPub = E2eeCrypto.b64Decode(it)
+                }
             }
             if (theirDhPub == null || theirDhPub.size != 32) {
                 if (directory.containsKey(uid)) {
@@ -766,11 +770,13 @@ object E2eeEngine {
     fun decryptIncomingChat(scope: String, fromUserId: Int, textB64: String): String {
         synchronized(lock) {
             val blob = E2eeCrypto.b64Decode(textB64)
-            val aad = E2eeCrypto.chatDomainAad(scope).toByteArray(Charsets.UTF_8)
+            // Privado: par-a-par com o AAD-domínio em String; grupo:
+            // AES-GCM com o AAD em bytes (o layout de cada camada).
+            val domain = E2eeCrypto.chatDomainAad(scope)
             if (scope == "private") {
                 val from = users[fromUserId]
                 if (from != null && from.e2eeValid && from.dhPub != null && dhPriv != null) {
-                    val plain = E2eeCrypto.pairwiseDecrypt(dhPriv!!, from.dhPub!!, aad, blob)
+                    val plain = E2eeCrypto.pairwiseDecrypt(dhPriv!!, from.dhPub!!, domain, blob)
                     if (plain != null) return String(plain, Charsets.UTF_8)
                 }
                 return string(R.string.e2ee_undecryptable)
@@ -786,8 +792,9 @@ object E2eeEngine {
                 for (k in channelKeys.values) {
                     if (candidates.none { it.contentEquals(k) }) candidates.add(k)
                 }
+                val aadBytes = domain.toByteArray(Charsets.UTF_8)
                 for (key in candidates) {
-                    val plain = E2eeCrypto.aeadOpen(key, nonce, aad, ctTag) ?: continue
+                    val plain = E2eeCrypto.aeadOpen(key, nonce, aadBytes, ctTag) ?: continue
                     if (plain.isNotEmpty()) return String(plain, Charsets.UTF_8)
                 }
             }
@@ -825,8 +832,10 @@ object E2eeEngine {
             for (u in users.values) {
                 if (u.uid == fromUid) { theirDhPub = u.dhPub; break }
             }
-            if (theirDhPub == null && directory.containsKey(fromUid)) {
-                theirDhPub = E2eeCrypto.b64Decode(directory[fromUid]?.optString("dhPub", ""))
+            if (theirDhPub == null) {
+                directory[fromUid]?.optString("dhPub", "")?.takeIf { it.isNotEmpty() }?.let {
+                    theirDhPub = E2eeCrypto.b64Decode(it)
+                }
             }
             if (theirDhPub != null && theirDhPub.size == 32 && dhPriv != null) {
                 val plain = E2eeCrypto.pairwiseDecrypt(
