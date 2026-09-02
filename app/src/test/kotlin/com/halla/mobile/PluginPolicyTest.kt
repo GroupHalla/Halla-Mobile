@@ -55,12 +55,12 @@ class PluginPolicyTest {
         val bridge = File(repositoryRoot(), "app/src/main/cpp/jni_bridge.cpp").readText()
         // v6 E2EE: o hello carrega o par X25519 + binding — clientes < v6 e
         // servidores < v6 se recusam mutuamente (transição dura).
-        assertTrue(bridge.contains("\\\"proto\\":6"))
+        assertTrue(bridge.contains("\\\"proto\\\":6"))
         assertTrue(bridge.contains("dhPub"))
         assertTrue(bridge.contains("dhSig"))
         assertFalse("hello antigo com proto 4/5 deve ter sido atualizado",
-            bridge.contains("\\\"proto\\":4"))
-        assertFalse(bridge.contains("\\\"proto\\":5"))
+            bridge.contains("\\\"proto\\\":4"))
+        assertFalse(bridge.contains("\\\"proto\\\":5"))
     }
 
     @Test
