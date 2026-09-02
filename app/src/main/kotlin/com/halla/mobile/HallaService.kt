@@ -264,7 +264,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         instance = this
         val saved = getSharedPreferences("HallaPrefs", MODE_PRIVATE)
         lastWelcomeJson = saved.getString("last_welcome_json", "").orEmpty()
-        audio = HallaAudioManager(cacheDir)
+        audio = HallaAudioManager(this, cacheDir)
         loadAudioSettings()
         audio.onTalkingStateChanged = { talking ->
             handler.post {
@@ -529,16 +529,13 @@ class HallaService : Service(), HallaCore.Callbacks {
 
     private fun startAudio() {
         loadAudioSettings()
-        // Mantém o Android em modo de comunicação para exibir/usar o volume
-        // de chamada e preservar captura de microfone em segundo plano. A voz
-        // recebida continua sendo reproduzida pelo AudioTrack em USAGE_MEDIA,
-        // então o painel expandido do sistema também expõe o volume de mídia.
-        try {
-            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
-            @Suppress("DEPRECATION")
-            systemAudio.isSpeakerphoneOn = true
-        } catch (_: Exception) { }
+        // Mantém o Android em modo de comunicação (volume de chamada,
+        // captura em segundo plano e referência para o AEC do hardware).
+        // A voz recebida agora sai no stream de COMUNICAÇÃO — antes, com o
+        // playback em USAGE_MEDIA, o AcousticEchoCanceler não via o áudio
+        // tocado como referência e o eco do viva-voz voltava pelo microfone.
+        // Alto-falante segue como rota padrão, como antes.
+        audio.setSpeakerphoneRoute(true)
         // Não força um modo/stream especial antes de abrir o microfone: alguns
         // fabricantes deixam a captura sem dados nessa combinação. A fonte
         // MIC e a reprodução original do Mobile continuam sendo o caminho

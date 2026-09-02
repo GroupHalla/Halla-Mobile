@@ -738,7 +738,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         // Inicializa AudioManager
-        audioManager = HallaAudioManager(cacheDir)
+        audioManager = HallaAudioManager(this, cacheDir)
         audioManager.onTalkingStateChanged = { talking ->
             runOnUiThread { updateTalkingUi(talking) }
         }
@@ -3276,10 +3276,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnAddServer.visibility = View.GONE
             btnQuickConnect.visibility = View.GONE
 
-            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
-            @Suppress("DEPRECATION")
-            systemAudio.isSpeakerphoneOn = true
+            // Voz no stream de comunicação: alto-falante por padrão (o modo de
+            // comunicação e o roteamento explícito ficam no HallaAudioManager —
+            // sem isso o cancelador de eco do hardware não tem referência).
+            audioManager.setSpeakerphoneRoute(true)
             routeBluetoothIfAvailable()
 
             appendChatText(getString(R.string.system), getString(R.string.connected_to, serverName), "server")
@@ -4680,16 +4680,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                                 it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
             }
             if (bluetooth != null) {
-                systemAudio.mode = AudioManager.MODE_IN_COMMUNICATION
-                if (bluetooth.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                    bluetooth.type == AudioDeviceInfo.TYPE_BLE_HEADSET) {
-                    @Suppress("DEPRECATION")
-                    systemAudio.startBluetoothSco()
-                    @Suppress("DEPRECATION")
-                    systemAudio.isBluetoothScoOn = true
-                }
-                @Suppress("DEPRECATION")
-                systemAudio.isSpeakerphoneOn = false
+                // Roteia a voz para o headset no stream de comunicação
+                // (setCommunicationDevice no Android 12+; SCO legado antes).
+                // A descoberta continua aqui porque é onde a permissão
+                // BLUETOOTH_CONNECT é checada.
+                audioManager.setBluetoothRoute()
                 btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
             }
         } catch (_: SecurityException) {
@@ -4700,19 +4695,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private fun toggleAudioRoute() {
         isSpeakerPhone = !isSpeakerPhone
-        val audioManagerSystem = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        // Alto-falante x auricular no stream de comunicação (Android 12+ via
+        // setCommunicationDevice; legado antes). Modo de comunicação e volume
+        // de chamada ficam a cargo do HallaAudioManager.
+        audioManager.setSpeakerphoneRoute(isSpeakerPhone)
         if (isSpeakerPhone) {
-            audioManagerSystem.isSpeakerphoneOn = true
-            audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
             btnAudioRoute.setBackgroundResource(R.drawable.ic_speaker)
             Toast.makeText(this, getString(R.string.audio_speaker), Toast.LENGTH_SHORT).show()
-            
+
             // Desativa sensor de proximidade no viva-voz
             sensorManager?.unregisterListener(proximityListener)
             if (wakeLock?.isHeld == true) wakeLock?.release()
         } else {
-            audioManagerSystem.isSpeakerphoneOn = false
-            audioManagerSystem.mode = AudioManager.MODE_IN_COMMUNICATION
             btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
             Toast.makeText(this, getString(R.string.audio_earpiece), Toast.LENGTH_SHORT).show()
 

@@ -44,6 +44,13 @@
 // Host de complementos (mesma ABI C pública do Halla Desktop)
 #include "plugin_host.h"
 
+// Parser JSON consciente de estrutura: extratores de campo (String/Int/
+// Uint64/Array/Object) + jsonEscape/jsonUnescape. Substitui a busca cega por
+// substrings, que confundia chaves com textos do usuário, perdia o sinal dos
+// inteiros negativos, truncava arrays com ']' dentro de strings e lia bools
+// ("e2ee":true) como o nome da chave seguinte.
+#include "json_parse.h"
+
 #define LOG_TAG "HallaCoreJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -94,87 +101,35 @@ void writeLog(const std::string& msg) {
     }
 }
 
-// Exception-safe helper conversions
-int safeStoi(const std::string& str) {
-    int val = 0;
-    bool neg = false;
-    for (char c : str) {
-        if (c == '-') neg = true;
-        else if (c >= '0' && c <= '9') {
-            val = val * 10 + (c - '0');
+// ----------------------------------------------------------- JNI por thread
+// Anexa a thread atual à JVM uma única vez (RAII) e só desanexa quando a
+// thread sai. Antes disto cada invokeOn* fazia AttachCurrentThread seguido de
+// DetachCurrentThread por chamada: o caminho de voz entrega ~50 pacotes/s por
+// falante, e cada par attach/detach cria/destrói um objeto Thread na ART
+// (locks na thread list, TLS, barreira de GC) — centenas de vezes por segundo
+// em canais movimentados. Com a thread permanentemente anexada, GetEnv
+// devolve JNI_OK nos invokeOn* e o attach/detach por chamado simplesmente
+// desaparece. Threads que já pertencem à JVM (callbacks Java) passam por
+// aqui sem efeito colateral.
+class JniThreadAttachment {
+public:
+    JniThreadAttachment() {
+        if (!g_vm) return;
+        JNIEnv* env = nullptr;
+        if (g_vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_EDETACHED) {
+            if (g_vm->AttachCurrentThread(&env, nullptr) == JNI_OK) m_attached = true;
         }
     }
-    return neg ? -val : val;
-}
+    ~JniThreadAttachment() {
+        if (m_attached && g_vm) g_vm->DetachCurrentThread();
+    }
+    JniThreadAttachment(const JniThreadAttachment&) = delete;
+    JniThreadAttachment& operator=(const JniThreadAttachment&) = delete;
+private:
+    bool m_attached = false;
+};
 
-uint32_t safeStoul(const std::string& str) {
-    uint32_t val = 0;
-    for (char c : str) {
-        if (c >= '0' && c <= '9') {
-            val = val * 10 + (c - '0');
-        }
-    }
-    return val;
-}
-
-// Escapa strings antes de inseri-las em mensagens JSON. O cliente mobile
-// originalmente montava JSON por concatenação, então aspas, barras e quebras
-// de linha em apelidos/senhas/mensagens quebravam o protocolo.
-std::string jsonEscape(const std::string& input) {
-    std::string out;
-    out.reserve(input.size() + 8);
-    static const char hex[] = "0123456789abcdef";
-    for (unsigned char c : input) {
-        switch (c) {
-        case '\\': out += "\\\\"; break;
-        case '"':  out += "\\\""; break;
-        case '\b': out += "\\b"; break;
-        case '\f': out += "\\f"; break;
-        case '\n': out += "\\n"; break;
-        case '\r': out += "\\r"; break;
-        case '\t': out += "\\t"; break;
-        default:
-            if (c < 0x20) {
-                out += "\\u00";
-                out += hex[(c >> 4) & 0x0f];
-                out += hex[c & 0x0f];
-            } else {
-                out += static_cast<char>(c);
-            }
-            break;
-        }
-    }
-    return out;
-}
-
-// Reverte as sequências JSON mais comuns para que o texto exibido no Android
-// não contenha barras extras (por exemplo: \\\"Olá\\\").
-std::string jsonUnescape(const std::string& input) {
-    std::string out;
-    out.reserve(input.size());
-    for (size_t i = 0; i < input.size(); ++i) {
-        if (input[i] != '\\' || i + 1 >= input.size()) {
-            out += input[i];
-            continue;
-        }
-        const char c = input[++i];
-        switch (c) {
-        case '"': out += '"'; break;
-        case '\\': out += '\\'; break;
-        case '/': out += '/'; break;
-        case 'b': out += '\b'; break;
-        case 'f': out += '\f'; break;
-        case 'n': out += '\n'; break;
-        case 'r': out += '\r'; break;
-        case 't': out += '\t'; break;
-        default:
-            out += '\\';
-            out += c;
-            break;
-        }
-    }
-    return out;
-}
+// Escapo e parse JSON: ver json_parse.h (incluído no topo do arquivo).
 
 uint64_t nowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -339,106 +294,10 @@ static int tlsRecvCallback(void* ctx, unsigned char* buf, size_t len) {
     return MBEDTLS_ERR_NET_RECV_FAILED;
 }
 
-// Helpers to extract JSON string fields (zero dependencies, ultra fast & safe)
-std::string jsonExtractString(const std::string& json, const std::string& key) {
-    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "";
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return "";
-    pos = json.find(":", pos);
-    if (pos == std::string::npos) return "";
-    pos = json.find("\"", pos);
-    if (pos == std::string::npos) return "";
-    size_t start = pos + 1;
-    size_t end = start;
-    while (end < json.size()) {
-        end = json.find("\"", end);
-        if (end == std::string::npos) return "";
-        if (json[end - 1] != '\\') {
-            break;
-        }
-        end++;
-    }
-    return jsonUnescape(json.substr(start, end - start));
-}
-
-int jsonExtractInt(const std::string& json, const std::string& key) {
-    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return 0;
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return 0;
-    pos = json.find(":", pos);
-    if (pos == std::string::npos) return 0;
-    while (pos < json.size() && (json[pos] == ':' || json[pos] == ' ' || json[pos] == '\t')) pos++;
-    size_t start = pos;
-    size_t end = start;
-    while (end < json.size() && json[end] >= '0' && json[end] <= '9') end++;
-    if (start == end) return 0;
-    return safeStoi(json.substr(start, end - start));
-}
-
-uint64_t jsonExtractUint64(const std::string& json, const std::string& key) {
-    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return 0;
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return 0;
-    pos = json.find(":", pos);
-    if (pos == std::string::npos) return 0;
-    while (pos < json.size() && (json[pos] == ':' || json[pos] == ' ' || json[pos] == '\t')) pos++;
-    uint64_t value = 0;
-    bool found = false;
-    while (pos < json.size() && json[pos] >= '0' && json[pos] <= '9') {
-        found = true;
-        value = value * 10 + static_cast<uint64_t>(json[pos] - '0');
-        ++pos;
-    }
-    return found ? value : 0;
-}
-
-std::string jsonExtractArray(const std::string& json, const std::string& key) {
-    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "[]";
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return "[]";
-    pos = json.find("[", pos);
-    if (pos == std::string::npos) return "[]";
-    size_t start = pos;
-    int bracketCount = 0;
-    for (size_t i = start; i < json.size(); ++i) {
-        if (json[i] == '[') bracketCount++;
-        else if (json[i] == ']') {
-            bracketCount--;
-            if (bracketCount == 0) {
-                return json.substr(start, i - start + 1);
-            }
-        }
-    }
-    return "[]";
-}
-
-std::string jsonExtractObject(const std::string& json, const std::string& key) {
-    if (json.size() > kMaxJsonLineBytes || key.size() > 64) return "{}";
-    size_t pos = json.find("\"" + key + "\"");
-    if (pos == std::string::npos) return "{}";
-    pos = json.find("{", pos);
-    if (pos == std::string::npos) return "{}";
-    const size_t start = pos;
-    int depth = 0;
-    bool inString = false;
-    bool escaped = false;
-    for (size_t i = start; i < json.size(); ++i) {
-        const char c = json[i];
-        if (inString) {
-            if (escaped) escaped = false;
-            else if (c == '\\') escaped = true;
-            else if (c == '"') inString = false;
-            continue;
-        }
-        if (c == '"') inString = true;
-        else if (c == '{') ++depth;
-        else if (c == '}') {
-            --depth;
-            if (depth == 0) return json.substr(start, i - start + 1);
-        }
-    }
-    return "{}";
-}
+// -------------------------------------------------------------- extratores
+// jsonExtractString/Int/Uint64/Array/Object e jsonEscape/jsonUnescape agora
+// vivem em json_parse.h: varredura do nível raiz com noção de estrutura
+// (strings, escapes, aninhamento) em vez de busca cega por substrings.
 
 std::vector<std::string> jsonObjectStringValues(const std::string& obj) {
     std::vector<std::string> values;
@@ -1440,6 +1299,11 @@ private:
     }
 
     void tcpLoop(const std::string& hostStr, int port) {
+
+        // Fix de performance: a thread fica anexada à JVM durante toda a sua
+        // vida — os invokeOn* deixam de fazer attach/detach por mensagem.
+        JniThreadAttachment jniThreadGuard;
+
         writeLog("tcpLoop iniciado para " + hostStr + ":" + std::to_string(port));
         
         m_tcpSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -1552,6 +1416,9 @@ private:
     }
 
     void pingLoop() {
+
+        JniThreadAttachment jniThreadGuard; // anexada à JVM uma única vez
+
         while (m_connected && m_tcpSocket != -1) {
             // Dorme em pequenos intervalos para desconectar sem esperar os
             // 15 segundos completos do keep-alive.
@@ -1919,6 +1786,9 @@ private:
     }
 
     void udpPingLoop() {
+
+        JniThreadAttachment jniThreadGuard; // anexada à JVM uma única vez
+
         while (m_connected && m_udpSocket.load() != -1) {
             for (int i = 0; i < 20 && m_connected; ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -2006,6 +1876,14 @@ private:
     }
 
     void udpLoop() {
+
+        // Fix de performance crítica: esta thread processa ~50 pacotes de voz
+        // por segundo por falante. Antes, cada pacote fazia attach+detach na
+        // JVM (invokeOnAudioFrame) — centenas de ciclos de criação/destruição
+        // de Thread ART por segundo. Anexada uma vez, o caminho por quadro
+        // fica só com o decode Opus e o callback.
+        JniThreadAttachment jniThreadGuard;
+
         writeLog("udpLoop iniciado");
         char buf[2048];
         struct sockaddr_in sender;

@@ -1,7 +1,9 @@
 package com.halla.mobile
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -9,6 +11,7 @@ import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -26,7 +29,7 @@ import kotlin.math.sqrt
  * à sessão de áudio da captura, e os mantemos sincronizados enquanto a sessão
  * está ativa.
  */
-class HallaAudioManager(private val cacheDir: File) {
+class HallaAudioManager(private val context: Context, private val cacheDir: File) {
     @Volatile private var isRecordingMic = false
     @Volatile private var isPlayingAudio = false
     @Volatile private var isLocalRecording = false
@@ -314,19 +317,27 @@ class HallaAudioManager(private val cacheDir: File) {
         if (isPlayingAudio) return
         isPlayingAudio = true
 
+        // O cancelador de eco acústico do hardware (AcousticEchoCanceler,
+        // preso à sessão do AudioRecord lá em cima) precisa correlacionar a
+        // CAPTURA com a REPRODUÇÃO do mesmo domínio. Com o playback em
+        // USAGE_MEDIA a referência do AEC não continha o áudio tocado no
+        // alto-falante e o eco voltava pelo microfone no viva-voz. A voz passa
+        // agora pelo stream de comunicação; o roteamento (alto-falante,
+        // auricular ou Bluetooth) é escolhido explicitamente por
+        // setSpeakerphoneRoute()/setBluetoothRoute(), então o antigo motivo
+        // do USAGE_MEDIA (áudio preso no auricular, volume errado) não se
+        // aplica mais.
+        ensureCommunicationMode()
+
         val sampleRate = 48000
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
 
         try {
-            // Reproduz a voz remota no stream de mídia. Em muitos aparelhos o
-            // stream de chamada fica extremamente baixo ou vai para a rota de
-            // auricular; usando USAGE_MEDIA o botão físico controla o volume do
-            // celular/mídia e o áudio sai no alto-falante como esperado.
             val track = AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build())
                 .setAudioFormat(AudioFormat.Builder()
@@ -575,6 +586,84 @@ class HallaAudioManager(private val cacheDir: File) {
         }
     }
 
+    // ------------------------------------------------- roteamento de comunicação
+    // Android 12+ (S): o roteamento do stream de comunicação é explícito via
+    // setCommunicationDevice()/clearCommunicationDevice() — as APIs legadas
+    // de speakerphone não têm efeito confiável nele. Antes do S, o par
+    // isSpeakerphoneOn + MODE_IN_COMMUNICATION continua sendo o caminho.
+
+    /** AudioManager do sistema, obtido uma única vez na construção. */
+    private val systemAudio: AudioManager? = try {
+        context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    } catch (_: Throwable) { null }
+
+    /** Modo de comunicação do Android: volume de chamada + AEC do hardware. */
+    private fun ensureCommunicationMode() {
+        try {
+            systemAudio?.mode = AudioManager.MODE_IN_COMMUNICATION
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Roteia a voz para o alto-falante (true) ou de volta à rota padrão de
+     * comunicação (auricular). Também garante o modo de comunicação.
+     */
+    fun setSpeakerphoneRoute(speaker: Boolean) {
+        val am = systemAudio ?: return
+        ensureCommunicationMode()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (speaker) {
+                    val spk = am.availableCommunicationDevices.firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    }
+                    if (spk != null) am.setCommunicationDevice(spk) else am.clearCommunicationDevice()
+                } else {
+                    am.clearCommunicationDevice()
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = speaker
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Roteia a voz para um headset Bluetooth (SCO/BLE). Devolve false quando
+     * não há dispositivo de comunicação Bluetooth disponível. O A2DP não é
+     * rota de comunicação: som de música, não de chamada.
+     */
+    fun setBluetoothRoute(): Boolean {
+        val am = systemAudio ?: return false
+        ensureCommunicationMode()
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val bt = am.availableCommunicationDevices.firstOrNull {
+                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                }
+                bt != null && am.setCommunicationDevice(bt)
+            } else {
+                @Suppress("DEPRECATION")
+                am.startBluetoothSco()
+                @Suppress("DEPRECATION")
+                am.isBluetoothScoOn = true
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = false
+                true
+            }
+        } catch (_: Exception) { false }
+    }
+
+    /** Libera a rota de comunicação escolhida no encerramento da sessão. */
+    private fun clearCommunicationRoute() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                systemAudio?.clearCommunicationDevice()
+            }
+        } catch (_: Exception) {}
+    }
+
     fun forceStopTalking() {
         isPttPressed = false
         whisperPressed = false
@@ -664,6 +753,9 @@ class HallaAudioManager(private val cacheDir: File) {
         stopCaptureInternal()
         stopPlaybackInternal()
         stopLocalRecording()
+        // Devolve o roteamento de comunicação ao sistema: o próximo app de
+        // áudio não pode herdar o alto-falante que forçamos durante a sessão.
+        clearCommunicationRoute()
     }
 
     private fun stopCaptureInternal() {
