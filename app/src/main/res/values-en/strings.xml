@@ -525,19 +525,19 @@ Download and install now?</string>
     <string name="screen_share_with_audio">Share device audio</string>
 
     <!-- v6 E2EE: end-to-end encryption engine notices and errors -->
-    <string name="e2ee_invalid_entry">%1$s's encryption entry on the server failed local verification (missing public key or invalid signature). Conversations with this person will remain unencrypted until they reconnect.</string>
-    <string name="e2ee_self_mismatch">The server published encryption keys different from your local ones. Private messages may fail to decrypt; verify the security code and the server's TLS certificate.</string>
-    <string name="e2ee_no_pubkey">Could not encrypt the message: %1$s's public key is not available/verified.</string>
+    <string name="e2ee_invalid_entry">%1$s\'s encryption entry on the server failed local verification (missing public key or invalid signature). Conversations with this person will remain unencrypted until they reconnect.</string>
+    <string name="e2ee_self_mismatch">The server published encryption keys different from your local ones. Private messages may fail to decrypt; verify the security code and the server\'s TLS certificate.</string>
+    <string name="e2ee_no_pubkey">Could not encrypt the message: %1$s\'s public key is not available/verified.</string>
     <string name="e2ee_encrypt_fail">Failed to encrypt the message.</string>
     <string name="e2ee_need_channel">Join a channel to use the channel chat.</string>
     <string name="e2ee_not_connected">Cannot send: the connection is not ready yet.</string>
-    <string name="e2ee_no_offline_key">Could not obtain this identity's public key to encrypt the offline message.</string>
+    <string name="e2ee_no_offline_key">Could not obtain this identity\'s public key to encrypt the offline message.</string>
     <string name="e2ee_key_timeout">Message not sent: the channel encryption key did not arrive in time (reconnect or switch channels and back).</string>
-    <string name="e2ee_offline_timeout">Offline message not sent: could not obtain the recipient's public key on this server.</string>
+    <string name="e2ee_offline_timeout">Offline message not sent: could not obtain the recipient\'s public key on this server.</string>
     <string name="e2ee_undecryptable">[encrypted message that could not be decrypted]</string>
     <string name="e2ee_poke_undecryptable">[encrypted poke that could not be decrypted]</string>
     <string name="e2ee_offline_undecryptable">[encrypted message — could not be decrypted]</string>
-    <string name="e2ee_identity_changed">WARNING: %1$s's identity CHANGED since the last verification. Confirm the new security code before trusting messages from this person.</string>
+    <string name="e2ee_identity_changed">WARNING: %1$s\'s identity CHANGED since the last verification. Confirm the new security code before trusting messages from this person.</string>
 
     <!-- v6 E2EE: SAS verification -->
     <string name="e2ee_verify">Verify encryption</string>
