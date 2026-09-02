@@ -185,7 +185,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     private var isMuted = false
     private var isDeaf = false
-    private var channelsData = JSONArray()
+    internal var channelsData = JSONArray()
     internal var usersData = JSONArray()
     private var myPermissions = JSONObject()
     private var serverGroupsData = JSONArray()
@@ -219,44 +219,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     internal var selfId = 0
     private var activeMaxClients = 32
 
-    private var pendingIdentityBackupContent: ByteArray? = null
-    private val createIdentityBackupDocument = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        val content = pendingIdentityBackupContent
-        pendingIdentityBackupContent = null
-        try {
-            if (uri != null && content != null) {
-                contentResolver.openOutputStream(uri, "w")?.use { it.write(content) }
-                    ?: throw IllegalStateException(getString(R.string.identity_backup_write_failed))
-                Toast.makeText(this, getString(R.string.identity_backup_exported),
-                    Toast.LENGTH_LONG).show()
-            }
-        } catch (error: Throwable) {
-            Toast.makeText(this,
-                getString(R.string.identity_backup_failed, error.message ?: getString(R.string.unknown_failure)),
-                Toast.LENGTH_LONG).show()
-        } finally {
-            content?.fill(0)
-        }
-    }
-    private val openIdentityBackupDocument = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@registerForActivityResult
-        try {
-            val raw = readIdentityBackupDocument(uri)
-            showImportIdentityBackupPasswordDialog(raw)
-        } catch (error: Throwable) {
-            Toast.makeText(this,
-                getString(R.string.identity_backup_failed, error.message ?: getString(R.string.unknown_failure)),
-                Toast.LENGTH_LONG).show()
-        }
-    }
 
     private var isChannelCommander = false
     private var isAway = false
     private var awayMessage = ""
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Identidades (múltiplas, import/export, chave de privilégio) e listas de
+    // whisper: extraídos do monólito, estado e diálogos nas próprias classes.
+    internal val identities = IdentityController(this)
+    internal val whisper = WhisperController(this)
 
     // Controladores extraídos do monólito: transmissão de tela (viewer) e
     // ícones de cargo. O estado deles vive nas próprias classes.
@@ -476,7 +449,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 12, 0, 0) }
-            setOnClickListener { showWhisperListsDialog() }
+            setOnClickListener { whisper.showWhisperListsDialog() }
         }
         panelAudio.addView(btnWhisperLists)
 
@@ -634,7 +607,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 setMargins(0, 24, 0, 0)
             }
             setOnClickListener {
-                showManageIdentitiesDialog()
+                identities.showManageIdentitiesDialog()
             }
         }
         panelGeral.addView(btnManageIds)
@@ -647,7 +620,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 12, 0, 0) }
-            setOnClickListener { showPrivilegeKeyDialog() }
+            setOnClickListener { identities.showPrivilegeKeyDialog() }
         }
         panelGeral.addView(btnUsePrivilegeKey)
 
@@ -1831,7 +1804,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         HallaUpdateManager(this, currentVersionName).checkUpdatesFromSettings()
     }
 
-    private fun getOrCreateClientUid(): String {
+    internal fun getOrCreateClientUid(): String {
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         var uid = prefs.getString("client_uid", "") ?: ""
         if (uid.isEmpty()) {
@@ -2710,7 +2683,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         var selectedUid = editSrv?.optString("identity_uid") ?: ""
         var selectedIdentityName = getString(R.string.default_identity)
         
-        val idList = getSavedIdentities()
+        val idList = identities.getSavedIdentities()
         for (i in 0 until idList.length()) {
             val idObj = idList.getJSONObject(i)
             if (idObj.getString("uid") == selectedUid) {
@@ -2724,7 +2697,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
             setTextColor(Color.parseColor("#FFFFFF"))
             setOnClickListener {
-                val list = getSavedIdentities()
+                val list = identities.getSavedIdentities()
                 val names = Array(list.length()) { "" }
                 val uids = Array(list.length()) { "" }
                 for (i in 0 until list.length()) {
@@ -4170,480 +4143,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return match?.groupValues?.get(1) ?: name.take(1).uppercase()
     }
 
-    // ============================================================================
-    // Gestão de Identidades Múltiplas e Import/Export
-    // ============================================================================
-
-    private fun getSavedIdentities(): JSONArray {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        val str = prefs.getString("identities_list", "") ?: ""
-        if (str.isEmpty()) {
-            val arr = JSONArray()
-            val defaultUid = getOrCreateClientUid()
-            val defaultId = JSONObject().apply {
-                put("name", getString(R.string.default_identity))
-                put("uid", defaultUid)
-            }
-            arr.put(defaultId)
-            prefs.edit().putString("identities_list", arr.toString()).apply()
-            return arr
-        }
-        return JSONArray(str)
-    }
-
-    private fun saveIdentities(arr: JSONArray) {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("identities_list", arr.toString()).apply()
-    }
-
-    private fun showManageIdentitiesDialog() {
-        val context = this
-        val list = getSavedIdentities()
-        val names = ArrayList<String>()
-        for (i in 0 until list.length()) {
-            val obj = list.getJSONObject(i)
-            names.add(getString(R.string.identity_list_item, obj.getString("name"), obj.getString("uid").take(6)))
-        }
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.identity_manager))
-            .setItems(names.toTypedArray()) { _, index ->
-                val identity = list.getJSONObject(index)
-                showIdentityDetailsDialog(identity, index)
-            }
-            .setPositiveButton(getString(R.string.new_identity)) { _, _ ->
-                showNewIdentityDialog()
-            }
-            .setNeutralButton(getString(R.string.import_identity)) { _, _ ->
-                showImportIdentityDialog()
-            }
-            .setNegativeButton(getString(R.string.close), null)
-            .show()
-    }
-
-    private fun showIdentityDetailsDialog(identity: JSONObject, index: Int) {
-        val context = this
-        val name = identity.getString("name")
-        val uid = identity.getString("uid") // alias local usado para localizar a chave
-        val cryptographicUid = HallaCore.prepareIdentity(context, uid)
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.identity_name) + ": " + name)
-            .setMessage(getString(R.string.identity_uid_full, cryptographicUid))
-            .setPositiveButton(getString(R.string.export_identity)) { _, _ ->
-                showExportIdentityBackupDialog(name, uid)
-            }
-            .setNeutralButton(getString(R.string.whisper_delete)) { _, _ ->
-                if (index == 0) {
-                    Toast.makeText(context, getString(R.string.identity_delete_forbidden), Toast.LENGTH_SHORT).show()
-                    return@setNeutralButton
-                }
-                val list = getSavedIdentities()
-                list.remove(index)
-                saveIdentities(list)
-                Toast.makeText(context, getString(R.string.identity_deleted), Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(getString(R.string.back)) { _, _ ->
-                showManageIdentitiesDialog()
-            }
-            .show()
-    }
-
-    private fun loadWhisperLists(): JSONArray {
-        val raw = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-            .getString("whisper_lists", "[]") ?: "[]"
-        return try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
-    }
-
-    private fun saveWhisperLists(lists: JSONArray) {
-        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-            .putString("whisper_lists", lists.toString()).apply()
-        HallaService.refreshWhisperOverlays(this)
-    }
-
-    private fun showWhisperListsDialog() {
-        val lists = loadWhisperLists()
-        val names = Array(lists.length()) { i ->
-            val item = lists.optJSONObject(i)
-            val type = if (item?.optString("type") == "channel") getString(R.string.whisper_channels) else getString(R.string.whisper_users)
-            getString(R.string.whisper_list_item,
-                item?.optString("name", "${getString(R.string.list_whisper_title)} ${i + 1}"), type)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.list_whisper_title))
-            .setMessage(if (lists.length() == 0) getString(R.string.whisper_list_message) else null)
-            .setItems(names) { _, which -> showWhisperListEditor(which) }
-            .setPositiveButton(getString(R.string.new_whisper_list)) { _, _ -> showWhisperListEditor(-1) }
-            .setNegativeButton(getString(R.string.close), null)
-            .show()
-    }
-
-    private fun showWhisperListEditor(index: Int) {
-        val lists = loadWhisperLists()
-        val existing = if (index >= 0 && index < lists.length()) lists.optJSONObject(index) else null
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 12, 32, 4)
-            setBackgroundColor(Color.parseColor("#151322"))
-        }
-        // HallaInputEditText tem texto PRETO por design (contraste com fundo
-        // claro). Antes o fundo era sobrescrito para #0D0E15 (quase preto),
-        // tornando o texto invisível. Agora o fundo claro nativo é mantido.
-        val nameInput = HallaInputEditText(this).apply {
-            hint = getString(R.string.whisper_name_hint)
-            setText(existing?.optString("name", "") ?: "")
-        }
-        layout.addView(nameInput)
-
-        val typeSpinner = Spinner(this)
-        val typeNames = arrayOf(getString(R.string.whisper_channels), getString(R.string.whisper_users))
-        val typeAdapter = object : ArrayAdapter<String>(
-            this, android.R.layout.simple_spinner_dropdown_item, typeNames
-        ) {
-            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                return super.getView(position, convertView, parent).apply {
-                    setBackgroundColor(Color.parseColor("#0D0E15"))
-                    (this as? TextView)?.setTextColor(Color.WHITE)
-                }
-            }
-            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                return super.getDropDownView(position, convertView, parent).apply {
-                    setBackgroundColor(Color.parseColor("#151322"))
-                    (this as? TextView)?.setTextColor(Color.WHITE)
-                }
-            }
-        }
-        typeSpinner.adapter = typeAdapter
-        typeSpinner.setSelection(if (existing?.optString("type") == "channel") 0 else 1)
-        layout.addView(typeSpinner)
-
-        val targetsTitle = TextView(this).apply {
-            text = getString(R.string.select_targets)
-            setTextColor(Color.WHITE)
-            setPadding(0, 16, 0, 4)
-        }
-        layout.addView(targetsTitle)
-
-        // ScrollView com altura máxima para a lista de canais/usuários:
-        // sem ele, canais demais não rolam e ficam invisíveis.
-        val targetsScroll = android.widget.ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            // Altura máxima: ~40% da tela — passou disso, rola.
-            val maxH = (resources.displayMetrics.heightPixels * 0.4).toInt()
-            viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-                override fun onGlobalLayout() {
-                    if (height > maxH) {
-                        layoutParams.height = maxH
-                        requestLayout()
-                    }
-                    viewTreeObserver.removeOnGlobalLayoutListener(this)
-                }
-            })
-        }
-        val targetsLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(8, 4, 8, 4)
-            setBackgroundColor(Color.parseColor("#0D0E15"))
-        }
-        targetsScroll.addView(targetsLayout)
-        layout.addView(targetsScroll)
-
-        val floating = Switch(this).apply {
-            text = getString(R.string.floating_list_button)
-            setTextColor(Color.WHITE)
-            buttonTintList = ColorStateList.valueOf(Color.WHITE)
-            isChecked = existing?.optBoolean("floating", true) ?: true
-        }
-        layout.addView(floating)
-
-        val selected = hashSetOf<String>()
-        existing?.optJSONArray("targets")?.let { arr ->
-            for (i in 0 until arr.length()) selected.add(arr.optString(i))
-        }
-
-        fun rebuildTargets() {
-            targetsLayout.removeAllViews()
-            val channelsMode = typeSpinner.selectedItemPosition == 0
-            if (channelsMode) {
-                if (channelsData.length() == 0) {
-                    targetsLayout.addView(TextView(this).apply {
-                        text = getString(R.string.no_channels)
-                        setTextColor(Color.parseColor("#94A3B8"))
-                    })
-                }
-                for (i in 0 until channelsData.length()) {
-                    val channel = channelsData.optJSONObject(i) ?: continue
-                    val id = channel.optInt("id", 0).toString()
-                    val check = CheckBox(this).apply {
-                        text = channel.optString("name", getString(R.string.default_channel_name, id)).trimStart()
-                        tag = id
-                        setTextColor(Color.WHITE)
-                        buttonTintList = ColorStateList.valueOf(Color.WHITE)
-                        isChecked = selected.contains(id)
-                    }
-                    targetsLayout.addView(check)
-                }
-            } else {
-                if (usersData.length() == 0) {
-                    targetsLayout.addView(TextView(this).apply {
-                        text = getString(R.string.no_users)
-                        setTextColor(Color.parseColor("#94A3B8"))
-                    })
-                }
-                for (i in 0 until usersData.length()) {
-                    val user = usersData.optJSONObject(i) ?: continue
-                    val uid = user.optString("uid", user.optInt("id", 0).toString())
-                    if (user.optInt("id", 0) == selfId) continue
-                    val check = CheckBox(this).apply {
-                        text = user.optString("name", uid)
-                        tag = uid
-                        setTextColor(Color.WHITE)
-                        buttonTintList = ColorStateList.valueOf(Color.WHITE)
-                        isChecked = selected.contains(uid)
-                    }
-                    targetsLayout.addView(check)
-                }
-            }
-        }
-        typeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                rebuildTargets()
-            }
-        }
-        rebuildTargets()
-
-        val builder = AlertDialog.Builder(this)
-            .setTitle(if (existing == null) getString(R.string.new_whisper_title) else getString(R.string.edit_whisper_title))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val name = nameInput.text.toString().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.name_required), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                val targets = JSONArray()
-                for (i in 0 until targetsLayout.childCount) {
-                    val child = targetsLayout.getChildAt(i)
-                    if (child is CheckBox && child.isChecked) targets.put(child.tag.toString())
-                }
-                val item = existing ?: JSONObject()
-                item.put("name", name)
-                item.put("type", if (typeSpinner.selectedItemPosition == 0) "channel" else "user")
-                item.put("targets", targets)
-                item.put("floating", floating.isChecked)
-                if (existing == null) lists.put(item) else lists.put(index, item)
-                saveWhisperLists(lists)
-                Toast.makeText(this, getString(R.string.whisper_saved), Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-        if (existing != null) {
-            builder.setNeutralButton(getString(R.string.whisper_delete)) { _, _ ->
-                lists.remove(index)
-                saveWhisperLists(lists)
-            }
-        }
-        builder.show()
-    }
-
-    private fun showPrivilegeKeyDialog() {
-        val input = HallaInputEditText(this).apply {
-            hint = getString(R.string.privilege_hint)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.privilege_title))
-            .setMessage(getString(R.string.privilege_message))
-            .setView(input)
-            .setPositiveButton(getString(R.string.use_privilege_key)) { _, _ ->
-                val key = input.text.toString().trim()
-                if (key.isNotEmpty()) HallaCore.sendUsePrivilegeKey(key)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun readIdentityBackupDocument(uri: Uri): String {
-        val input = contentResolver.openInputStream(uri)
-            ?: throw IllegalStateException(getString(R.string.identity_backup_read_failed))
-        input.use { stream ->
-            val output = ByteArrayOutputStream()
-            val buffer = ByteArray(8 * 1024)
-            while (true) {
-                val read = stream.read(buffer)
-                if (read < 0) break
-                if (read == 0) continue
-                if (output.size() + read > 128 * 1024)
-                    throw IllegalArgumentException(getString(R.string.identity_backup_too_large))
-                output.write(buffer, 0, read)
-            }
-            return output.toByteArray().toString(Charsets.UTF_8)
-        }
-    }
-
-    private fun passwordField(hintText: String) = HallaInputEditText(this).apply {
-        hint = hintText
-        inputType = android.text.InputType.TYPE_CLASS_TEXT or
-            android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-    }
-
-    private fun showExportIdentityBackupDialog(name: String, alias: String) {
-        HallaCore.prepareIdentity(this, alias)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 8)
-        }
-        val password = passwordField(getString(R.string.identity_backup_password_hint))
-        val confirmation = passwordField(getString(R.string.identity_backup_confirm_hint))
-        layout.addView(password)
-        layout.addView(confirmation)
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.export_identity))
-            .setMessage(getString(R.string.identity_backup_explanation))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.export_identity)) { _, _ ->
-                val pass = password.text.toString().toCharArray()
-                val confirm = confirmation.text.toString().toCharArray()
-                try {
-                    if (pass.size < 10) {
-                        Toast.makeText(this, getString(R.string.identity_backup_password_short),
-                            Toast.LENGTH_LONG).show()
-                        return@setPositiveButton
-                    }
-                    if (!pass.contentEquals(confirm)) {
-                        Toast.makeText(this, getString(R.string.identity_backup_password_mismatch),
-                            Toast.LENGTH_LONG).show()
-                        return@setPositiveButton
-                    }
-                    val backup = HallaCore.exportIdentityBackup(alias, name, pass)
-                    pendingIdentityBackupContent?.fill(0)
-                    pendingIdentityBackupContent = backup.toByteArray(Charsets.UTF_8)
-                    val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
-                        .ifEmpty { "identity" }
-                    createIdentityBackupDocument.launch(
-                        "Halla-Identity-$safeName.halla-identity.json")
-                } catch (error: Throwable) {
-                    pendingIdentityBackupContent?.fill(0)
-                    pendingIdentityBackupContent = null
-                    Toast.makeText(this,
-                        getString(R.string.identity_backup_failed,
-                            error.message ?: getString(R.string.unknown_failure)),
-                        Toast.LENGTH_LONG).show()
-                } finally {
-                    pass.fill('\u0000')
-                    confirm.fill('\u0000')
-                }
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun showImportIdentityDialog() {
-        HallaCore.prepareIdentity(this, getOrCreateClientUid())
-        openIdentityBackupDocument.launch(arrayOf(
-            "application/json", "text/plain", "application/octet-stream"))
-    }
-
-    private fun showImportIdentityBackupPasswordDialog(rawBackup: String) {
-        val metadata = try { JSONObject(rawBackup) } catch (_: Throwable) { JSONObject() }
-        val suggestedName = metadata.optString("name", getString(R.string.default_identity))
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 8)
-        }
-        val name = HallaInputEditText(this).apply {
-            hint = getString(R.string.identity_name_hint)
-            setText(suggestedName)
-        }
-        val password = passwordField(getString(R.string.identity_backup_password_hint))
-        layout.addView(name)
-        layout.addView(password)
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.import_identity))
-            .setMessage(getString(R.string.identity_backup_import_explanation))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.import_identity)) { _, _ ->
-                val pass = password.text.toString().toCharArray()
-                try {
-                    val result = HallaCore.importIdentityBackup(rawBackup, pass)
-                    val restoredName = name.text.toString().trim()
-                        .ifEmpty { result.name.ifEmpty { getString(R.string.default_identity) } }
-                    val previous = getSavedIdentities()
-                    val promoted = JSONArray().put(JSONObject().apply {
-                        put("name", restoredName)
-                        put("uid", result.alias)
-                    })
-                    for (index in 0 until previous.length()) {
-                        val item = previous.optJSONObject(index) ?: continue
-                        if (item.optString("uid") != result.alias) promoted.put(item)
-                    }
-                    saveIdentities(promoted)
-                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-                        .putString("client_uid", result.alias).apply()
-                    // O UID ativo mudou: atualiza também o backup público em
-                    // Downloads/Halla para sobreviver a desinstalações.
-                    HallaUidPersistence.ensurePersisted(this, result.alias)
-                    Toast.makeText(this,
-                        getString(R.string.identity_backup_imported, result.uid.take(12)),
-                        Toast.LENGTH_LONG).show()
-                } catch (error: Throwable) {
-                    Toast.makeText(this,
-                        getString(R.string.identity_backup_import_failed),
-                        Toast.LENGTH_LONG).show()
-                } finally {
-                    pass.fill('\u0000')
-                }
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun showNewIdentityDialog() {
-        val context = this
-        val layout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
-        }
-        val inputName = HallaInputEditText(context).apply {
-            hint = getString(R.string.identity_name_hint)
-        }
-        val inputUid = HallaInputEditText(context).apply {
-            hint = getString(R.string.uid_generate_hint)
-        }
-        layout.addView(inputName)
-        layout.addView(inputUid)
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.new_identity_title))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val name = inputName.text.toString().trim()
-                var uid = inputUid.text.toString().trim()
-                if (name.isEmpty()) {
-                    Toast.makeText(context, getString(R.string.name_required_short), Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                if (uid.isEmpty()) {
-                    val random = java.util.UUID.randomUUID().toString().replace("-", "")
-                    val rawBytes = random.take(20).toByteArray()
-                    uid = android.util.Base64.encodeToString(rawBytes, android.util.Base64.NO_WRAP).trim()
-                    if (uid.length > 27) uid = uid.substring(0, 27) + "="
-                }
-                val list = getSavedIdentities()
-                val newObj = JSONObject().apply {
-                    put("name", name)
-                    put("uid", uid)
-                }
-                list.put(newObj)
-                saveIdentities(list)
-                Toast.makeText(context, getString(R.string.identity_success_created), Toast.LENGTH_SHORT).show()
-                showManageIdentitiesDialog()
-            }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ -> showManageIdentitiesDialog() }
-            .show()
-    }
 
     // ============================================================================
     // Roteamento de Áudio, Proximidade e Bluetooth
@@ -4772,8 +4271,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .unregisterAudioDeviceCallback(audioDeviceCallback)
         sensorManager?.unregisterListener(proximityListener)
         if (wakeLock?.isHeld == true) wakeLock?.release()
-        pendingIdentityBackupContent?.fill(0)
-        pendingIdentityBackupContent = null
+        identities.clearPendingBackup()
         super.onDestroy()
     }
 
