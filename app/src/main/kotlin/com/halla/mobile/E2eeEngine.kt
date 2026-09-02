@@ -90,13 +90,18 @@ object E2eeEngine {
     private val whisperIds = mutableListOf<Int>()
     private var whisperNeedsRewrap = false
 
-    // Textos de resource com fallback literal (motor pode rodar sem contexto
-    // — ex.: sessão encerrada durante um flush de fila).
-    private fun string(resId: Int, fallback: String, vararg args: Any): String = try {
-        appContext?.getString(resId, *args) ?: fallback
+    // Textos de resource do motor (pode rodar sem contexto — ex.: sessão
+    // encerrada durante um flush de fila). Os argumentos POSICIONAIS são os
+    // de formato do resource (%1$s...); sem contexto (ou resource ausente),
+    // um texto genérico mantém o aviso entregável.
+    private fun string(resId: Int, vararg args: Any): String = try {
+        val ctx = appContext ?: return NO_CONTEXT_NOTICE
+        if (args.isEmpty()) ctx.getString(resId) else ctx.getString(resId, *args)
     } catch (_: Throwable) {
-        fallback
+        NO_CONTEXT_NOTICE
     }
+
+    private const val NO_CONTEXT_NOTICE = "[aviso de criptografia]"
 
     // ================================================================ ciclo
 
