@@ -19,18 +19,20 @@ class E2eeGroupLogicTest {
     // -------------------------------------------------------- componente
 
     @Test
-    fun componentFollowsLinksBothWays() {
+    fun componentFollowsLinksInEitherDirection() {
         val channels = mapOf(
             1 to channel(1, linked = setOf(2), users = listOf(10)),
             2 to channel(2, linked = emptySet(), users = listOf(11)), // 1→2 só de um lado
             3 to channel(3, linked = emptySet(), users = listOf(12)),
             4 to channel(4, linked = setOf(3), users = listOf(13))    // 4→3, e 3 não aponta
         )
-        // Vínculo unidirecional não compartilha áudio — logo não compartilha
-        // chave: cada canal fica no seu próprio componente.
-        assertEquals(setOf(1), E2eeGroupLogic.componentOf(1, channels))
-        assertEquals(setOf(2), E2eeGroupLogic.componentOf(2, channels))
-        assertEquals(setOf(4), E2eeGroupLogic.componentOf(4, channels))
+        // O servidor (voiceComponentOf) e o Desktop aceitam vínculo em
+        // QUALQUER direção (corrige bancos antigos assimétricos): o áudio
+        // circula, a chave também. 1→2 une {1,2}; 4→3 une {3,4}.
+        assertEquals(setOf(1, 2), E2eeGroupLogic.componentOf(1, channels))
+        assertEquals(setOf(1, 2), E2eeGroupLogic.componentOf(2, channels))
+        assertEquals(setOf(3, 4), E2eeGroupLogic.componentOf(3, channels))
+        assertEquals(setOf(3, 4), E2eeGroupLogic.componentOf(4, channels))
     }
 
     @Test

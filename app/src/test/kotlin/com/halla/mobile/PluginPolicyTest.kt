@@ -51,11 +51,16 @@ class PluginPolicyTest {
     }
 
     @Test
-    fun helloNegotiatesProtocolV5() {
+    fun helloNegotiatesProtocolV6() {
         val bridge = File(repositoryRoot(), "app/src/main/cpp/jni_bridge.cpp").readText()
-        assertTrue(bridge.contains("\\\"proto\\\":5"))
-        assertFalse("hello antigo com proto 4 deve ter sido atualizado",
-            bridge.contains("\\\"proto\\\":4"))
+        // v6 E2EE: o hello carrega o par X25519 + binding — clientes < v6 e
+        // servidores < v6 se recusam mutuamente (transição dura).
+        assertTrue(bridge.contains("\\\"proto\\":6"))
+        assertTrue(bridge.contains("dhPub"))
+        assertTrue(bridge.contains("dhSig"))
+        assertFalse("hello antigo com proto 4/5 deve ter sido atualizado",
+            bridge.contains("\\\"proto\\":4"))
+        assertFalse(bridge.contains("\\\"proto\\":5"))
     }
 
     @Test

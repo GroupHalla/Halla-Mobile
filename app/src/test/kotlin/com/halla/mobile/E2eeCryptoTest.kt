@@ -239,17 +239,14 @@ class E2eeCryptoTest {
     }
 
     private fun ed25519PublicFromSeed(seed: ByteArray): ByteArray? {
-        // SPKI DER da Ed25519 via JCA/BC — o mesmo caminho do verify.
-        val pkcs8 = byteArrayOf(
-            0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70,
-            0x04, 0x22, 0x04, 0x20) + seed
+        // Pública crua via primitiva RFC 8032 do BC (mesma matemática do
+        // ed25519Sign) + cabeçalho SPKI: o DER de 44 bytes que o verify usa.
         return try {
-            val bc = org.bouncycastle.jce.provider.BouncyCastleProvider()
-            val factory = java.security.KeyFactory.getInstance("Ed25519", bc)
-            val key = factory.generatePrivate(
-                java.security.spec.PKCS8EncodedKeySpec(pkcs8))
-            val pub = factory.getKeySpec(key, java.security.spec.X509EncodedKeySpec::class.java)
-            pub.encoded
+            val raw = ByteArray(32)
+            org.bouncycastle.math.ec.rfc8032.Ed25519.generatePublicKey(seed, 0, raw, 0)
+            byteArrayOf(
+                0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70,
+                0x03, 0x21, 0x00) + raw
         } catch (_: Throwable) {
             null
         }
