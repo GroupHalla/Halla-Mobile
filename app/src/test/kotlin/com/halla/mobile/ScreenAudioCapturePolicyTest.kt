@@ -16,6 +16,22 @@ class ScreenAudioCapturePolicyTest {
         error("$relative not found")
     }
 
+    /** Activity + controllers: o refactor do monólito moveu os diálogos. */
+    private fun activityPlusControllers(): String {
+        val dir = File(File(System.getProperty("user.dir")).absoluteFile.apply {
+            var cur = this
+            repeat(6) {
+                if (File(cur, "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").isFile) {
+                    return@apply
+                }
+                cur = cur.parentFile ?: cur
+            }
+        }, "app/src/main/kotlin/com/halla/mobile")
+        return dir.listFiles { f ->
+            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+        }!!.joinToString("\n") { it.readText() }
+    }
+
     private fun projectBinary(relative: String): ByteArray {
         var current = File(System.getProperty("user.dir")).absoluteFile
         repeat(6) {
@@ -50,8 +66,7 @@ class ScreenAudioCapturePolicyTest {
     fun videoUsesAdaptiveQualityWithoutSuspendingTrack() {
         val broadcaster = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcBroadcaster.kt")
-        val activity = projectFile(
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
+        val activity = activityPlusControllers()
         // A resolução continua limitada ao intervalo seguro — agora a partir do
         // pedido já limitado ao tamanho físico da tela (sem upscale).
         assertTrue(broadcaster.contains("coerceIn(640, 3840)"))
@@ -66,8 +81,10 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(broadcaster.contains("adaptOutputFormat(videoWidth, videoHeight, videoFps)"))
         // Captura nunca amplia além do tamanho físico da tela.
         assertTrue(broadcaster.contains("clampToPhysicalScreen"))
-        assertTrue(activity.contains("availableScreenShareResolutions"))
-        assertTrue(activity.contains("screenShareMaxBitrateKbps"))
+        // Renomeado no refactor (availableResolutions/maxBitrateKbps no
+        // ScreenShareController; screenShare.showQualityDialog na Activity).
+        assertTrue(activity.contains("fun availableResolutions():"))
+        assertTrue(activity.contains("maxBitrateKbps"))
         assertTrue(activity.contains("listOf(480, 720, 1080, 1440, 2160)"))
         // 1080p é a resolução padrão (2K/4K continuam na lista).
         assertTrue(activity.contains("it.height <= 1080"))
@@ -76,7 +93,7 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(activity.contains("quality_resolution"))
         assertTrue(activity.contains("quality_fps"))
         assertTrue(activity.contains("quality_bitrate_kbps"))
-        assertTrue(activity.contains("showScreenShareQualityDialog"))
+        assertTrue(activity.contains("showQualityDialog"))
         val service = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaService.kt")
         assertTrue(service.contains("EXTRA_SCREEN_BITRATE"))
@@ -88,8 +105,7 @@ class ScreenAudioCapturePolicyTest {
     fun mobileViewerHasLiveControlsWithoutConnectedBanner() {
         val viewer = projectFile(
             "app/src/main/kotlin/com/halla/mobile/HallaWebRtcViewer.kt")
-        val activity = projectFile(
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
+        val activity = activityPlusControllers()
         assertTrue(!viewer.contains("Conexão: ' + pc.connectionState"))
         assertTrue(viewer.contains("status.classList.add('hidden')"))
         assertTrue(viewer.contains("window.hallaSetMuted"))
@@ -97,8 +113,10 @@ class ScreenAudioCapturePolicyTest {
         assertTrue(activity.contains("R.string.mute_live_audio"))
         assertTrue(activity.contains("R.string.unmute_live_audio"))
         assertTrue(activity.contains("R.string.stop_watching_live"))
-        assertTrue(activity.contains("webRtcViewer?.setMuted(screenShareAudioMuted)"))
-        assertTrue(activity.contains("stopWatchingScreenShare()"))
+        // Renomeado no refactor do ScreenShareController (viewer/audioMuted).
+        assertTrue(activity.contains("viewer?.setMuted(audioMuted)"))
+        // A Activity para de assistir quando a transmissão termina.
+        assertTrue(activity.contains("stopWatching()"))
     }
 
     @Test

@@ -34,15 +34,21 @@ class DialogTextContrastPolicyTest {
     /**
      * Fatia o código da função até a próxima função de topo da classe
      * (indentada com 4 espaços) — sem contar chaves, que quebrariam em
-     * strings como "{" usadas no protocolo.
+     * strings como "{" usadas no protocolo. Após o refactor do monólito,
+     * os diálogos podem viver na Activity OU em um *Controller.kt.
      */
     private fun function(name: String): String {
-        val src = File(root(),
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
-        val start = src.indexOf("private fun $name(")
-        assertTrue("função $name não encontrada em MainActivity.kt", start >= 0)
+        val dir = File(root(), "app/src/main/kotlin/com/halla/mobile")
+        val files = dir.listFiles { f ->
+            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+        }!!.sortedBy { it.name }
+        val src = files.joinToString("\n") { it.readText() }
+        val start = src.indexOf("fun $name(")
+        assertTrue("função $name não encontrada na Activity/Controllers", start >= 0)
         val rest = src.substring(start)
-        val nextFun = Regex("\\n    (private|override) fun ").find(rest)?.range?.first
+        // Boundary: próxima função de topo (com OU sem modificador de
+        // visibilidade — os controllers declaram `fun` puro).
+        val nextFun = Regex("\\n    (private |internal |override )?fun ").find(rest)?.range?.first
         return if (nextFun == null) rest else rest.substring(0, nextFun + 1)
     }
 
@@ -81,7 +87,8 @@ class DialogTextContrastPolicyTest {
             "showServerGroupEditor",
             "showEditChannelDialog",
             "showGroupChannelPermEditor",
-            "showScreenShareQualityDialog"
+            // Renomeado no refactor (ScreenShareController.showQualityDialog).
+            "showQualityDialog"
         )
         for (name in dayNightDialogs) {
             // Exceção válida: adapters de Spinner que desenham o PRÓPRIO fundo

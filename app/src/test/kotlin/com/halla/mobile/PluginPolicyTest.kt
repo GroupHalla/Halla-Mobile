@@ -42,12 +42,21 @@ class PluginPolicyTest {
 
     @Test
     fun pluginDataPermissionsAreExposedToAdministrators() {
+        // Refactor do monólito: os diálogos de permissões/cargos vivem no
+        // ServerAdminController; a união com a Activity cobre os dois lados
+        // (a Activity mantém hasPermission e o menu de configurações).
         val activity = File(repositoryRoot(),
             "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
-        assertTrue(activity.contains("\"pluginData\" to getString(R.string.permission_plugin_data)"))
-        assertTrue(activity.contains("\"pluginDataGlobal\" to getString(R.string.permission_plugin_data_global)"))
-        assertTrue(activity.contains("key == \"pluginDataGlobal\""))
-        assertTrue(activity.contains("!hasPermission(\"*\")"))
+        val admin = File(repositoryRoot(),
+            "app/src/main/kotlin/com/halla/mobile/ServerAdminController.kt").readText()
+        val ui = activity + "\n" + admin
+        assertTrue(ui.contains("\"pluginData\" to getString(R.string.permission_plugin_data)") ||
+                   ui.contains("\"pluginData\" to activity.getString(R.string.permission_plugin_data)"))
+        assertTrue(ui.contains("\"pluginDataGlobal\" to getString(R.string.permission_plugin_data_global)") ||
+                   ui.contains("\"pluginDataGlobal\" to activity.getString(R.string.permission_plugin_data_global)"))
+        assertTrue(ui.contains("key == \"pluginDataGlobal\""))
+        assertTrue(ui.contains("!hasPermission(\"*\")") ||
+                   ui.contains("!activity.hasPermission(\"*\")"))
     }
 
     @Test

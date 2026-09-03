@@ -46,12 +46,16 @@ class IdentityBackupPolicyTest {
 
     @Test
     fun identityManagerUsesStorageAccessFrameworkAndPromotesRestoredIdentity() {
-        val activity = source("app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
+        // Refactor do monólito: o fluxo de identidades vive no
+        // IdentityController (a Activity o instancia e limpa no onDestroy).
+        val activity = source("app/src/main/kotlin/com/halla/mobile/MainActivity.kt") +
+            "\n" + source("app/src/main/kotlin/com/halla/mobile/IdentityController.kt")
         assertTrue(activity.contains("ActivityResultContracts.CreateDocument"))
         assertTrue(activity.contains("ActivityResultContracts.OpenDocument"))
         assertTrue(activity.contains("HallaCore.exportIdentityBackup"))
         assertTrue(activity.contains("HallaCore.importIdentityBackup"))
         assertTrue(activity.contains("putString(\"client_uid\", result.alias)"))
-        assertTrue(activity.contains("pendingIdentityBackupContent?.fill(0)"))
+        // Renomeado no refactor: pendingBackupContent no controller.
+        assertTrue(activity.contains("pendingBackupContent?.fill(0)"))
     }
 }

@@ -18,12 +18,16 @@ class InputContrastPolicyTest {
 
     @Test
     fun programmaticInputsAlwaysHaveExplicitContrast() {
-        val activity = File(root(),
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
+        // Refactor do monólito: os diálogos programáticos vivem na Activity OU
+        // em um *Controller.kt — a contagem cobre a união.
+        val dir = File(root(), "app/src/main/kotlin/com/halla/mobile")
+        val ui = dir.listFiles { f ->
+            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+        }!!.joinToString("\n") { it.readText() }
         val input = File(root(),
             "app/src/main/kotlin/com/halla/mobile/HallaInputEditText.kt").readText()
-        assertTrue(Regex("HallaInputEditText\\(").findAll(activity).count() >= 30)
-        assertFalse(activity.contains("= EditText("))
+        assertTrue(Regex("HallaInputEditText\\(").findAll(ui).count() >= 30)
+        assertFalse(ui.contains("= EditText("))
         assertTrue(input.contains("setTextColor(Color.BLACK)"))
         assertTrue(input.contains("setHintTextColor(Color.parseColor(\"#475569\"))"))
         assertTrue(input.contains("setColor(Color.parseColor(\"#F8FAFC\"))"))
