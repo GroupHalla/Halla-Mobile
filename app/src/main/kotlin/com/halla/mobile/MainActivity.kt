@@ -127,19 +127,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Painel Deslizante de Chat (Overlay Bottom Sheet)
     private lateinit var layoutChatOverlay: RelativeLayout
     private lateinit var btnCloseChat: Button
-    private lateinit var txtChatBox: TextView
-    private lateinit var editChatMsg: EditText
     private lateinit var btnSendChat: Button
-    private lateinit var containerChatTabs: LinearLayout
-    private val chatHistories = linkedMapOf(
-        "server" to StringBuilder(),
-        "channel" to StringBuilder()
-    )
-    private val chatTabLabels = linkedMapOf(
-        "server" to "",
-        "channel" to ""
-    )
-    private var activeChatKey = "channel"
 
     // TELA DE CONFIGURAÇÕES EM TELA CHEIA (Hierárquica por submenus!)
     private lateinit var layoutSettings: RelativeLayout
@@ -225,6 +213,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var awayMessage = ""
 
     private val handler = Handler(Looper.getMainLooper())
+
+    // Painel de chat (abas, histórico, mensagem privada) — extraído do monólito.
+    internal val chat = ChatController(this)
 
     // Identidades (múltiplas, import/export, chave de privilégio) e listas de
     // whisper: extraídos do monólito, estado e diálogos nas próprias classes.
@@ -360,15 +351,14 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtScreenShareText = findViewById(R.id.txtScreenShareText)
 
         // Painel Deslizante de Chat (Bottom Sheet)
-        chatTabLabels["server"] = getString(R.string.server_chat)
-        chatTabLabels["channel"] = getString(R.string.channel_chat)
+        chat.initDefaultTabs()
         layoutChatOverlay = findViewById(R.id.layoutChatOverlay)
         btnCloseChat = findViewById(R.id.btnCloseChat)
-        txtChatBox = findViewById(R.id.txtChatBox)
-        editChatMsg = findViewById(R.id.editChatMsg)
+        chat.txtChatBox = findViewById(R.id.txtChatBox)
+        chat.editChatMsg = findViewById(R.id.editChatMsg)
         btnSendChat = findViewById(R.id.btnSendChat)
-        containerChatTabs = findViewById(R.id.containerChatTabs)
-        rebuildChatTabs()
+        chat.containerChatTabs = findViewById(R.id.containerChatTabs)
+        chat.rebuildChatTabs()
 
         // Inicializa Tela de Configurações em Tela Cheia
         layoutSettings = findViewById(R.id.layoutSettings)
@@ -747,18 +737,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnSendChat.setOnClickListener {
-            val text = editChatMsg.text.toString().trim()
+            val text = chat.editChatMsg.text.toString().trim()
             if (text.isNotEmpty()) {
                 when {
-                    activeChatKey == "server" ->
+                    chat.activeChatKey == "server" ->
                         HallaCore.sendChatMessageScoped("server", 0, text)
-                    activeChatKey.startsWith("private:") -> {
-                        val targetId = activeChatKey.removePrefix("private:").toIntOrNull() ?: 0
+                    chat.activeChatKey.startsWith("private:") -> {
+                        val targetId = chat.activeChatKey.removePrefix("private:").toIntOrNull() ?: 0
                         HallaCore.sendChatMessageScoped("private", targetId, text)
                     }
                     else -> HallaCore.sendChatMessageScoped("channel", 0, text)
                 }
-                editChatMsg.setText("")
+                chat.editChatMsg.setText("")
             }
         }
 
@@ -3215,13 +3205,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             txtActiveMotd.text = motd
             txtNetworkQuality.text = getString(R.string.network_unknown)
             txtNetworkQuality.setTextColor(Color.parseColor("#94A3B8"))
-            chatHistories.values.forEach { it.clear() }
-            chatHistories.keys.filter { it.startsWith("private:") }.toList()
-                .forEach { chatHistories.remove(it) }
-            chatTabLabels.keys.retainAll(setOf("server", "channel"))
-            activeChatKey = "channel"
-            rebuildChatTabs()
-            txtChatBox.text = ""
+            chat.resetOnDisconnect()
 
             // Alterna visibilidade dos botões do Header Superior
             btnDisconnect.visibility = View.VISIBLE
@@ -3237,8 +3221,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             audioManager.setSpeakerphoneRoute(true)
             routeBluetoothIfAvailable()
 
-            appendChatText(getString(R.string.system), getString(R.string.connected_to, serverName), "server")
-            appendChatText(getString(R.string.motd_label), motd)
+            chat.appendChatText(getString(R.string.system), getString(R.string.connected_to, serverName), "server")
+            chat.appendChatText(getString(R.string.motd_label), motd)
         }
     }
 
@@ -3425,13 +3409,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 scope == "server" -> "server"
                 scope == "private" -> {
                     val peerId = if (fromUserId == selfId) toUserId else fromUserId
-                    ensurePrivateChatTab(peerId, if (fromName.isNotEmpty()) fromName else getString(R.string.private_chat))
+                    chat.ensurePrivateChatTab(peerId, if (fromName.isNotEmpty()) fromName else getString(R.string.private_chat))
                     "private:$peerId"
                 }
                 else -> "channel"
             }
             if (scope == "private") vibrateShort()
-            appendChatText(fromName, text, key)
+            chat.appendChatText(fromName, text, key)
         }
     }
 
@@ -5234,7 +5218,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 } else if (choice.contains("Ver transmissão")) {
                     screenShare.startWatching(userId, name)
                 } else if (choice.contains(getString(R.string.private_message))) {
-                    showPrivateMessageDialog(userId, name)
+                    chat.showPrivateMessageDialog(userId, name)
                 } else if (choice.contains(getString(R.string.e2ee_verify))) {
                     showE2eeVerifyDialog(userId, name)
                 } else if (choice.contains(getString(R.string.client_info))) {
@@ -5257,13 +5241,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             val path = audioManager.stopLocalRecording()
             btnRecordTop.alpha = 1f
             btnRecordTop.contentDescription = getString(R.string.record)
-            appendChatText(getString(R.string.system), getString(R.string.recording_saved, path))
+            chat.appendChatText(getString(R.string.system), getString(R.string.recording_saved, path))
         } else {
             val started = audioManager.startLocalRecording("HallaVoiceRec.wav")
             if (started) {
                 btnRecordTop.alpha = 0.55f
                 btnRecordTop.contentDescription = getString(R.string.recording)
-                appendChatText(getString(R.string.system), getString(R.string.recording_started))
+                chat.appendChatText(getString(R.string.system), getString(R.string.recording_started))
             }
         }
     }
@@ -5537,76 +5521,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    private fun rebuildChatTabs() {
-        if (!::containerChatTabs.isInitialized) return
-        containerChatTabs.removeAllViews()
-        for ((key, label) in chatTabLabels) {
-            val active = key == activeChatKey
-            val button = TextView(this).apply {
-                text = label
-                setTextColor(if (active) Color.WHITE else Color.parseColor("#A1A1B5"))
-                textSize = 12f
-                setTypeface(null, if (active) Typeface.BOLD else Typeface.NORMAL)
-                gravity = Gravity.CENTER
-                setPadding(22, 9, 22, 9)
-                background = GradientDrawable().apply {
-                    setColor(if (active) Color.parseColor("#7C3AED")
-                             else Color.parseColor("#1E1A2B"))
-                    cornerRadius = 18f
-                }
-                setOnClickListener { selectChatTab(key) }
-            }
-            containerChatTabs.addView(button)
-            // espaçamento entre chips
-            if (containerChatTabs.childCount > 0) {
-                (button.layoutParams as LinearLayout.LayoutParams).apply {
-                    setMargins(if (containerChatTabs.childCount == 1) 0 else 10, 0, 0, 0)
-                }
-            }
-        }
-    }
-
-    private fun ensurePrivateChatTab(userId: Int, name: String): String {
-        if (userId <= 0) return "channel"
-        val key = "private:$userId"
-        chatTabLabels[key] = if (name.isBlank()) getString(R.string.private_chat) else name
-        chatHistories.getOrPut(key) { StringBuilder() }
-        rebuildChatTabs()
-        return key
-    }
-
-    private fun selectChatTab(key: String) {
-        if (!chatHistories.containsKey(key)) return
-        activeChatKey = key
-        txtChatBox.text = chatHistories[key].toString()
-        rebuildChatTabs()
-    }
-
-    private fun appendChatText(from: String, text: String, key: String = "server") {
-        val history = chatHistories.getOrPut(key) { StringBuilder() }
-        val coloredFrom = if (from == getString(R.string.system)) "[${getString(R.string.system)}]" else "[$from]"
-        history.append("$coloredFrom: $text\n")
-        if (key == activeChatKey) txtChatBox.text = history.toString()
-    }
-
-    private fun showPrivateMessageDialog(userId: Int, targetName: String) {
-        ensurePrivateChatTab(userId, targetName)
-        selectChatTab("private:$userId")
-        val input = HallaInputEditText(this).apply {
-            hint = getString(R.string.private_message_hint, targetName)
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.private_message))
-            .setView(input)
-            .setPositiveButton(getString(R.string.send)) { _, _ ->
-                val text = input.text.toString().trim()
-                if (text.isNotEmpty()) {
-                    HallaCore.sendChatMessageScoped("private", userId, text)
-                }
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
 
     companion object {
         private const val HelperIntSize = 48
