@@ -18,18 +18,17 @@ class ScreenAudioCapturePolicyTest {
 
     /** Activity + controllers: o refactor do monólito moveu os diálogos. */
     private fun activityPlusControllers(): String {
-        val dir = File(File(System.getProperty("user.dir")).absoluteFile.apply {
-            var cur = this
-            repeat(6) {
-                if (File(cur, "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").isFile) {
-                    return@apply
-                }
-                cur = cur.parentFile ?: cur
+        var current = File(System.getProperty("user.dir")).absoluteFile
+        repeat(6) {
+            val dir = File(current, "app/src/main/kotlin/com/halla/mobile")
+            if (File(dir, "MainActivity.kt").isFile) {
+                return dir.listFiles { f ->
+                    f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+                }!!.sortedBy { it.name }.joinToString("\n") { it.readText() }
             }
-        }, "app/src/main/kotlin/com/halla/mobile")
-        return dir.listFiles { f ->
-            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
-        }!!.joinToString("\n") { it.readText() }
+            current = current.parentFile ?: current
+        }
+        error("Repository root not found")
     }
 
     private fun projectBinary(relative: String): ByteArray {
