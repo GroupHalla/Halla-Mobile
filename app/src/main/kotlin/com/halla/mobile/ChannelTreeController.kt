@@ -121,7 +121,7 @@ class ChannelTreeController(private val activity: MainActivity) {
                 background = RippleDrawable(
                     ColorStateList.valueOf(Color.parseColor("#1F8B5CF6")), cardShape, null)
                 setOnClickListener {
-                    activity.showChannelOptionsDialog(chanId, chanName)
+                    activity.channelDialogs.showChannelOptionsDialog(chanId, chanName)
                 }
                 setOnLongClickListener {
                     showChannelDescriptionDialog(chanId, chanName)

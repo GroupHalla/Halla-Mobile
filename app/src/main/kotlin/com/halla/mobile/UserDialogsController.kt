@@ -63,7 +63,7 @@ class UserDialogsController(private val activity: MainActivity) {
         val awayLabel = if (activity.isAway) activity.getString(R.string.away_unmark) else activity.getString(R.string.away_mark)
         val ownCommanderLabel = if (activity.isChannelCommander) activity.getString(R.string.commander_disable) else activity.getString(R.string.commander_enable)
         val targetCommanderLabel = if (usr.optBoolean("cc", false)) activity.getString(R.string.commander_disable) else activity.getString(R.string.commander_enable)
-        val ownsTargetTemporaryChannel = activity.isTemporaryChannelOwner(activity.getChannelOfUser(userId))
+        val ownsTargetTemporaryChannel = activity.channelDialogs.isTemporaryChannelOwner(activity.getChannelOfUser(userId))
         val options = ArrayList<String>()
         if (userId == activity.selfId) {
             options.add("💤 $awayLabel")

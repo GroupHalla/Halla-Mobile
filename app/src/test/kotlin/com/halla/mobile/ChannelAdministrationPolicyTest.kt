@@ -16,8 +16,14 @@ class ChannelAdministrationPolicyTest {
         error("Repository root not found")
     }
 
-    private fun activity(): String =
-        File(root(), "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
+    /** União Activity + Controllers: após o refactor do monólito os
+     *  diálogos de canal vivem em ChannelDialogsController.kt. */
+    private fun activity(): String {
+        val dir = File(root(), "app/src/main/kotlin/com/halla/mobile")
+        return dir.listFiles { f ->
+            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+        }!!.sortedBy { it.name }.joinToString("\n") { it.readText() }
+    }
 
     @Test
     fun fullChannelCreationOffersAllTypesBehindPermissions() {
@@ -75,7 +81,7 @@ class ChannelAdministrationPolicyTest {
     fun channelPermissionsEditorPreservesUntouchedGroups() {
         val source = activity()
         val permBlock = source.substringAfter("private fun showGroupChannelPermEditor")
-            .substringBefore("private fun showUserOptionsDialog")
+            .substringBefore("\n}")
         // baseia-se no groupPerms atual do canal e troca apenas o cargo editado
         assertTrue(permBlock.contains("channel.optJSONObject(\"groupPerms\")"))
         assertTrue(permBlock.contains("permsOut.put(groupId.toString(), groupPerms)"))
