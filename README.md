@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.68
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.96
 </p>
 
 ---
@@ -132,8 +132,16 @@ acessado via JNI.
   identidades exporta um backup portátil protegido por senha (PBKDF2-SHA256 +
   AES-256-GCM); ao importar após reinstalar, a mesma chave e o mesmo UID são
   restaurados e reencapsulados pela nova Keystore.
+- **E2EE real (protocolo v6)**: chaves de voz/chat/poke/offline geradas e
+  distribuídas pelos próprios clientes (`E2eeEngine` + `E2eeCrypto`);
+  envelopes `e2e_key` com X25519 efêmera + HKDF-SHA256 + AES-256-GCM;
+  binding X25519↔Ed25519 assinado no login; chat privado/poke/offline
+  par-a-par (estático-estático); verificação de identidade por **código SAS
+  de 9 dígitos** no diálogo do usuário. O servidor nunca vê chave de
+  conteúdo.
 - Voz cifrada com ChaCha20-Poly1305 via **mbedTLS** (a mesma técnica AEAD do
-  cliente desktop, implementação diferente por ser mais leve para Android).
+  cliente desktop, implementação diferente por ser mais leve para Android),
+  com as chaves de grupo E2EE — sem chave vigente, o frame não sai.
 - Pipeline de release **assinado**: builds de tag exigem a keystore de
   produção (GitHub Secrets), e o APK final passa por `apksigner verify`
   antes de publicar.
@@ -196,19 +204,27 @@ WebRTC (a do Chromium/WebView), não uma simulação.
 ## Arquitetura
 
 ```
-┌──────────────────────────────┐        JNI        ┌───────────────────────────┐
-│     Kotlin (app Android)     │ ─────────────────► │   C++ nativo (JNI bridge) │
-│                               │ ◄───────────────── │                           │
-│  MainActivity   — telas/UI   │    callbacks        │  HallaClientCore          │
-│  HallaService    — 1º plano, │                     │   • soquetes TCP/UDP crus │
-│    notificação, overlay PTT, │                     │   • parsing manual do     │
-│    reconexão                 │                     │     protocolo (JSON)      │
-│  HallaAudioManager — captura/│                     │   • codec Opus (encode/   │
-│    reprodução PCM, AEC/NS    │                     │     decode)               │
-│  HallaCore       — fachada   │                     │   • threads: TCP, UDP,    │
-│    das funções externas JNI  │                     │     ping, keepalive NAT   │
-│  LocaleManager   — idioma    │                     │                           │
-└──────────────────────────────┘                     └───────────────────────────┘
+┌────────────────────────────────────────┐      JNI       ┌────────────────────────────┐
+│        Kotlin (app Android)            │ ─────────────► │  C++ nativo (jni_bridge)    │
+│                                         │ ◄───────────── │                              │
+│  MainActivity    — núcleo de integração │   callbacks     │  HallaClientCore            │
+│    (ciclo de vida, callbacks do         │                 │   • soquetes TCP/UDP crus   │
+│     protocolo, dock de controles)       │                 │   • parser JSON estrutural  │
+│  13 controllers  — UI e domínio:        │                 │     (rastreia objetos/      │
+│    Chat, Identity, RoleIcon, ScreenShare│                 │      strings/escapes)       │
+│    Whisper, ServerAdmin, Servers,       │                 │   • codec Opus (encode/     │
+│    UserDialogs, ChannelTree,            │                 │     decode)                 │
+│    ChannelDialogs, AudioRoute, Settings,│                 │   • threads: TCP, UDP,      │
+│    State (mutação usuários/canais)      │                 │     ping, keepalive NAT —    │
+│  E2eeEngine      — chaves E2EE v6       │                 │     attach JNI por thread    │
+│  HallaService    — 1º plano, notificação│                 │      (RAII, uma vez só)      │
+│    PTT flutuante, reconexão             │                 │                              │
+│  HallaAudioManager — captura/reprodução │                 │                              │
+│    PCM, AEC/NS em rota de comunicação   │                 │                              │
+│  HallaCore       — fachada das funções  │                 │                              │
+│    externas JNI                         │                 │                              │
+│  LocaleManager   — idioma               │                 │                              │
+└────────────────────────────────────────┘                 └────────────────────────────┘
 ```
 
 - **`HallaCore`** (Kotlin `object`) é a fachada JNI: carrega
@@ -220,14 +236,24 @@ WebRTC (a do Chromium/WebView), não uma simulação.
   `onAudioFrameReceived`, `onPingUpdated`, `onPokeReceived`...).
 - **`HallaAudioManager`** cuida só do áudio do lado Android: abre o
   `AudioRecord`/`AudioTrack`, liga os efeitos nativos de eco/ruído quando
-  disponíveis, e entrega/recebe blocos de PCM cru — a codificação/decodificação
+  disponíveis e usa a **rota de áudio de comunicação** quando há AEC —
+  dá ao cancelador de eco por hardware o caminho certo para funcionar em
+  viva-voz — e entrega/recebe blocos de PCM cru; a codificação/decodificação
   Opus acontece do lado C++.
 - **`HallaService`** é um `Service` em primeiro plano (tipo `microphone`)
   que mantém a sessão viva com a tela apagada ou o app em segundo plano,
   desenha o botão de PTT flutuante (`WindowManager` + `SYSTEM_ALERT_WINDOW`),
   publica a notificação com ações rápidas e cuida da troca de rede.
-- **`MainActivity`** é a tela principal (lista de servidores, árvore de
-  canais, chat, opções) — feita com Android Views tradicionais (não Compose).
+- **`MainActivity`** é a tela principal, feita com Android Views tradicionais
+  (não Compose). Após o refactor, virou o **núcleo de integração** (~1.2 mil
+  linhas): ciclo de vida, os callbacks do protocolo e o dock de controles —
+  o restante vive em **13 controllers coesos** (Chat, Identity, RoleIcon,
+  ScreenShare, Whisper, ServerAdmin, Servers, UserDialogs, ChannelTree,
+  ChannelDialogs, AudioRoute, Settings e HallaState), um por domínio de UI
+  ou de negócio, testáveis em JVM.
+- **`E2eeEngine`/`E2eeCrypto`/`E2eeGroupLogic`** implementam o motor E2EE
+  v6: geração/rotação de chaves de grupo pelo mestre do componente,
+  envelopes `e2e_key`, conteúdo par-a-par e códigos SAS.
 - **`LocaleManager`** aplica o idioma escolhido no app, independente do
   idioma do sistema.
 
@@ -237,14 +263,21 @@ WebRTC (a do Chromium/WebView), não uma simulação.
 autocontida, sem depender de Qt:
 
 - Conexão de controle via **soquete TCP** cru (BSD sockets/POSIX), com um
-  parser de JSON minimalista feito à mão (`jsonExtractString`,
-  `jsonExtractArray`) — o bastante para extrair os campos que o protocolo
-  usa, sem trazer uma biblioteca JSON completa para o binário nativo.
+  **parser JSON estrutural** próprio (`jsonExtractString`,
+  `jsonExtractArray`): rastreia profundidade de objetos/arrays, strings e
+  escapes, e suporta números negativos — imune a valores que colidem com
+  nomes de chave e a colchetes desbalanceados dentro de strings, sem trazer
+  uma biblioteca JSON completa para o binário nativo.
 - Voz via **soquete UDP**, com um `std::thread` dedicado ao laço de
   recepção (`udpLoop`) e outro para o keepalive/hole-punching de NAT
   (`udpPingLoop`).
 - Um `std::thread` próprio para o laço de controle TCP (`tcpLoop`) e outro
   só para medir latência (`pingLoop`).
+- **Attach JNI por thread (RAII)**: cada thread nativa faz `AttachCurrentThread`
+  uma única vez na entrada (com desanexo automático no fim) e mantém o
+  `JNIEnv` em cache thread-local — em vez de pagar attach/detach a **cada**
+  callback (~20 pontos de chamada), reduzindo latência e CPU por frame de
+  áudio.
 - Codificação/decodificação de voz com **libopus**, e cifragem AEAD
   (ChaCha20-Poly1305) com **mbedTLS** — ambos baixados e compilados na hora
   do build via `FetchContent` (veja `app/src/main/cpp/CMakeLists.txt`), sem
@@ -304,13 +337,27 @@ app/
     ├── kotlin/com/halla/mobile/
     │   ├── HallaCore.kt           fachada JNI (funções externas + callbacks,
     │   │                          + geração/assinatura da identidade Ed25519)
-    │   ├── HallaAudioManager.kt   captura/reprodução PCM, AEC/NS, gravação local
+    │   ├── MainActivity.kt        núcleo de integração: ciclo de vida,
+    │   │                          callbacks do protocolo, dock de controles
+    │   ├── ChatController.kt .. HallaStateController.kt
+    │   │                          13 controllers coesos extraídos do antigo
+    │   │                          monólito (Chat, Identity, RoleIcon,
+    │   │                          ScreenShare, Whisper, ServerAdmin, Servers,
+    │   │                          UserDialogs, ChannelTree, ChannelDialogs,
+    │   │                          AudioRoute, Settings, State)
+    │   ├── E2eeEngine.kt / E2eeCrypto.kt / E2eeGroupLogic.kt
+    │   │                          motor E2EE v6: chaves de grupo, envelopes
+    │   │                          e2e_key, par-a-par, SAS
+    │   ├── HallaAudioManager.kt   captura/reprodução PCM, AEC/NS em rota de
+    │   │                          comunicação, gravação local
     │   ├── HallaService.kt        serviço em 1º plano, notificação, overlay de PTT
-    │   ├── HallaWebRtcViewer.kt   visualizador de transmissão de tela (WebView)
+    │   ├── HallaWebRtcViewer.kt / HallaWebRtcBroadcaster.kt
+    │   │                          transmitir/assistir tela (WebRTC)
     │   ├── LocaleManager.kt       troca de idioma em runtime
     │   ├── PluginManager.kt       complementos: pacotes .halla-addon, manifesto,
     │   │                          ativar/desativar, configurações por schema
-    │   └── MainActivity.kt        telas: conexão, canais, chat, opções
+    │   └── …                      (AddonCatalog, BadgeRegistry, RoleIconCache,
+    │                              HallaUidPersistence, HallaUpdateManager …)
     └── res/
         ├── drawable/              ícones vetoriais e logo
         ├── layout/activity_main.xml
@@ -357,7 +404,7 @@ strings traduzidas em cada um. A troca pode ser feita dentro do próprio app
 - **[Halla Server](https://github.com/GroupHalla/HallaServer)** — servidor
   auto-hospedável; veja
   [`PROTOCOL.md`](https://github.com/GroupHalla/HallaServer/blob/main/PROTOCOL.md)
-  para a especificação completa do protocolo (atualmente v4).
+  para a especificação completa do protocolo (atualmente v6, com E2EE).
 
 ## Observação sobre o `CMakeLists.txt` da raiz
 
