@@ -30,7 +30,7 @@ import org.json.JSONObject
 class ChannelDialogsController(private val activity: MainActivity) {
 
     private fun selfUniqueId(): String =
-        activity.usersData.optJSONObject(activity.findUserIndex(activity.selfId))?.optString("uid", "").orEmpty()
+        activity.usersData.optJSONObject(activity.state.findUserIndex(activity.selfId))?.optString("uid", "").orEmpty()
 
     private fun channelObject(channelId: Int): JSONObject? {
         for (index in 0 until activity.channelsData.length()) {

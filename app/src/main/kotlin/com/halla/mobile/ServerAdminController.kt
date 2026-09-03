@@ -76,7 +76,7 @@ class ServerAdminController(private val activity: MainActivity) {
         activity.myPermissions.optBoolean(key, false) || activity.myPermissions.optInt(key, 0) > 0
 
     private fun showMyPermissionsDialog() {
-        val self = activity.usersData.optJSONObject(activity.findUserIndex(activity.selfId))
+        val self = activity.usersData.optJSONObject(activity.state.findUserIndex(activity.selfId))
         val groupName = self?.optString("group", activity.getString(R.string.member_default))
             ?: activity.getString(R.string.member_default)
         val lines = ArrayList<String>()

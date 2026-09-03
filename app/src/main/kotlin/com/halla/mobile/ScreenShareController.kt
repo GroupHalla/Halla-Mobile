@@ -203,7 +203,7 @@ class ScreenShareController(internal val activity: MainActivity) {
     // ==== Viewer (assistir transmissão) ====================================
 
     fun startWatching(userId: Int, name: String) {
-        if (activity.getChannelOfUser(userId) != activity.getChannelOfUser(activity.selfId)) {
+        if (activity.state.getChannelOfUser(userId) != activity.state.getChannelOfUser(activity.selfId)) {
             Toast.makeText(activity, "Você precisa estar no mesmo canal para ver a transmissão.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -469,8 +469,8 @@ class ScreenShareController(internal val activity: MainActivity) {
         // bater com o item tocado, mas o frame ainda pertence a alguém do mesmo
         // canal. Não descarte: isso deixava a tela preta mesmo com UDP chegando.
         if (fromUserId != watchingStreamUserId) {
-            val sameChannel = activity.getChannelOfUser(fromUserId) ==
-                activity.getChannelOfUser(activity.selfId)
+            val sameChannel = activity.state.getChannelOfUser(fromUserId) ==
+                activity.state.getChannelOfUser(activity.selfId)
             if (!sameChannel) return
             watchingStreamUserId = fromUserId
         }

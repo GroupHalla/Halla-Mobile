@@ -160,6 +160,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     // Administração do servidor (grupos, bans, queixas, permissões) — extraída
     // do monólito; os dados chegam pelos handlers abaixo e ficam aqui.
+    // Estado de usuários/canais: aplica os eventos do protocolo sobre
+    // usersData/channelsData. Declarado antes dos demais controllers.
+    internal val state = HallaStateController(this)
+
     internal val admin = ServerAdminController(this)
 
     // Painel de chat (abas, histórico, mensagem privada) — extraído do monólito.
@@ -729,17 +733,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return uid
     }
 
-    // ============================================================================
-    // Configurações do servidor conectado (equivalente ao menu Permissões do PC)
-    // ============================================================================
-
-    internal fun findUserIndex(userId: Int): Int {
-        for (i in 0 until usersData.length()) {
-            if (usersData.optJSONObject(i)?.optInt("id", 0) == userId) return i
-        }
-        return -1
-    }
-
 
     internal fun readLocalDiagnosticsLog(): String {
         return try {
@@ -857,7 +850,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 val clientsCount = usersData.length()
                 // v6 E2EE: o welcome NÃO traz chaves de canal — quem gera e
                 // distribui é o cliente mestre (E2eeEngine → setChannelKey).
-                HallaCore.setCurrentChannel(getChannelOfUser(selfId))
+                HallaCore.setCurrentChannel(state.getChannelOfUser(selfId))
 
                 // Atualiza as Badges Dinâmicas do Top Banner!
                 // (A string `members` já começa com 👤 — não adicionar outro.)
@@ -903,17 +896,17 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                     val t = obj.optString("t")
                     if (t == "user_joined") {
                         val userObj = obj.getJSONObject("user")
-                        updateOrAddUser(userObj)
-                        moveUserInChannels(userObj.getInt("id"), 1)
+                        state.updateOrAddUser(userObj)
+                        state.moveUserInChannels(userObj.getInt("id"), 1)
                     } else if (t == "user_left") {
-                        removeUser(obj.getInt("id"))
+                        state.removeUser(obj.getInt("id"))
                     } else if (t == "user_moved") {
-                        moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
+                        state.moveUserInChannels(obj.getInt("id"), obj.getInt("channel"))
                     } else if (t == "user_state" || t == "user_nick" ||
                                t == "user_desc" || t == "user_group") {
-                        updateUserState(obj)
+                        state.updateUserState(obj)
                     } else if (t == "user_screenshare_state") {
-                        updateScreenShareState(obj.optInt("id", 0), obj.optBoolean("on", false))
+                        state.updateScreenShareState(obj.optInt("id", 0), obj.optBoolean("on", false))
                     } else if (t == "server_edit") {
                         obj.optString("name").takeIf { it.isNotEmpty() }?.let {
                             txtActiveServerName.text = it
@@ -940,9 +933,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         admin.finishServerPanel("complaints")
                     } else if (t == "chan_update") {
                         val chanObj = obj.getJSONObject("chan")
-                        updateOrAddChannel(chanObj)
+                        state.updateOrAddChannel(chanObj)
                     } else if (t == "chan_removed") {
-                        removeChannel(obj.getInt("id"))
+                        state.removeChannel(obj.getInt("id"))
                     }
                 } else {
                     usersData = JSONArray(usersJson)
@@ -1078,173 +1071,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    // ============================================================================
-    // Helpers internos para gestão de árvore e chat
-    // ============================================================================
-
-    private fun updateOrAddUser(userObj: JSONObject) {
-        val uid = userObj.getInt("id")
-        for (i in 0 until usersData.length()) {
-            val u = usersData.getJSONObject(i)
-            if (u.getInt("id") == uid) {
-                usersData.put(i, userObj)
-                return
-            }
-        }
-        usersData.put(userObj)
-    }
-
-    private fun removeUser(userId: Int) {
-        val newList = JSONArray()
-        for (i in 0 until usersData.length()) {
-            val u = usersData.getJSONObject(i)
-            if (u.getInt("id") != userId) {
-                newList.put(u)
-            }
-        }
-        usersData = newList
-
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
-            val usersArr = chan.optJSONArray("users") ?: continue
-            val newUsersArr = JSONArray()
-            for (j in 0 until usersArr.length()) {
-                val id = usersArr.getInt(j)
-                if (id != userId) {
-                    newUsersArr.put(id)
-                }
-            }
-            chan.put("users", newUsersArr)
-        }
-    }
-
-    private fun moveUserInChannels(userId: Int, newChannelId: Int) {
-        // Um evento de movimento inválido não pode remover o usuário de todos
-        // os canais e deixá-lo visualmente no "nada".
-        var targetExists = false
-        for (i in 0 until channelsData.length()) {
-            if (channelsData.optJSONObject(i)?.optInt("id", 0) == newChannelId) {
-                targetExists = true
-                break
-            }
-        }
-        if (newChannelId <= 0 || !targetExists) return
-
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
-            val usersArr = chan.optJSONArray("users") ?: continue
-            val newUsersArr = JSONArray()
-            for (j in 0 until usersArr.length()) {
-                val id = usersArr.getInt(j)
-                if (id != userId) {
-                    newUsersArr.put(id)
-                }
-            }
-            chan.put("users", newUsersArr)
-        }
-
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
-            if (chan.getInt("id") == newChannelId) {
-                val usersArr = chan.optJSONArray("users") ?: JSONArray()
-                var exists = false
-                for (j in 0 until usersArr.length()) {
-                    if (usersArr.getInt(j) == userId) exists = true
-                }
-                if (!exists) {
-                    usersArr.put(userId)
-                }
-                chan.put("users", usersArr)
-                break
-            }
-        }
-        if (userId == selfId) HallaCore.setCurrentChannel(newChannelId)
-    }
-
-    private fun updateOrAddChannel(chanObj: JSONObject) {
-        val cid = chanObj.getInt("id")
-        for (i in 0 until channelsData.length()) {
-            val c = channelsData.getJSONObject(i)
-            if (c.getInt("id") == cid) {
-                channelsData.put(i, chanObj)
-                return
-            }
-        }
-        channelsData.put(chanObj)
-    }
-
-    private fun removeChannel(channelId: Int) {
-        val newList = JSONArray()
-        for (i in 0 until channelsData.length()) {
-            val c = channelsData.getJSONObject(i)
-            if (c.getInt("id") != channelId) {
-                newList.put(c)
-            }
-        }
-        channelsData = newList
-    }
-
-    private fun updateUserState(stateObj: JSONObject) {
-        val uid = stateObj.getInt("id")
-        for (i in 0 until usersData.length()) {
-            val u = usersData.getJSONObject(i)
-            if (u.getInt("id") == uid) {
-                if (stateObj.has("talking")) u.put("talking", stateObj.getBoolean("talking"))
-                if (stateObj.has("whispering")) u.put("whispering", stateObj.getBoolean("whispering"))
-                if (stateObj.has("mic")) u.put("mic", stateObj.getBoolean("mic"))
-                if (stateObj.has("spk")) u.put("spk", stateObj.getBoolean("spk"))
-                if (stateObj.has("away")) u.put("away", stateObj.getBoolean("away"))
-                if (stateObj.has("rec")) u.put("rec", stateObj.getBoolean("rec"))
-                if (stateObj.has("screensharing")) u.put("screensharing", stateObj.getBoolean("screensharing"))
-                if (stateObj.has("cc")) {
-                    u.put("cc", stateObj.getBoolean("cc"))
-                    if (uid == selfId) {
-                        isChannelCommander = stateObj.getBoolean("cc")
-                        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-                            .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
-                    }
-                }
-                if (stateObj.has("name")) u.put("name", stateObj.getString("name"))
-                if (stateObj.has("text")) u.put("desc", stateObj.getString("text"))
-                if (stateObj.has("group")) u.put("group", stateObj.getString("group"))
-                if (stateObj.has("sigla")) u.put("sigla", stateObj.getString("sigla"))
-                if (stateObj.has("siglaSuffix")) u.put("siglaSuffix", stateObj.getString("siglaSuffix"))
-                if (stateObj.has("icon")) u.put("icon", stateObj.getString("icon"))
-                if (stateObj.has("order")) u.put("order", stateObj.getInt("order"))
-                if (stateObj.has("orderEnabled")) u.put("orderEnabled", stateObj.getBoolean("orderEnabled"))
-                break
-            }
-        }
-    }
-
-    private fun updateScreenShareState(userId: Int, on: Boolean) {
-        if (userId <= 0) return
-        for (i in 0 until usersData.length()) {
-            val u = usersData.optJSONObject(i) ?: continue
-            if (u.optInt("id", 0) == userId) {
-                u.put("screensharing", on)
-                break
-            }
-        }
-        if (!on && screenShare.watchingStreamUserId == userId) screenShare.stopWatching()
-        channelTree.rebuildChannelTree()
-    }
-
-    internal fun getChannelOfUser(userId: Int): Int {
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
-            val usersArr = chan.optJSONArray("users") ?: continue
-            for (j in 0 until usersArr.length()) {
-                if (usersArr.getInt(j) == userId) {
-                    return chan.getInt("id")
-                }
-            }
-        }
-        return 0
-    }
-
-
-    // ============================================================================
 
     override fun onDestroy() {
         // Destruir/minimizar a Activity não encerra a sessão. A conexão, a

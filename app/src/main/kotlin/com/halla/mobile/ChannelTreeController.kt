@@ -84,7 +84,7 @@ class ChannelTreeController(private val activity: MainActivity) {
             // O canal em que o próprio usuário está é o único com barra de
             // destaque: antes todos os canais tinham a mesma barra roxa, o que
             // anulava a função de indicar "onde você está".
-            val activeChannel = (activity.getChannelOfUser(activity.selfId) == chanId)
+            val activeChannel = (activity.state.getChannelOfUser(activity.selfId) == chanId)
 
             // Card do Canal: superfície neutra ARREDONDADA (não quadrada);
             // o canal ativo ganha borda violeta vibrante (2-3px) e barra de
@@ -247,7 +247,7 @@ class ChannelTreeController(private val activity: MainActivity) {
                 val sortedChannelUsers = ArrayList<JSONObject>()
                 for (j in 0 until activity.usersData.length()) {
                     val candidate = activity.usersData.getJSONObject(j)
-                    if (activity.getChannelOfUser(candidate.getInt("id")) == chanId)
+                    if (activity.state.getChannelOfUser(candidate.getInt("id")) == chanId)
                         sortedChannelUsers.add(candidate)
                 }
                 sortedChannelUsers.sortWith(Comparator { left, right ->
@@ -466,7 +466,7 @@ class ChannelTreeController(private val activity: MainActivity) {
         if (chan.optString("name", "").lowercase().contains(query)) return true
         for (i in 0 until activity.usersData.length()) {
             val usr = activity.usersData.optJSONObject(i) ?: continue
-            if (activity.getChannelOfUser(usr.optInt("id", 0)) == chanId
+            if (activity.state.getChannelOfUser(usr.optInt("id", 0)) == chanId
                     && usr.optString("name", "").lowercase().contains(query)) return true
         }
         for (child in sortedChildChannels(chanId)) {

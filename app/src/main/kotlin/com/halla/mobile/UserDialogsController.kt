@@ -63,7 +63,7 @@ class UserDialogsController(private val activity: MainActivity) {
         val awayLabel = if (activity.isAway) activity.getString(R.string.away_unmark) else activity.getString(R.string.away_mark)
         val ownCommanderLabel = if (activity.isChannelCommander) activity.getString(R.string.commander_disable) else activity.getString(R.string.commander_enable)
         val targetCommanderLabel = if (usr.optBoolean("cc", false)) activity.getString(R.string.commander_disable) else activity.getString(R.string.commander_enable)
-        val ownsTargetTemporaryChannel = activity.channelDialogs.isTemporaryChannelOwner(activity.getChannelOfUser(userId))
+        val ownsTargetTemporaryChannel = activity.channelDialogs.isTemporaryChannelOwner(activity.state.getChannelOfUser(userId))
         val options = ArrayList<String>()
         if (userId == activity.selfId) {
             options.add("💤 $awayLabel")
@@ -75,7 +75,7 @@ class UserDialogsController(private val activity: MainActivity) {
         } else {
             options.add("👉 ${activity.getString(R.string.poke)}")
             options.add("🔐 ${activity.getString(R.string.e2ee_verify)}")
-            if (usr.optBoolean("screensharing", false) && activity.getChannelOfUser(userId) == activity.getChannelOfUser(activity.selfId)) {
+            if (usr.optBoolean("screensharing", false) && activity.state.getChannelOfUser(userId) == activity.state.getChannelOfUser(activity.selfId)) {
                 options.add("📺 Ver transmissão")
             }
             options.add("💬 ${activity.getString(R.string.private_message)}")
