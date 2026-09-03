@@ -6,10 +6,16 @@ import java.io.File
 
 class SavedServerProbePolicyTest {
     private fun mainActivitySource(): String {
+        // Após o refactor do monólito, o probe de servidores vive na
+        // Activity OU em um *Controller.kt (ServersController).
         var current = File(System.getProperty("user.dir")).absoluteFile
         repeat(5) {
-            val source = File(current, "app/src/main/kotlin/com/halla/mobile/MainActivity.kt")
-            if (source.isFile) return source.readText()
+            val dir = File(current, "app/src/main/kotlin/com/halla/mobile")
+            if (File(dir, "MainActivity.kt").isFile) {
+                return dir.listFiles { f ->
+                    f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+                }!!.sortedBy { it.name }.joinToString("\n") { it.readText() }
+            }
             current = current.parentFile ?: current
         }
         error("MainActivity.kt not found")

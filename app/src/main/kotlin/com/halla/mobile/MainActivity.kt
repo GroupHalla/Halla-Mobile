@@ -77,18 +77,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     internal lateinit var drawerLayout: DrawerLayout
     private lateinit var navDrawer: LinearLayout
-    private lateinit var layoutConnect: RelativeLayout
+    internal lateinit var layoutConnect: RelativeLayout
     internal lateinit var layoutServer: RelativeLayout
-    private lateinit var layoutEmptyState: LinearLayout
+    internal lateinit var layoutEmptyState: LinearLayout
     private lateinit var scrollServers: ScrollView
-    private lateinit var refreshServers: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-    private lateinit var containerServers: LinearLayout
-    private lateinit var txtError: TextView
+    internal lateinit var refreshServers: androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+    internal lateinit var containerServers: LinearLayout
+    internal lateinit var txtError: TextView
 
     // Top Bar Buttons
     private lateinit var btnMenu: Button
-    private lateinit var btnAddServer: Button
-    private lateinit var btnQuickConnect: Button
+    internal lateinit var btnAddServer: Button
+    internal lateinit var btnQuickConnect: Button
     private lateinit var btnDisconnect: Button
     private lateinit var btnInviteMembers: Button
 
@@ -208,7 +208,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var isAway = false
     private var awayMessage = ""
 
-    private val handler = Handler(Looper.getMainLooper())
+    internal val handler = Handler(Looper.getMainLooper())
 
     // Administração do servidor (grupos, bans, queixas, permissões) — extraída
     // do monólito; os dados chegam pelos handlers abaixo e ficam aqui.
@@ -226,23 +226,18 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // ícones de cargo. O estado deles vive nas próprias classes.
     internal val screenShare = ScreenShareController(this)
     internal val roleIcons = RoleIconController(this)
-    private var connectionTimeoutRunnable: Runnable? = null
+
+    // Lista de servidores salvos (persistência, cartões, formulário, probe de
+    // disponibilidade) e fluxo de conexão (TLS pin, apelido, quick-connect) —
+    // extraída do monólito. O estado das listas vive no próprio controller.
+    internal val servers = ServersController(this)
+    internal var connectionTimeoutRunnable: Runnable? = null
     private val badgeRegistryListener: () -> Unit = {
         runOnUiThread {
             if (::containerChannels.isInitialized && usersData.length() > 0) rebuildChannelTree()
         }
     }
 
-    // Servidores salvos persistidos
-    private var savedServers = JSONArray()
-
-    // Servidor oficial pré-salvo na primeira execução (sem apelido: o app
-    // pergunta o nome na hora de conectar — ver companion object).
-
-    // Última tentativa de conexão a partir de um cartão salvo — usada para
-    // repetir a conexão com outro apelido quando o servidor responde
-    // name_in_use/bad_nick.
-    private var lastConnectAttempt: JSONObject? = null
 
     // Controle de telas ativo
     private var activeScreenId = R.id.layoutConnect
@@ -293,7 +288,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         txtError = findViewById(R.id.txtError)
 
         refreshServers.setOnRefreshListener {
-            refreshServerListFromNetwork()
+            servers.refreshServerListFromNetwork()
         }
 
         btnMenu = findViewById(R.id.btnMenu)
@@ -693,7 +688,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         HallaCore.addCallbacks(this)
 
         // Carrega Servidores Salvos
-        loadSavedServers()
+        servers.loadSavedServers()
 
         // Carrega as configurações persistidas do SharedPreferences
         loadHallaSettings()
@@ -721,11 +716,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
 
         btnAddServer.setOnClickListener {
-            showServerFormDialog(null) // Abre form para adicionar novo
+            servers.showServerFormDialog(null) // Abre form para adicionar novo
         }
 
         btnQuickConnect.setOnClickListener {
-            connectToQuickServer()
+            servers.connectToQuickServer()
         }
 
         btnDisconnect.setOnClickListener {
@@ -1202,7 +1197,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Complementos (sistema de plugins portado do Halla Desktop)
     // ============================================================================
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    internal fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     // ============================================================================
     // Cores de texto de diálogo (contraste em qualquer tema do aparelho)
@@ -1818,318 +1813,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
     // ============================================================================
-    // Gestão de Servidores Salvos (Persistência em SharedPreferences)
-    // ============================================================================
-
-    private fun serverPasswordKey(server: JSONObject): String =
-        "server-password:${server.optString("host").lowercase()}:${server.optInt("port", 9987)}"
-
-    private fun loadSavedServers() {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString("saved_servers", null)
-        if (jsonStr == null) {
-            // Primeira execução: o servidor oficial já vem pré-salvo, sem
-            // apelido — o app pergunta o nome na hora de conectar (o
-            // servidor também recusa apelidos em uso com name_in_use).
-            savedServers = JSONArray()
-            savedServers.put(JSONObject().apply {
-                put("name", OFFICIAL_SERVER_NAME)
-                put("nick", "")
-                put("host", OFFICIAL_SERVER_HOST)
-                put("port", OFFICIAL_SERVER_PORT)
-                put("pass", "")
-                put("identity_uid", "")
-                put("slots", "0/32")
-            })
-        } else {
-            try {
-                savedServers = JSONArray(jsonStr)
-                for (i in 0 until savedServers.length()) {
-                    val server = savedServers.getJSONObject(i)
-                    val key = serverPasswordKey(server)
-                    val legacy = server.optString("pass", "")
-                    if (legacy.isNotEmpty()) HallaCore.storeSecret(this, key, legacy)
-                    server.put("pass", HallaCore.readSecret(this, key))
-                }
-                persistServersOnly()
-            } catch (e: Exception) {
-                savedServers = JSONArray()
-            }
-        }
-        rebuildServerList()
-    }
-
-    private fun persistServersOnly() {
-        val sanitized = JSONArray()
-        for (i in 0 until savedServers.length()) {
-            val server = JSONObject(savedServers.getJSONObject(i).toString())
-            val password = server.optString("pass", "")
-            HallaCore.storeSecret(this, serverPasswordKey(server), password)
-            server.remove("pass")
-            sanitized.put(server)
-        }
-        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-            .edit()
-            .putString("saved_servers", sanitized.toString())
-            .remove("last_srv_pass")
-            .apply()
-    }
-
-    private fun saveServersToStorage() {
-        persistServersOnly()
-        rebuildServerList()
-    }
-
-    private fun refreshServerListFromNetwork() {
-        if (savedServers.length() == 0) {
-            refreshServers.isRefreshing = false
-            return
-        }
-        // Reconstrói os cartões para refletir imediatamente alterações feitas
-        // no formulário e depois consulta novamente ping, nome e vagas reais.
-        rebuildServerList(startProbe = false)
-        pingServersInBackground {
-            refreshServers.isRefreshing = false
-            Toast.makeText(this, getString(R.string.server_list_updated), Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun rebuildServerList(startProbe: Boolean = true) {
-        containerServers.removeAllViews()
-
-        if (savedServers.length() == 0) {
-            layoutEmptyState.visibility = View.VISIBLE
-            refreshServers.visibility = View.GONE
-        } else {
-            layoutEmptyState.visibility = View.GONE
-            refreshServers.visibility = View.VISIBLE
-
-            for (i in 0 until savedServers.length()) {
-                val srv = savedServers.getJSONObject(i)
-                val card = createServerCard(srv, i)
-                containerServers.addView(card)
-            }
-            if (startProbe) pingServersInBackground()
-        }
-    }
-
-    private fun createServerCard(srv: JSONObject, index: Int): View {
-        val context = this
-        val cardLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            val lParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lParams.setMargins(0, 0, 0, 14)
-            layoutParams = lParams
-            setPadding(28, 26, 28, 26)
-
-            // Mesma linguagem visual dos canais: superfície neutra, canto
-            // generoso, contorno de luz e feedback de toque (ripple).
-            val shape = GradientDrawable().apply {
-                setColor(Color.parseColor("#16141F"))
-                cornerRadius = 20f
-                setStroke(dp(1), Color.parseColor("#14FFFFFF"))
-            }
-            background = RippleDrawable(
-                ColorStateList.valueOf(Color.parseColor("#1F8B5CF6")), shape, null)
-        }
-
-        // Linha 1: Nome do Servidor (Esquerda) e Três Pontinhos (Direita)
-        val row1 = RelativeLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // Avatar circular com a inicial do servidor, alinhado com os avatares
-        // de usuário dentro dos canais.
-        val titleRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            val rParams = RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-            )
-            rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
-            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
-            layoutParams = rParams
-        }
-        val txtSrvAvatar = TextView(context).apply {
-            text = srv.getString("name").take(1).uppercase()
-            setTextColor(Color.parseColor("#F1EEFA"))
-            textSize = 15f
-            setTypeface(null, Typeface.BOLD)
-            gravity = android.view.Gravity.CENTER
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.parseColor("#3B2A6B"), Color.parseColor("#241B45"))
-            ).apply {
-                shape = GradientDrawable.OVAL
-            }
-            layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply {
-                setMargins(0, 0, 16, 0)
-            }
-        }
-        val txtSrvTitle = TextView(context).apply {
-            text = srv.getString("name")
-            setTextColor(Color.parseColor("#F1EEFA"))
-            textSize = 17f
-            setTypeface(null, Typeface.BOLD)
-        }
-        titleRow.addView(txtSrvAvatar)
-        titleRow.addView(txtSrvTitle)
-
-        val btnOptions = Button(context).apply {
-            text = "⋮"
-            textSize = 20f
-            setTextColor(Color.parseColor("#8E89A8"))
-            background = ContextCompat.getDrawable(context, android.R.color.transparent)
-            val rParams = RelativeLayout.LayoutParams(
-                72, 72
-            )
-            rParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
-            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
-            layoutParams = rParams
-            
-            setOnClickListener { view ->
-                val popup = PopupMenu(context, view)
-                popup.menu.add(getString(R.string.channel_edit))
-                popup.menu.add(getString(R.string.whisper_delete))
-                popup.setOnMenuItemClickListener { menuItem ->
-                    if (menuItem.title == getString(R.string.channel_edit)) {
-                        showServerFormDialog(srv)
-                    } else if (menuItem.title == getString(R.string.whisper_delete)) {
-                        savedServers.remove(index)
-                        saveServersToStorage()
-                    }
-                    true
-                }
-                popup.show()
-            }
-        }
-
-        row1.addView(titleRow)
-        row1.addView(btnOptions)
-
-        // Linha 2: chips de vagas (esquerda) e ping (direita)
-        val row2 = RelativeLayout(context).apply {
-            val lParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lParams.setMargins(0, 12, 0, 0)
-            layoutParams = lParams
-        }
-
-        // Chip de vagas no mesmo estilo dos badges do banner
-        val txtStatus = TextView(context).apply {
-            val hasProbe = srv.has("onlineClients") && srv.has("maxClients")
-            val savedSlots = srv.optString("slots", "0/32")
-            text = if (hasProbe) getString(R.string.available_slots, savedSlots)
-                   else getString(R.string.searching)
-            tag = "slots_text_$index"
-            setTextColor(Color.parseColor("#A5B4FC"))
-            textSize = 11f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(14, 5, 14, 5)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#241F33"))
-                cornerRadius = 12f
-            }
-            val rParams = RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-            )
-            rParams.addRule(RelativeLayout.ALIGN_PARENT_LEFT)
-            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
-            layoutParams = rParams
-        }
-
-        // Ping em destaque tipográfico (cor aplicada dinamicamente pelo probe)
-        val txtPing = TextView(context).apply {
-            text = getString(R.string.searching)
-            tag = "ping_text_$index"
-            setTextColor(Color.parseColor("#8E89A8"))
-            textSize = 12f
-            setTypeface(null, Typeface.BOLD)
-            val rParams = RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.WRAP_CONTENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT
-            )
-            rParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
-            rParams.addRule(RelativeLayout.CENTER_VERTICAL)
-            layoutParams = rParams
-        }
-
-        row2.addView(txtStatus)
-        row2.addView(txtPing)
-
-        // Linha 3: Ícone Usuário + Apelido (Nickname)
-        val row3 = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lParams.setMargins(0, 12, 0, 4)
-            layoutParams = lParams
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-
-        val txtUserIcon = TextView(context).apply {
-            text = "👤 "
-            textSize = 13f
-        }
-        val txtNickname = TextView(context).apply {
-            text = srv.getString("nick")
-            setTextColor(Color.parseColor("#E7E5F0"))
-            textSize = 14f
-        }
-        row3.addView(txtUserIcon)
-        row3.addView(txtNickname)
-
-        // Linha 4: Ícone Servidor + Endereço IP:Porta
-        val row4 = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            val lParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            lParams.setMargins(0, 4, 0, 0)
-            layoutParams = lParams
-            gravity = android.view.Gravity.CENTER_VERTICAL
-        }
-
-        val txtServerIcon = TextView(context).apply {
-            text = "🖥️ "
-            textSize = 13f
-        }
-        val txtAddress = TextView(context).apply {
-            text = "${srv.getString("host")}:${srv.getInt("port")}"
-            setTextColor(Color.parseColor("#8E89A8"))
-            textSize = 13f
-        }
-        row4.addView(txtServerIcon)
-        row4.addView(txtAddress)
-
-        // Adiciona todas as linhas ao cartão
-        cardLayout.addView(row1)
-        cardLayout.addView(row2)
-        cardLayout.addView(row3)
-        cardLayout.addView(row4)
-
-        // Tapping card triggers connection!
-        cardLayout.setOnClickListener {
-            connectToSavedServer(srv)
-        }
-
-        return cardLayout
-    }
-
-    // ============================================================================
     // Configurações do servidor conectado (equivalente ao menu Permissões do PC)
     // ============================================================================
 
@@ -2141,496 +1824,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
 
-    // Formulário de Adicionar / Editar Servidor
-    private fun showServerFormDialog(editSrv: JSONObject?) {
-        val context = this
-        val dialogView = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
-            setBackgroundColor(Color.parseColor("#151322"))
-        }
-
-        val txtTitle = TextView(context).apply {
-            text = if (editSrv != null) getString(R.string.edit_server) else getString(R.string.add_server)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setPadding(0, 0, 0, 24)
-        }
-        dialogView.addView(txtTitle)
-
-        val inputName = HallaInputEditText(context).apply {
-            hint = getString(R.string.server_name_hint)
-            setText(editSrv?.optString("name") ?: "")
-        }
-        dialogView.addView(inputName)
-
-        val inputNick = HallaInputEditText(context).apply {
-            hint = getString(R.string.nickname_hint)
-            setText(editSrv?.optString("nick") ?: "HallaMobile")
-        }
-        dialogView.addView(inputNick)
-
-        val inputHost = HallaInputEditText(context).apply {
-            hint = getString(R.string.host_hint)
-            setText(editSrv?.optString("host") ?: "127.0.0.1")
-        }
-        dialogView.addView(inputHost)
-
-        val inputPort = HallaInputEditText(context).apply {
-            hint = getString(R.string.port_label)
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setText(editSrv?.optString("port") ?: "9987")
-        }
-        dialogView.addView(inputPort)
-
-        val inputPass = HallaInputEditText(context).apply {
-            hint = getString(R.string.server_password_optional)
-            inputType = android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(editSrv?.optString("pass") ?: "")
-        }
-        dialogView.addView(inputPass)
-
-        var selectedUid = editSrv?.optString("identity_uid") ?: ""
-        var selectedIdentityName = getString(R.string.default_identity)
-        
-        val idList = identities.getSavedIdentities()
-        for (i in 0 until idList.length()) {
-            val idObj = idList.getJSONObject(i)
-            if (idObj.getString("uid") == selectedUid) {
-                selectedIdentityName = idObj.getString("name")
-                break
-            }
-        }
-
-        val btnSelectIdentity = Button(context).apply {
-            text = getString(R.string.identity_label, selectedIdentityName)
-            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.bg_dock_bubble)
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setOnClickListener {
-                val list = identities.getSavedIdentities()
-                val names = Array(list.length()) { "" }
-                val uids = Array(list.length()) { "" }
-                for (i in 0 until list.length()) {
-                    val obj = list.getJSONObject(i)
-                    names[i] = obj.getString("name")
-                    uids[i] = obj.getString("uid")
-                }
-                AlertDialog.Builder(context)
-                    .setTitle(getString(R.string.choose_identity))
-                    .setItems(names) { _, index ->
-                        selectedUid = uids[index]
-                        text = getString(R.string.identity_label, names[index])
-                    }
-                    .show()
-            }
-        }
-        dialogView.addView(btnSelectIdentity)
-
-        val dialog = AlertDialog.Builder(context)
-            .setView(dialogView)
-            .setCancelable(true)
-            .create()
-
-        val btnSave = Button(context).apply {
-            text = getString(R.string.save_upper)
-            setBackgroundColor(Color.parseColor("#8B5CF6"))
-            setTextColor(Color.parseColor("#FFFFFF"))
-            setOnClickListener {
-                val name = inputName.text.toString().trim()
-                val nick = inputNick.text.toString().trim()
-                val host = inputHost.text.toString().trim()
-                val portStr = inputPort.text.toString().trim()
-                val pass = inputPass.text.toString().trim()
-
-                if (name.isEmpty() || nick.isEmpty() || host.isEmpty() || portStr.isEmpty()) {
-                    Toast.makeText(context, getString(R.string.required_fields), Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-
-                val port = portStr.toIntOrNull() ?: 9987
-
-                if (editSrv != null) {
-                    editSrv.put("name", name)
-                    editSrv.put("nick", nick)
-                    editSrv.put("host", host)
-                    editSrv.put("port", port)
-                    editSrv.put("pass", pass)
-                    editSrv.put("identity_uid", selectedUid)
-                } else {
-                    val newSrv = JSONObject().apply {
-                        put("name", name)
-                        put("nick", nick)
-                        put("host", host)
-                        put("port", port)
-                        put("pass", pass)
-                        put("identity_uid", selectedUid)
-                        // Até a primeira consulta, o cartão não inventa o
-                        // limite: o servidor responderá com o valor real.
-                        put("slots", "0/32")
-                    }
-                    savedServers.put(newSrv)
-                }
-
-                saveServersToStorage()
-                dialog.dismiss()
-            }
-        }
-        dialogView.addView(btnSave)
-
-        dialog.show()
-    }
-
-    private fun tlsPinFile(host: String, port: Int): File {
-        val safeHost = host.map { ch ->
-            if (ch.isLetterOrDigit() || ch == '.' || ch == '-' || ch == '_') ch else '_'
-        }.joinToString("")
-        return File(File(noBackupFilesDir, "tls-pins").apply { mkdirs() },
-            "tls_fingerprint_${safeHost}_${port}.txt")
-    }
-
-    private fun connectAfterTlsConfirmation(host: String, port: Int, connect: () -> Unit) {
-        thread {
-            var socket: SSLSocket? = null
-            try {
-                val trustAll = object : X509TrustManager {
-                    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
-                    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
-                    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-                }
-                val context = SSLContext.getInstance("TLS")
-                context.init(null, arrayOf(trustAll), SecureRandom())
-                socket = context.socketFactory.createSocket() as SSLSocket
-                socket.soTimeout = 5000
-                socket.connect(java.net.InetSocketAddress(host, port), 5000)
-                socket.startHandshake()
-                val cert = socket.session.peerCertificates.firstOrNull()?.encoded
-                    ?: throw SecurityException("Servidor sem certificado TLS")
-                val fingerprint = MessageDigest.getInstance("SHA-256").digest(cert)
-                    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-                runOnUiThread {
-                    val pinFile = tlsPinFile(host, port)
-                    val legacyPins = getSharedPreferences("HallaTlsPins", Context.MODE_PRIVATE)
-                    val saved = pinFile.takeIf { it.isFile }?.readText()?.trim()
-                        .orEmpty().ifEmpty { legacyPins.getString("$host:$port", "").orEmpty() }
-                    if (saved.isNotEmpty() && !saved.equals(fingerprint, ignoreCase = true)) {
-                        btnConnectStatusNormal()
-                        txtError.text = "ALERTA: o fingerprint TLS de $host:$port mudou. Conexão recusada."
-                        txtError.visibility = View.VISIBLE
-                        return@runOnUiThread
-                    }
-                    if (saved.equals(fingerprint, ignoreCase = true)) {
-                        if (!pinFile.isFile) pinFile.writeText(fingerprint)
-                        connect()
-                        return@runOnUiThread
-                    }
-                    val display = fingerprint.uppercase().chunked(2).joinToString(":")
-                    AlertDialog.Builder(this)
-                        .setTitle("Confirmar certificado TLS")
-                        .setMessage("Primeiro contato com $host:$port. Compare o SHA-256 com o administrador antes de confiar:\n\n$display")
-                        .setNegativeButton(android.R.string.cancel) { _, _ -> btnConnectStatusNormal() }
-                        .setPositiveButton("Confiar") { _, _ ->
-                            pinFile.writeText(fingerprint)
-                            legacyPins.edit().putString("$host:$port", fingerprint).apply()
-                            connect()
-                        }
-                        .show()
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    btnConnectStatusNormal()
-                    txtError.text = "Falha ao validar TLS: ${e.message ?: "erro desconhecido"}"
-                    txtError.visibility = View.VISIBLE
-                }
-            } finally {
-                try { socket?.close() } catch (_: Exception) { }
-            }
-        }
-    }
-
-    private fun connectToSavedServer(srv: JSONObject) {
-        val host = srv.getString("host")
-        val port = srv.getInt("port")
-        val nick = srv.getString("nick")
-
-        // Entrar sem nome não é permitido: o servidor oficial vem pré-salvo
-        // com o apelido vazio justamente para o app perguntar aqui.
-        if (nick.isBlank()) {
-            promptForNickname(srv)
-            return
-        }
-        connectToSavedServerWithNick(srv, nick)
-    }
-
-    // Pede um apelido (campo vazio, servidor devolveu name_in_use/bad_nick)
-    // e reconecta em seguida com o nome escolhido.
-    private fun promptForNickname(srv: JSONObject, inUse: Boolean = false) {
-        val input = android.widget.EditText(this).apply {
-            hint = getString(R.string.nickname_hint)
-            setText(srv.optString("nick", ""))
-            setSingleLine()
-        }
-        val container = android.widget.FrameLayout(this).apply {
-            val pad = (20 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad / 2, pad, 0)
-            addView(input)
-        }
-        val titleRes = if (inUse) R.string.nickname_in_use_title else R.string.choose_nickname_title
-        val msgRes = if (inUse) R.string.nickname_in_use_message else R.string.choose_nickname_message
-        val serverName = srv.optString("name", srv.optString("host", ""))
-        AlertDialog.Builder(this)
-            .setTitle(getString(titleRes))
-            .setMessage(getString(msgRes, serverName))
-            .setView(container)
-            .setPositiveButton(getString(R.string.nickname_confirm)) { dialog, _ ->
-                val chosen = input.text.toString().trim()
-                if (chosen.isEmpty()) {
-                    Toast.makeText(this, getString(R.string.nickname_required),
-                        Toast.LENGTH_SHORT).show()
-                    dialog.dismiss()
-                    return@setPositiveButton
-                }
-                srv.put("nick", chosen)
-                saveServersToStorage()
-                connectToSavedServerWithNick(srv, chosen)
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun connectToSavedServerWithNick(srv: JSONObject, nick: String) {
-        val host = srv.getString("host")
-        val port = srv.getInt("port")
-        val pass = srv.optString("pass", "")
-
-        // Guarda a tentativa para poder repetir a conexão com outro apelido
-        // quando o servidor recusar (name_in_use/bad_nick).
-        lastConnectAttempt = srv
-
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("last_srv_host", host)
-            .putInt("last_srv_port", port)
-            .putString("last_srv_nick", nick)
-            .remove("last_srv_pass").apply()
-        HallaCore.storeSecret(this, "last-server-password", pass)
-
-        txtError.visibility = View.GONE
-        btnConnectStatusConnecting()
-
-        // Escopo do cache de ícones de cargo para este servidor.
-        activeServerKey = RoleIconCache.serverKey(host, port)
-
-        val uid = if (srv.has("identity_uid") && srv.getString("identity_uid").isNotEmpty()) {
-            srv.getString("identity_uid")
-        } else {
-            getOrCreateClientUid()
-        }
-        connectAfterTlsConfirmation(host, port) {
-            HallaService.start(this, host, port, nick, pass, uid)
-        }
-
-        connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-        connectionTimeoutRunnable = Runnable {
-            if (layoutConnect.visibility == View.VISIBLE) {
-                btnConnectStatusNormal()
-                val logContent = readLocalDiagnosticsLog()
-                txtError.text = getString(R.string.timeout_details, logContent)
-                txtError.visibility = View.VISIBLE
-            }
-        }
-        handler.postDelayed(connectionTimeoutRunnable!!, 6000)
-    }
-
-    private fun connectToQuickServer() {
-        val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
-        val host = prefs.getString("last_srv_host", "") ?: ""
-        val port = prefs.getInt("last_srv_port", 0)
-        val nick = prefs.getString("last_srv_nick", "") ?: ""
-        val legacyPass = prefs.getString("last_srv_pass", "").orEmpty()
-        if (legacyPass.isNotEmpty()) {
-            HallaCore.storeSecret(this, "last-server-password", legacyPass)
-            prefs.edit().remove("last_srv_pass").apply()
-        }
-        val pass = HallaCore.readSecret(this, "last-server-password")
-
-        if (host.isEmpty() || port == 0 || nick.isEmpty()) {
-            Toast.makeText(this, getString(R.string.no_recent_server), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        txtError.visibility = View.GONE
-        btnConnectStatusConnecting()
-
-        // Escopo do cache de ícones de cargo para este servidor.
-        activeServerKey = RoleIconCache.serverKey(host, port)
-
-        var uid = getOrCreateClientUid()
-        for (i in 0 until savedServers.length()) {
-            val srv = savedServers.getJSONObject(i)
-            if (srv.getString("host") == host && srv.getInt("port") == port) {
-                if (srv.has("identity_uid") && srv.getString("identity_uid").isNotEmpty()) {
-                    uid = srv.getString("identity_uid")
-                }
-                break
-            }
-        }
-        connectAfterTlsConfirmation(host, port) {
-            HallaService.start(this, host, port, nick, pass, uid)
-        }
-    }
-
-    private fun btnConnectStatusNormal() {
-        btnAddServer.isEnabled = true
-        btnQuickConnect.isEnabled = true
-        btnQuickConnect.text = "➦"
-    }
-
-    private fun btnConnectStatusConnecting() {
-        btnAddServer.isEnabled = false
-        btnQuickConnect.isEnabled = false
-        btnQuickConnect.text = "⏳"
-    }
-
-    // Consulta de disponibilidade e de vagas reais em segundo plano. A
-    // mensagem server_probe não autentica nem cria uma sessão, portanto não
-    // altera o contador de clientes do servidor.
-    private fun pingServersInBackground(onFinished: (() -> Unit)? = null) {
-        val total = savedServers.length()
-        if (total == 0) {
-            onFinished?.invoke()
-            return
-        }
-
-        val remaining = AtomicInteger(total)
-        fun finish() {
-            if (remaining.decrementAndGet() == 0) {
-                runOnUiThread { onFinished?.invoke() }
-            }
-        }
-
-        for (i in 0 until total) {
-            val srv = savedServers.getJSONObject(i)
-            val host = srv.optString("host", "")
-            val port = srv.optInt("port", 9987)
-
-            thread {
-                var socket: SSLSocket? = null
-                try {
-                    val trustAll = object : X509TrustManager {
-                        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
-                        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
-                        override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
-                    }
-                    val sslContext = SSLContext.getInstance("TLS")
-                    sslContext.init(null, arrayOf(trustAll), SecureRandom())
-                    socket = sslContext.socketFactory.createSocket() as SSLSocket
-                    socket.soTimeout = 1800
-                    socket.connect(java.net.InetSocketAddress(host, port), 1800)
-                    socket.startHandshake()
-
-                    val cert = socket.session.peerCertificates.firstOrNull()?.encoded
-                        ?: throw SecurityException("Servidor sem certificado TLS")
-                    val fp = MessageDigest.getInstance("SHA-256")
-                        .digest(cert)
-                        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-                    val pins = getSharedPreferences("HallaTlsPins", Context.MODE_PRIVATE)
-                    val pinKey = "$host:$port"
-                    val saved = pins.getString(pinKey, null)
-                    // O probe não envia credenciais e não fixa confiança. No
-                    // primeiro contato ele pode confirmar que o serviço está
-                    // online; a entrada continua exigindo confirmação explícita
-                    // do fingerprint. Pins já conhecidos ainda são verificados.
-                    if (saved != null && saved != fp) {
-                        throw SecurityException("Fingerprint TLS mudou")
-                    }
-
-                    // O ping exibido deve representar a latência até o servidor,
-                    // não o custo local de DNS, conexão TCP e handshake TLS. O
-                    // cronômetro começa somente com o túnel TLS já estabelecido.
-                    val probeStartedAt = android.os.SystemClock.elapsedRealtimeNanos()
-                    socket.getOutputStream().write("{\"t\":\"server_probe\"}\n".toByteArray(Charsets.UTF_8))
-                    socket.getOutputStream().flush()
-
-                    val line = socket.getInputStream().bufferedReader().readLine()
-                    val elapsedNanos = android.os.SystemClock.elapsedRealtimeNanos() - probeStartedAt
-                    val elapsed = ((elapsedNanos + 500_000L) / 1_000_000L)
-                        .coerceAtLeast(1L)
-                    val response = if (!line.isNullOrBlank()) JSONObject(line) else null
-                    val server = response?.optJSONObject("server")
-                    val clients = response?.optInt("clients", -1) ?: -1
-                    val maxClients = response?.optInt("maxClients", -1)
-                        ?: server?.optInt("maxClients", -1)
-                        ?: -1
-
-                    runOnUiThread {
-                        updateServerProbeOnUI(
-                            i,
-                            "${elapsed}ms",
-                            true,
-                            clients.takeIf { it >= 0 },
-                            maxClients.takeIf { it > 0 }
-                        )
-                    }
-                } catch (_: Exception) {
-                    runOnUiThread {
-                        updateServerProbeOnUI(i, getString(R.string.offline), false, null, null)
-                    }
-                } finally {
-                    try { socket?.close() } catch (_: Exception) { }
-                    finish()
-                }
-            }
-        }
-    }
-
-    private fun updateServerProbeOnUI(
-        index: Int,
-        pingText: String,
-        online: Boolean,
-        clientsCount: Int?,
-        maxClients: Int?
-    ) {
-        val txtPing = containerServers.findViewWithTag<TextView>("ping_text_$index")
-        if (txtPing != null) {
-            txtPing.text = pingText
-            txtPing.setTextColor(Color.parseColor(if (online) "#4CAF50" else "#D9534F"))
-        }
-
-        if (index < 0 || index >= savedServers.length()) return
-        val srv = savedServers.optJSONObject(index) ?: return
-        if (clientsCount != null && maxClients != null) {
-            srv.put("onlineClients", clientsCount)
-            srv.put("maxClients", maxClients)
-            srv.put("slots", "$clientsCount/$maxClients")
-            val txtStatus = containerServers.findViewWithTag<TextView>("slots_text_$index")
-            txtStatus?.text = getString(R.string.available_slots, "$clientsCount/$maxClients")
-            persistServersOnly()
-        }
-    }
-
-    private fun updateActiveServerSlots(clientsCount: Int, maxClients: Int) {
-        val host = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getString("last_srv_host", "") ?: ""
-        val port = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).getInt("last_srv_port", 0)
-        
-        if (host.isEmpty() || port == 0) return
-
-        var modified = false
-        for (i in 0 until savedServers.length()) {
-            val srv = savedServers.getJSONObject(i)
-            if (srv.getString("host") == host && srv.getInt("port") == port) {
-                srv.put("onlineClients", clientsCount)
-                srv.put("maxClients", maxClients)
-                srv.put("slots", "$clientsCount/$maxClients")
-                modified = true
-                break
-            }
-        }
-        if (modified) {
-            persistServersOnly()
-        }
-    }
-
-    private fun readLocalDiagnosticsLog(): String {
+    internal fun readLocalDiagnosticsLog(): String {
         return try {
             val logFile = File(cacheDir, "halla_log.txt")
             if (logFile.exists()) {
@@ -2707,7 +1901,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onConnected(serverName: String, motd: String) {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
-        lastConnectAttempt = null // login aceito: nada para repetir
+        servers.lastConnectAttempt = null // login aceito: nada para repetir
         runOnUiThread {
             // Reconexão do serviço (tela apagada) não passa pelo fluxo da
             // Activity: recupera o escopo dos ícones aqui também.
@@ -2719,7 +1913,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             }
             RoleIconCache.clearSessionState()
 
-            btnConnectStatusNormal()
+            servers.btnConnectStatusNormal()
             showScreen(R.id.layoutServer) // Transiciona as telas de forma centralizada e sem bugs!
 
             txtActiveServerName.text = serverName
@@ -2752,7 +1946,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         if (HallaService.isReconnecting()) return
         runOnUiThread {
             showScreen(R.id.layoutConnect)
-            btnConnectStatusNormal()
+            servers.btnConnectStatusNormal()
 
             // Só volta para a tela inicial em uma desconexão explícita ou
             // quando a sessão ainda não conseguiu ser estabelecida.
@@ -2763,7 +1957,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             btnAddServer.visibility = View.VISIBLE
             btnQuickConnect.visibility = View.VISIBLE
 
-            loadSavedServers()
+            servers.loadSavedServers()
         }
     }
 
@@ -2809,7 +2003,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 txtActiveUsersCountBadge.text = getString(R.string.members, "$clientsCount/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
 
-                updateActiveServerSlots(clientsCount, maxClients)
+                servers.updateActiveServerSlots(clientsCount, maxClients)
                 rebuildChannelTree()
 
                 // Pré-busca dos ícones de cargo dos usuários online: quando o
@@ -2905,7 +2099,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                 // (A string `members` já começa com 👤 — não adicionar outro.)
                 txtActiveUsersCountBadge.text = getString(R.string.members, "${usersData.length()}/$activeMaxClients")
                 txtCategoryChannelsCount.text = "${channelsData.length()}"
-                updateActiveServerSlots(usersData.length(), activeMaxClients)
+                servers.updateActiveServerSlots(usersData.length(), activeMaxClients)
 
                 rebuildChannelTree()
 
@@ -2944,7 +2138,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         connectionTimeoutRunnable?.let { handler.removeCallbacks(it) }
         if (HallaService.isReconnecting()) return
         runOnUiThread {
-            btnConnectStatusNormal()
+            servers.btnConnectStatusNormal()
             txtError.text = getString(R.string.connection_error, reason)
             txtError.visibility = View.VISIBLE
         }
@@ -2968,9 +2162,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // O servidor devolve name_in_use quando o nome já pertence a
             // outra identidade online; bad_nick quando veio vazio/inválido.
             if (code == "name_in_use" || code == "bad_nick") {
-                val attempt = lastConnectAttempt
+                val attempt = servers.lastConnectAttempt
                 if (attempt != null && !HallaService.isRunning()) {
-                    promptForNickname(attempt, inUse = true)
+                    servers.promptForNickname(attempt, inUse = true)
                 }
             }
         }
