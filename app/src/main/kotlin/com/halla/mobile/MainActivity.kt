@@ -171,8 +171,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // Gerenciador de Áudio Nativo
     private lateinit var audioManager: HallaAudioManager
 
-    private var isMuted = false
-    private var isDeaf = false
+    internal var isMuted = false
+    internal var isDeaf = false
     internal var channelsData = JSONArray()
     internal var usersData = JSONArray()
     internal var myPermissions = JSONObject()
@@ -204,9 +204,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var activeMaxClients = 32
 
 
-    private var isChannelCommander = false
-    private var isAway = false
-    private var awayMessage = ""
+    internal var isChannelCommander = false
+    internal var isAway = false
 
     internal val handler = Handler(Looper.getMainLooper())
 
@@ -231,6 +230,10 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // disponibilidade) e fluxo de conexão (TLS pin, apelido, quick-connect) —
     // extraída do monólito. O estado das listas vive no próprio controller.
     internal val servers = ServersController(this)
+
+    // Diálogos de usuário (opções, poke, info, mover/kick/ban, verificação
+    // E2EE por SAS, apelido e away) — extraídos do monólito.
+    internal val userDialogs = UserDialogsController(this)
     internal var connectionTimeoutRunnable: Runnable? = null
     private val badgeRegistryListener: () -> Unit = {
         runOnUiThread {
@@ -2023,14 +2026,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    private fun canSetSelfCommander(): Boolean = hasPermission(
-        "selfCommander", "b_client_is_channel_commander", "setCommander", "b_client_set_channel_commander"
-    )
-
-    private fun canSetOtherCommander(): Boolean = hasPermission(
-        "setCommander", "b_client_set_channel_commander"
-    )
-
     override fun onChannelListReceived(channelsJson: String) {
         runOnUiThread {
             try {
@@ -2784,11 +2779,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                         }
 
                         userRow.setOnLongClickListener {
-                            showUserOptionsDialog(usr)
+                            userDialogs.showUserOptionsDialog(usr)
                             true
                         }
                         userRow.setOnClickListener {
-                            showUserOptionsDialog(usr)
+                            userDialogs.showUserOptionsDialog(usr)
                         }
 
                         contentLayout.addView(userRow)
@@ -3073,7 +3068,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         return null
     }
 
-    private fun isTemporaryChannelOwner(channelId: Int): Boolean {
+    internal fun isTemporaryChannelOwner(channelId: Int): Boolean {
         val channel = channelObject(channelId) ?: return false
         return channel.optInt("type", 2) == 0
             && channel.optString("tempOwner", "") == selfUniqueId()
@@ -3830,120 +3825,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             .show()
     }
 
-    // v6 E2EE — verificação de identidade por código SAS (fora de banda): as
-    // duas pontas abrem este diálogo e comparam os 9 dígitos de viva voz.
-    // Iguais: ninguém — nem o servidor — trocou chaves entre vocês.
-    private fun showE2eeVerifyDialog(userId: Int, name: String) {
-        val code = E2eeEngine.sasCodeFor(userId)
-        val already = E2eeEngine.isUserVerified(userId)
-        val message = if (code == null) {
-            getString(R.string.e2ee_verify_unavailable)
-        } else {
-            getString(R.string.e2ee_verify_instructions, name) +
-                "\n\n$code\n\n" +
-                getString(if (already) R.string.e2ee_verified_already
-                          else R.string.e2ee_not_verified)
-        }
-        val buttons = mutableListOf(getString(R.string.e2ee_close))
-        if (code != null && !already) buttons.add(0, getString(R.string.e2ee_mark_verified))
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.e2ee_verify_title, name))
-            .setMessage(message)
-            .setItems(buttons.toTypedArray()) { _, which ->
-                if (buttons[which] == getString(R.string.e2ee_mark_verified)) {
-                    E2eeEngine.markUserVerified(userId)
-                    Toast.makeText(this, getString(R.string.e2ee_verified_now),
-                        Toast.LENGTH_SHORT).show()
-                }
-            }
-            .show()
-    }
-
-    private fun showUserOptionsDialog(usr: JSONObject) {
-        val context = this
-        val userId = usr.getInt("id")
-        val name = usr.getString("name")
-
-        val awayLabel = if (isAway) getString(R.string.away_unmark) else getString(R.string.away_mark)
-        val ownCommanderLabel = if (isChannelCommander) getString(R.string.commander_disable) else getString(R.string.commander_enable)
-        val targetCommanderLabel = if (usr.optBoolean("cc", false)) getString(R.string.commander_disable) else getString(R.string.commander_enable)
-        val ownsTargetTemporaryChannel = isTemporaryChannelOwner(getChannelOfUser(userId))
-        val options = ArrayList<String>()
-        if (userId == selfId) {
-            options.add("💤 $awayLabel")
-            if (canSetSelfCommander()) options.add("👑 $ownCommanderLabel")
-            options.add(if (HallaService.isScreenSharing())
-                "⏹️ ${getString(R.string.stop_screen_share)}"
-                else "📱 ${getString(R.string.start_screen_share)}")
-            options.add("✏️ ${getString(R.string.change_nickname)}")
-        } else {
-            options.add("👉 ${getString(R.string.poke)}")
-            options.add("🔐 ${getString(R.string.e2ee_verify)}")
-            if (usr.optBoolean("screensharing", false) && getChannelOfUser(userId) == getChannelOfUser(selfId)) {
-                options.add("📺 Ver transmissão")
-            }
-            options.add("💬 ${getString(R.string.private_message)}")
-            options.add("ℹ️ ${getString(R.string.client_info)}")
-            if (canSetOtherCommander()) options.add("👑 $targetCommanderLabel")
-            if (hasPermission("move") || hasPermission("i_client_move_power"))
-                options.add("➦ ${getString(R.string.move_to_channel)}")
-            if (hasPermission("kick") || ownsTargetTemporaryChannel)
-                options.add("🚫 ${getString(R.string.kick_channel)}")
-            if (hasPermission("kick")) options.add("🚫 ${getString(R.string.kick_server)}")
-            if (hasPermission("ban")) options.add("🚷 ${getString(R.string.ban_user)}")
-        }
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.user_title, name))
-            .setItems(options.toTypedArray()) { _, which ->
-                val choice = options[which]
-                if (choice.contains(awayLabel)) {
-                    isAway = !isAway
-                    getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-                        .putBoolean(HallaService.PREF_AWAY, isAway).apply()
-                    if (isAway) {
-                        showAwayMessageDialog()
-                    } else {
-                        HallaCore.sendStatus(isMuted, isDeaf, false, false, isChannelCommander)
-                        Toast.makeText(context, getString(R.string.not_away), Toast.LENGTH_SHORT).show()
-                    }
-                } else if (choice.contains(ownCommanderLabel) || choice.contains(targetCommanderLabel)) {
-                    val next = if (userId == selfId) !isChannelCommander else !usr.optBoolean("cc", false)
-                    if (userId == selfId) {
-                        isChannelCommander = next
-                        getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE).edit()
-                            .putBoolean(HallaService.PREF_COMMANDER, isChannelCommander).apply()
-                    }
-                    HallaCore.sendSetCommander(userId, next)
-                    Toast.makeText(context, getString(R.string.commander_status,
-                        if (next) getString(R.string.yes) else getString(R.string.no)), Toast.LENGTH_SHORT).show()
-                } else if (choice.contains(getString(R.string.start_screen_share))
-                    || choice.contains(getString(R.string.stop_screen_share))) {
-                    toggleOwnScreenShare()
-                } else if (choice.contains(getString(R.string.change_nickname))) {
-                    showChangeNicknameDialog()
-                } else if (choice.contains(getString(R.string.poke))) {
-                    showSendPokeDialog(userId, name)
-                } else if (choice.contains("Ver transmissão")) {
-                    screenShare.startWatching(userId, name)
-                } else if (choice.contains(getString(R.string.private_message))) {
-                    chat.showPrivateMessageDialog(userId, name)
-                } else if (choice.contains(getString(R.string.e2ee_verify))) {
-                    showE2eeVerifyDialog(userId, name)
-                } else if (choice.contains(getString(R.string.client_info))) {
-                    showClientInfoDialog(usr)
-                } else if (choice.contains(getString(R.string.move_to_channel))) {
-                    showMoveUserDialog(userId, name)
-                } else if (choice.contains(getString(R.string.kick_channel))) {
-                    showKickDialog(userId, false, name)
-                } else if (choice.contains(getString(R.string.kick_server))) {
-                    showKickDialog(userId, true, name)
-                } else if (choice.contains(getString(R.string.ban_user))) {
-                    showBanDialog(userId, name)
-                }
-            }
-            .show()
-    }
 
     private fun toggleLocalRecording() {
         if (audioManager.isLocalRecording()) {
@@ -3970,7 +3851,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     }
 
 
-    private fun toggleOwnScreenShare() {
+    internal fun toggleOwnScreenShare() {
         if (HallaService.isScreenSharing()) {
             HallaService.stopScreenShare(this)
             txtScreenShareText.text = getString(R.string.transmit)
@@ -4007,227 +3888,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
     override fun onScreenShareFrameReceived(fromUserId: Int, jpegData: ByteArray) {
         screenShare.handleFrame(fromUserId, jpegData)
-    }
-
-    private fun showAwayMessageDialog() {
-        val context = this
-        val input = HallaInputEditText(context).apply {
-            hint = getString(R.string.away_hint)
-        }
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.away_title))
-            .setView(input)
-            .setPositiveButton(getString(R.string.confirm)) { _, _ ->
-                awayMessage = input.text.toString().trim()
-                HallaCore.sendStatus(isMuted, isDeaf, true, false, isChannelCommander)
-                Toast.makeText(context, getString(R.string.away_status, awayMessage), Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(getString(R.string.cancel)) { _, _ -> isAway = false }
-            .show()
-    }
-
-    private fun showChangeNicknameDialog() {
-        val context = this
-        val input = HallaInputEditText(context).apply {
-            hint = getString(R.string.new_nickname_hint)
-        }
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.change_nickname))
-            .setView(input)
-            .setPositiveButton(getString(R.string.save)) { _, _ ->
-                val newNick = input.text.toString().trim()
-                if (newNick.isNotEmpty()) {
-                    HallaCore.sendRename(newNick)
-                }
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun showSendPokeDialog(toUserId: Int, targetName: String) {
-        val context = this
-        val input = HallaInputEditText(context).apply {
-            hint = getString(R.string.poke_hint)
-        }
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.poke_user_title, targetName))
-            .setView(input)
-            .setPositiveButton(getString(R.string.send)) { _, _ ->
-                val msg = input.text.toString().trim()
-                if (msg.isNotEmpty()) {
-                    HallaCore.sendPoke(toUserId, msg)
-                }
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun showClientInfoDialog(usr: JSONObject) {
-        val context = this
-        val name = usr.getString("name")
-        val ip = usr.optString("ip", getString(R.string.unknown_value))
-        val ping = usr.optInt("ping", 0)
-        val version = usr.optString("ver", "1.0.0")
-        val platform = usr.optString("platform", "Android")
-        val uptime = usr.optInt("uptime", 0)
-        // Grupos múltiplos chegam separados por quebra de linha: uma linha por
-        // cargo no formato "<icone> <nome>" (ex.: "rota.png ROTA"). Ícone de
-        // IMAGEM vira imagem (RoleIconCache); emoji/letra/sigla e cargo sem
-        // ícone seguem como texto — o nome do ARQUIVO nunca vaza para a UI.
-        val roles = usr.optString("group", "")
-            .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-
-        val scroll = ScrollView(context)
-        val content = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(10), dp(20), dp(6))
-        }
-
-        fun addText(text: String) {
-            content.addView(TextView(context).apply {
-                this.text = text
-                // Cor do tema do diálogo: legível com a superfície clara OU
-                // escura do DayNight (cor fixa clara sumia no modo claro).
-                setTextColor(dialogTextPrimary())
-                textSize = 14f
-                setPadding(0, dp(3), 0, dp(3))
-            })
-        }
-
-        addText(getString(R.string.user_info_name, name).trim())
-        addText(getString(R.string.user_info_ip, ip).trim())
-        addText(getString(R.string.user_info_ping, ping.toString()).trim())
-        addText(getString(R.string.user_info_version, version).trim())
-        addText(getString(R.string.user_info_platform, platform).trim())
-        addText(getString(R.string.user_info_uptime, uptime.toString()).trim())
-
-        if (roles.isNotEmpty()) {
-            content.addView(TextView(context).apply {
-                text = getString(R.string.user_info_group, "").trim().trimEnd(':')
-                setTextColor(dialogTextSecondary())
-                textSize = 12f
-                setTypeface(null, Typeface.BOLD)
-                setPadding(0, dp(10), 0, dp(2))
-            })
-            for (role in roles) {
-                val (iconName, label) = RoleIconCache.splitRoleLine(role)
-                val row = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, dp(2), 0, dp(2))
-                }
-                if (iconName.isNotEmpty() && activeServerKey.isNotEmpty()) {
-                    val iconView = ImageView(context).apply {
-                        layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
-                            rightMargin = dp(8)
-                        }
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        visibility = View.GONE
-                    }
-                    val bitmap = RoleIconCache.bitmap(activeServerKey, iconName)
-                    if (bitmap != null) {
-                        iconView.setImageBitmap(bitmap)
-                        iconView.visibility = View.VISIBLE
-                    } else {
-                        // Ainda não temos os bytes: mostra só o nome do cargo e
-                        // pede ao servidor — a imagem entra quando o icon_data
-                        // chegar (roleIcons.refreshPendingViews).
-                        roleIcons.addPendingView(iconName, iconView)
-                        roleIcons.request(iconName)
-                    }
-                    row.addView(iconView)
-                }
-                row.addView(TextView(context).apply {
-                    // Cargo com ícone de imagem: só o NOME. Sem ícone de
-                    // imagem: a linha inteira (emoji/letra renderizam nativos).
-                    text = if (iconName.isNotEmpty()) label else role
-                    setTextColor(dialogTextPrimary())
-                    textSize = 14f
-                })
-                content.addView(row)
-            }
-        }
-        scroll.addView(content)
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.client_details, name))
-            .setView(scroll)
-            .setPositiveButton(getString(R.string.close), null)
-            .setOnDismissListener {
-                roleIcons.clearPending()
-                roleIcons.stopSweeper()
-            }
-            .show()
-        // Ícones ainda em voo: mantém viva a busca enquanto o painel estiver
-        // aberto (re-request throttled + cache lookup a cada 1 s).
-        roleIcons.startSweeper()
-    }
-
-    private fun showMoveUserDialog(userId: Int, userName: String) {
-        val context = this
-        val names = ArrayList<String>()
-        val ids = ArrayList<Int>()
-        for (i in 0 until channelsData.length()) {
-            val chan = channelsData.getJSONObject(i)
-            names.add(chan.getString("name"))
-            ids.add(chan.getInt("id"))
-        }
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.move_user_title, userName))
-            .setItems(names.toTypedArray()) { _, index ->
-                val targetChanId = ids[index]
-                HallaCore.sendMoveOther(userId, targetChanId)
-                Toast.makeText(context, getString(R.string.move_request_sent), Toast.LENGTH_SHORT).show()
-            }
-            .show()
-    }
-
-    private fun showKickDialog(userId: Int, fromServer: Boolean, userName: String) {
-        val context = this
-        val input = HallaInputEditText(context).apply {
-            hint = getString(R.string.kick_reason)
-        }
-        AlertDialog.Builder(context)
-            .setTitle(if (fromServer) getString(R.string.kick_title_server, userName) else getString(R.string.kick_title_channel, userName))
-            .setView(input)
-            .setPositiveButton(getString(R.string.kick_button)) { _, _ ->
-                val reason = input.text.toString().trim()
-                HallaCore.sendKick(userId, fromServer, reason)
-                Toast.makeText(context, getString(R.string.kick_sent), Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
-    }
-
-    private fun showBanDialog(userId: Int, userName: String) {
-        val context = this
-        val layout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
-        }
-        val inputReason = HallaInputEditText(context).apply {
-            hint = getString(R.string.ban_reason)
-        }
-        val inputMinutes = HallaInputEditText(context).apply {
-            hint = getString(R.string.ban_time)
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-        }
-        layout.addView(inputReason)
-        layout.addView(inputMinutes)
-
-        AlertDialog.Builder(context)
-            .setTitle(getString(R.string.ban_title, userName))
-            .setView(layout)
-            .setPositiveButton(getString(R.string.ban_user)) { _, _ ->
-                val reason = inputReason.text.toString().trim()
-                val minutesStr = inputMinutes.text.toString().trim()
-                val minutes = minutesStr.toIntOrNull() ?: 0
-                HallaCore.sendBan(userId, reason, minutes)
-                Toast.makeText(context, getString(R.string.ban_sent), Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(getString(R.string.cancel), null)
-            .show()
     }
 
 

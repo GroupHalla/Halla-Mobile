@@ -16,10 +16,18 @@ class TemporaryChannelOwnerPolicyTest {
         error("Repository root not found")
     }
 
+    /** União Activity + Controllers: após o refactor do monólito os
+     *  diálogos podem viver em um *Controller.kt. */
+    private fun activityPlusControllers(): String {
+        val dir = File(root(), "app/src/main/kotlin/com/halla/mobile")
+        return dir.listFiles { f ->
+            f.name == "MainActivity.kt" || f.name.endsWith("Controller.kt")
+        }!!.sortedBy { it.name }.joinToString("\n") { it.readText() }
+    }
+
     @Test
     fun temporaryOwnerEditorSendsOnlyDelegatedFields() {
-        val activity = File(root(),
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
+        val activity = activityPlusControllers()
         assertTrue(activity.contains("isTemporaryChannelOwner"))
         assertTrue(activity.contains("limitedTemporaryOwner"))
         assertTrue(activity.contains("R.string.temporary_owner_limits"))
@@ -34,8 +42,7 @@ class TemporaryChannelOwnerPolicyTest {
 
     @Test
     fun channelKickAppearsForTemporaryOwnerWithoutGlobalKick() {
-        val activity = File(root(),
-            "app/src/main/kotlin/com/halla/mobile/MainActivity.kt").readText()
+        val activity = activityPlusControllers()
         assertTrue(activity.contains("ownsTargetTemporaryChannel"))
         assertTrue(activity.contains("hasPermission(\"kick\") || ownsTargetTemporaryChannel"))
     }
