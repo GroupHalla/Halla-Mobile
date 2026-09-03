@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     private var pendingSpeechCueKey: String? = null
 
     // Gerenciador de Áudio Nativo
-    private lateinit var audioManager: HallaAudioManager
+    internal lateinit var audioManager: HallaAudioManager
 
     internal var isMuted = false
     internal var isDeaf = false
@@ -183,22 +183,9 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
 
     // Novas variáveis para Áudio, Sensor, Identidades e Status
-    private lateinit var btnAudioRoute: Button
     private lateinit var btnRecordTop: Button
-    private var isSpeakerPhone = true
-    private var sensorManager: SensorManager? = null
-    private var proximitySensor: Sensor? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private val audioDeviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-            routeBluetoothIfAvailable()
-        }
-        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
-            routeBluetoothIfAvailable()
-        }
-    }
-    internal val collapsedChannels = HashSet<Int>()
     // Filtro da busca de canais (nome do canal ou de usuários dentro dele).
+    internal val collapsedChannels = HashSet<Int>()
     internal var channelSearchQuery = ""
     internal var selfId = 0
     internal var activeMaxClients = 32
@@ -244,6 +231,11 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
     // — extraídos do monólito. O estado (canais, usuários, recolhidos,
     // grupos do servidor) continua na Activity.
     internal val channelDialogs = ChannelDialogsController(this)
+
+    // Roteamento de áudio (bluetooth/auricular/alto-falante), sensor de
+    // proximidade e receivers de estado do serviço — extraídos do
+    // monólito. O botão de rota e o wakelock vivem no controller.
+    internal val audioRoute = AudioRouteController(this)
     internal var connectionTimeoutRunnable: Runnable? = null
     private val badgeRegistryListener: () -> Unit = {
         runOnUiThread {
@@ -309,7 +301,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         btnQuickConnect = findViewById(R.id.btnQuickConnect)
         btnInviteMembers = findViewById(R.id.btnInviteMembers)
         btnDisconnect = findViewById(R.id.btnDisconnect)
-        btnAudioRoute = findViewById(R.id.btnAudioRoute)
         btnRecordTop = findViewById(R.id.btnRecordTop)
 
         btnNavSettings = findViewById(R.id.btnNavSettings)
@@ -706,19 +697,8 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         // Carrega as configurações persistidas do SharedPreferences
         loadHallaSettings()
 
-        // Inicializa sensores de proximidade e bluetooth
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        proximitySensor = sensorManager?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
-        registerReceiver(bluetoothReceiver, IntentFilter(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED))
-        ContextCompat.registerReceiver(
-            this,
-            serviceStateReceiver,
-            IntentFilter(HallaService.ACTION_STATE_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-            .registerAudioDeviceCallback(audioDeviceCallback, handler)
-        routeBluetoothIfAvailable()
+        // Inicializa sensores de proximidade, bluetooth e receivers de áudio
+        audioRoute.wire()
 
         // Verifica atualizações de forma automática na inicialização direto do GitHub
         checkForUpdatesSilently()
@@ -832,10 +812,6 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                                else getString(R.string.voice_activation)
                 Toast.makeText(this, getString(R.string.mode_info, modeName), Toast.LENGTH_SHORT).show()
             }
-        }
-
-        btnAudioRoute.setOnClickListener {
-            toggleAudioRoute()
         }
 
         btnRecordTop.setOnClickListener {
@@ -1135,7 +1111,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
                            else Color.parseColor("#A1A1B5"))
     }
 
-    private fun updateTalkingUi(talking: Boolean) {
+    internal fun updateTalkingUi(talking: Boolean) {
         if (talking) {
             txtPttText.text = getString(R.string.talking)
             setPttButtonBackground(Color.parseColor("#16A34A"))
@@ -1145,7 +1121,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    private fun syncAudioUiFromPreferences() {
+    internal fun syncAudioUiFromPreferences() {
         val prefs = getSharedPreferences("HallaPrefs", Context.MODE_PRIVATE)
         isMuted = prefs.getBoolean(HallaService.PREF_MIC_MUTED, isMuted)
         isDeaf = prefs.getBoolean(HallaService.PREF_SPK_MUTED, isDeaf)
@@ -1938,7 +1914,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // Alterna visibilidade dos botões do Header Superior
             btnDisconnect.visibility = View.VISIBLE
             btnInviteMembers.visibility = View.VISIBLE
-            btnAudioRoute.visibility = View.VISIBLE
+            audioRoute.setRouteButtonVisible(true)
             btnRecordTop.visibility = View.VISIBLE
             btnAddServer.visibility = View.GONE
             btnQuickConnect.visibility = View.GONE
@@ -1947,7 +1923,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // comunicação e o roteamento explícito ficam no HallaAudioManager —
             // sem isso o cancelador de eco do hardware não tem referência).
             audioManager.setSpeakerphoneRoute(true)
-            routeBluetoothIfAvailable()
+            audioRoute.routeBluetoothIfAvailable()
 
             chat.appendChatText(getString(R.string.system), getString(R.string.connected_to, serverName), "server")
             chat.appendChatText(getString(R.string.motd_label), motd)
@@ -1965,7 +1941,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
             // quando a sessão ainda não conseguiu ser estabelecida.
             btnDisconnect.visibility = View.GONE
             btnInviteMembers.visibility = View.GONE
-            btnAudioRoute.visibility = View.GONE
+            audioRoute.setRouteButtonVisible(false)
             btnRecordTop.visibility = View.GONE
             btnAddServer.visibility = View.VISIBLE
             btnQuickConnect.visibility = View.VISIBLE
@@ -2397,132 +2373,13 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
 
 
     // ============================================================================
-    // Roteamento de Áudio, Proximidade e Bluetooth
-    // ============================================================================
-
-    private fun routeBluetoothIfAvailable() {
-        try {
-            val systemAudio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val devices = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                systemAudio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
-            } else emptyList()
-            val bluetooth = devices.firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
-            }
-            if (bluetooth != null) {
-                // Roteia a voz para o headset no stream de comunicação
-                // (setCommunicationDevice no Android 12+; SCO legado antes).
-                // A descoberta continua aqui porque é onde a permissão
-                // BLUETOOTH_CONNECT é checada.
-                audioManager.setBluetoothRoute()
-                btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
-            }
-        } catch (_: SecurityException) {
-            // O headset continua sendo opcional quando a permissão Bluetooth
-            // ainda não foi concedida pelo Android.
-        }
-    }
-
-    private fun toggleAudioRoute() {
-        isSpeakerPhone = !isSpeakerPhone
-        // Alto-falante x auricular no stream de comunicação (Android 12+ via
-        // setCommunicationDevice; legado antes). Modo de comunicação e volume
-        // de chamada ficam a cargo do HallaAudioManager.
-        audioManager.setSpeakerphoneRoute(isSpeakerPhone)
-        if (isSpeakerPhone) {
-            btnAudioRoute.setBackgroundResource(R.drawable.ic_speaker)
-            Toast.makeText(this, getString(R.string.audio_speaker), Toast.LENGTH_SHORT).show()
-
-            // Desativa sensor de proximidade no viva-voz
-            sensorManager?.unregisterListener(proximityListener)
-            if (wakeLock?.isHeld == true) wakeLock?.release()
-        } else {
-            btnAudioRoute.setBackgroundResource(R.drawable.ic_headphones)
-            Toast.makeText(this, getString(R.string.audio_earpiece), Toast.LENGTH_SHORT).show()
-
-            // Ativa sensor de proximidade no modo auricular
-            proximitySensor?.let {
-                sensorManager?.registerListener(proximityListener, it, SensorManager.SENSOR_DELAY_NORMAL)
-            }
-        }
-    }
-
-    private val proximityListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) {
-            if (event.sensor.type == Sensor.TYPE_PROXIMITY) {
-                val distance = event.values[0]
-                val isClose = distance < (proximitySensor?.maximumRange ?: 5f)
-                if (!isSpeakerPhone && isClose) {
-                    if (wakeLock == null) {
-                        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-                        wakeLock = powerManager.newWakeLock(
-                            PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
-                            "HallaMobile:ProximityScreenOff"
-                        )
-                    }
-                    if (wakeLock?.isHeld == false) {
-                        wakeLock?.acquire()
-                    }
-                } else {
-                    if (wakeLock?.isHeld == true) {
-                        wakeLock?.release()
-                    }
-                }
-            }
-        }
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
-    }
-
-    private val serviceStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != HallaService.ACTION_STATE_CHANGED) return
-            val talking = if (intent.hasExtra("talking"))
-                intent.getBooleanExtra("talking", false) else null
-            if (intent.hasExtra(HallaService.PREF_MIC_MUTED)) {
-                isMuted = intent.getBooleanExtra(HallaService.PREF_MIC_MUTED, isMuted)
-            }
-            if (intent.hasExtra(HallaService.PREF_SPK_MUTED)) {
-                isDeaf = intent.getBooleanExtra(HallaService.PREF_SPK_MUTED, isDeaf)
-            }
-            runOnUiThread {
-                syncAudioUiFromPreferences()
-                updateScreenShareButton()
-                if (talking != null) updateTalkingUi(talking)
-            }
-        }
-    }
-
-    private val bluetoothReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
-            val audioManagerSystem = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
-                audioManagerSystem.isBluetoothScoOn = true
-                audioManagerSystem.startBluetoothSco()
-                Toast.makeText(context, getString(R.string.bluetooth_connected), Toast.LENGTH_SHORT).show()
-            } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
-                audioManagerSystem.isBluetoothScoOn = false
-                audioManagerSystem.stopBluetoothSco()
-            }
-        }
-    }
 
     override fun onDestroy() {
         // Destruir/minimizar a Activity não encerra a sessão. A conexão, a
         // captura e o playback pertencem ao foreground service.
         HallaCore.removeCallbacks(this)
         BadgeRegistry.removeListener(badgeRegistryListener)
-        try {
-            unregisterReceiver(bluetoothReceiver)
-            unregisterReceiver(serviceStateReceiver)
-        } catch (e: Exception) {}
-        (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
-            .unregisterAudioDeviceCallback(audioDeviceCallback)
-        sensorManager?.unregisterListener(proximityListener)
-        if (wakeLock?.isHeld == true) wakeLock?.release()
+        audioRoute.release()
         identities.clearPendingBackup()
         super.onDestroy()
     }
@@ -2544,7 +2401,7 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         }
     }
 
-    private fun updateScreenShareButton() {
+    internal fun updateScreenShareButton() {
         if (!::txtScreenShareText.isInitialized) return
         val sharing = HallaService.isScreenSharing()
         txtScreenShareText.text = getString(if (sharing) R.string.stop_screen_share else R.string.transmit)
