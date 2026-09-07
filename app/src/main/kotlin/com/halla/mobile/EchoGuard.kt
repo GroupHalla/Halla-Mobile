@@ -242,7 +242,7 @@ class EchoGuard {
 
     private fun playoutSilentRecently(): Boolean {
         if (playTotal == 0L) return true
-        val frames = minOf(playTotal, SILENCE_FRAMES).toInt()
+        val frames = minOf(playTotal, SILENCE_FRAMES.toLong()).toInt()
         var sum = 0.0
         for (i in 0 until frames) {
             sum += playEnergy[((playTotal - 1 - i) % RING_FRAMES).toInt()]
