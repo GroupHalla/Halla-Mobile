@@ -24,8 +24,10 @@ import kotlin.math.tanh
  */
 class EchoGuardTest {
 
-    private val rate = 48000
-    private val frameBytes = 1920
+    private companion object {
+        const val rate = 48000
+        const val frameBytes = 1920
+    }
 
     /** "Voz" sintética: f0 modulada, harmônicos, envelope de sílabas. */
     private class VoiceGen(
