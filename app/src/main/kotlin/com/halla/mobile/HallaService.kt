@@ -253,6 +253,10 @@ class HallaService : Service(), HallaCore.Callbacks {
     private var speechCuePlayer: MediaPlayer? = null
     private val remoteTalking = hashMapOf<Int, Boolean>()
     private val remoteWhispering = hashMapOf<Int, Boolean>()
+    // Estado de fala do PRÓPRIO usuário: enquanto ele fala, o cue remoto do
+    // parceiro fica calado (o começo da voz dele volta pelo microfone do
+    // parceiro como crosstalk e tocava duplicado — ver updateRemoteUserState).
+    @Volatile private var selfTalking = false
     private var selfId = 0
     private fun t(id: Int, vararg args: Any): String = LocaleManager.wrap(this).getString(id, *args)
 
@@ -267,6 +271,7 @@ class HallaService : Service(), HallaCore.Callbacks {
         audio = HallaAudioManager(this, cacheDir)
         loadAudioSettings()
         audio.onTalkingStateChanged = { talking ->
+            selfTalking = talking
             handler.post {
                 broadcastState(talking)
                 playLocalSpeechCue(talking)
@@ -511,9 +516,15 @@ class HallaService : Service(), HallaCore.Callbacks {
         val wasTalking = remoteTalking[id] ?: false
         val wasWhispering = remoteWhispering[id] ?: false
         if (talking && (!wasTalking || (whispering && !wasWhispering))) {
-            playRemoteSpeechCue(whispering, true)
+            // Enquanto o PRÓPRIO usuário fala, o sinal sonoro do parceiro
+            // não dispara: com o alto-falante do PC tocando perto, o começo
+            // da voz do usuário "volta" pelo microfone do parceiro como
+            // crosstalk e abria o talking dele junto — o som "ao falar"
+            // tocava duplicado. O EchoGuard já corta o eco na origem; isto
+            // é a rede de segurança para builds/peers antigos.
+            if (!selfTalking) playRemoteSpeechCue(whispering, true)
         } else if (!talking && wasTalking) {
-            playRemoteSpeechCue(false, false)
+            if (!selfTalking) playRemoteSpeechCue(false, false)
         }
         remoteTalking[id] = talking
         remoteWhispering[id] = whispering

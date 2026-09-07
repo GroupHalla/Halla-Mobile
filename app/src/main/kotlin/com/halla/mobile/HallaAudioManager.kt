@@ -80,6 +80,12 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
 
     var onTalkingStateChanged: ((Boolean) -> Unit)? = null
     private var isTalking = false
+    // Guarda de crosstalk/eco de rede (v1.1.22): a voz do parceiro que toca
+    // no alto-falante do PC (ou de outro aparelho na mesa) entra no
+    // microfone deste aparelho e abria o VAD como se fosse fala do usuário
+    // — o anel de "falando" acendia em dois usuários na tela do parceiro,
+    // o sinal sonoro "ao falar" duplicava e o eco voltava audível.
+    private val echoGuard = EchoGuard()
     // Marca de tempo da última janela de áudio acima do limiar do VAD. A
     // liberação usa histerese (350 ms), igual ao Desktop: sem isso o estado
     // "falando" liga/desliga a cada frame de 20 ms quando a voz fica perto do
@@ -181,9 +187,9 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
 
                         // Limiar VAD / PTT / Contínuo para transmissão.
                         val nowMs = System.currentTimeMillis()
-                        val vadVoice = rms > vadThreshold
+                        var vadVoice = rms > vadThreshold
                         if (vadVoice) vadLastVoiceAboveMs = nowMs
-                        val voiceNow = when {
+                        var voiceNow = when {
                             whisperActivationPending -> false
                             whisperPressed -> true // sussurro também funciona sobre VAD
                             transmissionMode == 1 -> isPttPressed // PTT
@@ -193,6 +199,35 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                             // evita o oscilar (flap) rápido do estado de fala.
                             else -> vadVoice || (nowMs - vadLastVoiceAboveMs) < VAD_RELEASE_HOLD_MS
                         }
+
+                        // ---- Guarda de crosstalk/eco de rede (v1.1.22) ----
+                        // No modo VAD, o som do parceiro captado pelo microfone
+                        // não abre a transmissão: o guarda compara o microfone
+                        // com o que está sendo RECEBIDO da rede (o mesmo som
+                        // tocando no alto-falante do parceiro) — cópia atrasada
+                        // é crosstalk, não fala. Falar por cima de um canal
+                        // ativo é confirmado em até 400 ms e os quadros retidos
+                        // na validação são transmitidos antes (backfill).
+                        // PTT/contínuo são escolhas explícitas: sem guarda.
+                        val guardActive = transmissionMode == 0
+                                && !whisperPressed && !whisperActivationPending
+                        var echoBackfill: List<ByteArray> = emptyList()
+                        if (guardActive && readBytes == audioBuffer.size) {
+                            val decision = echoGuard.noteCapture(
+                                audioBuffer, vadVoice, isTalking)
+                            when (decision) {
+                                EchoGuard.Decision.BLOCKED -> {
+                                    // Revogação imediata (sem histerese):
+                                    // o microfone está dominado pelo eco.
+                                    if (isTalking) vadLastVoiceAboveMs = 0L
+                                    voiceNow = false
+                                }
+                                EchoGuard.Decision.HOLD -> voiceNow = false
+                                EchoGuard.Decision.OPEN -> if (vadVoice && !isTalking)
+                                    echoBackfill = echoGuard.drainBackfill()
+                            }
+                        }
+
                         if (voiceNow != isTalking) {
                             isTalking = voiceNow
                             // O servidor usa este sinal para atualizar o
@@ -205,6 +240,7 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                         // Envia somente os bytes realmente capturados para o
                         // core nativo C++.
                         if (voiceNow && readBytes >= 2) {
+                            for (held in echoBackfill) HallaCore.sendVoiceFrame(held)
                             val frame = if (readBytes == audioBuffer.size) audioBuffer
                                         else audioBuffer.copyOf(readBytes - (readBytes % 2))
                             HallaCore.sendVoiceFrame(frame)
@@ -406,6 +442,10 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                         Thread.sleep(5)
                         continue
                     }
+                    // Referência do guarda de crosstalk: o mix que vai para o
+                    // alto-falante AGORA — o que o microfone captar de
+                    // parecido com isto (atrasado) é eco da rede, não fala.
+                    echoGuard.notePlayout(mixed)
                     val written = try {
                         track.write(mixed, 0, mixed.size)
                     } catch (e: Exception) {
