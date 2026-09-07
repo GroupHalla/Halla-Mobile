@@ -29,20 +29,31 @@ class EchoGuardTest {
         const val frameBytes = 1920
     }
 
-    /** "Voz" sintética: f0 modulada, harmônicos, envelope de sílabas. */
+    /**
+     * "Voz" sintética: f0 modulada, harmônicos, envelope de sílabas. A onda
+     * é PRÉ-GERADA em uma única passada (phase contínuo) e fillFrame() só
+     * fatia — assim "a mesma voz" em dois lugares da simulação é byte a
+     * byte igual, como o crosstalk real é (a MESMA onda capturada duas
+     * vezes). Um gerador com phase mutável compartilhado entre as chamadas
+     * de play e mic produzia ondas DESEQUACIONADAS e o teste não testava
+     * nada (foi o que travou a primeira rodada no CI).
+     */
     private class VoiceGen(
-        var pitchBase: Double = 140.0,
-        var pitchWobble: Double = 40.0,
-        var syllablePeriod: Double = 0.12,
-        var h2: Double = 0.35,
-        var h3: Double = 0.12
+        pitchBase: Double = 140.0,
+        pitchWobble: Double = 40.0,
+        syllablePeriod: Double = 0.12,
+        h2: Double = 0.35,
+        h3: Double = 0.12
     ) {
-        private var phase = 0.0
+        private val wave: ByteArray
+        private val offsetFrames = 12   // fillFrame aceita -12..127
 
-        fun fillFrame(frameIndex: Int): ByteArray {
-            val out = ByteArray(frameBytes)
-            for (i in 0 until frameBytes / 2) {
-                val n = frameIndex * (frameBytes / 2) + i
+        init {
+            val frames = 140
+            val out = ByteArray(frames * frameBytes)
+            var phase = 0.0
+            var n = -offsetFrames * (frameBytes / 2)
+            for (b in 0 until frames * frameBytes / 2) {
                 val t = n.toDouble() / rate
                 val f0 = pitchBase + pitchWobble * sin(2 * Math.PI * t / 0.7)
                 phase += 2 * Math.PI * f0 / rate
@@ -53,10 +64,16 @@ class EchoGuardTest {
                 if (syl < on) env = 0.25 else if (syl > off) env = 0.45
                 val v = env * (sin(phase) + h2 * sin(2 * phase) + h3 * sin(3 * phase))
                 val s = (9000.0 * tanh(v * 0.9)).toInt()
-                out[i * 2] = (s and 0xFF).toByte()
-                out[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                out[b * 2] = (s and 0xFF).toByte()
+                out[b * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                n++
             }
-            return out
+            wave = out
+        }
+
+        fun fillFrame(frameIndex: Int): ByteArray {
+            val from = (frameIndex + offsetFrames) * frameBytes
+            return wave.copyOfRange(from, from + frameBytes)
         }
     }
 
@@ -98,7 +115,7 @@ class EchoGuardTest {
         for (f in 0 until totalFrames) {
             val play = if (f >= delayFrames) remote.fillFrame(f - delayFrames) else silence()
             // Microfone: a MESMA voz (crosstalk do alto-falante do parceiro /
-            // mic compartilhado), atenuada.
+            // mic compartilhado).
             val mic = remote.fillFrame(f)
             guard.notePlayout(play)
             val above = rms(mic) > 900.0
@@ -141,7 +158,7 @@ class EchoGuardTest {
 
         for (f in 0 until totalFrames) {
             val play = remote.fillFrame(f)            // canal ativo o tempo todo
-            val mic = mine.fillFrame(f + 999)          // outra voz
+            val mic = mine.fillFrame(f)                // outra voz
             guard.notePlayout(play)
             val d = guard.noteCapture(mic, true, gateOpen)
             if (gateOpen) {
@@ -168,7 +185,7 @@ class EchoGuardTest {
         var openFrame = -1
         for (f in 0 until 60) {
             val play = remote.fillFrame(f)
-            val mic = mix(mine.fillFrame(f + 4242), play, 0.4)  // ~35% eco
+            val mic = mix(mine.fillFrame(f), play, 0.4)  // ~35% eco
             guard.notePlayout(play)
             val d = guard.noteCapture(mic, true, false)
             if (d == EchoGuard.Decision.BLOCKED) blocked++
@@ -198,7 +215,7 @@ class EchoGuardTest {
         var backfill: List<ByteArray> = emptyList()
         for (f in 0 until 25) {
             val play = remote.fillFrame(f)
-            val mic = mine.fillFrame(f + 999)
+            val mic = mine.fillFrame(f)
             guard.notePlayout(play)
             val d = guard.noteCapture(mic, true, false)
             if (d == EchoGuard.Decision.OPEN && backfill.isEmpty()) {
