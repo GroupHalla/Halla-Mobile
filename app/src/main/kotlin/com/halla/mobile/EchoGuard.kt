@@ -49,6 +49,20 @@ class EchoGuard {
     var lastMatchScore = 0.0
         private set
 
+    // ---- estado interno ----
+    private val playRing = ShortArray(RING_TOTAL_SUB)
+    private val capRing = ShortArray(RING_TOTAL_SUB)
+    private val playEnergy = DoubleArray(RING_FRAMES)
+    private var playTotal = 0L
+    private var capTotal = 0L
+    private var validating = false
+    private var validateStart = 0L
+    private var echoUntilFrame = 0L
+    private var lastTestFrame = 0L
+    private val held = ArrayDeque<ByteArray>()
+    private val playWin = ShortArray(WINDOW_SUB)
+    private val capWin = ShortArray(WINDOW_SUB)
+
     // ---------------------------------------------------------------- API
 
     /** Quadro de 20 ms do mix que vai para o alto-falante AGORA. */
@@ -169,9 +183,6 @@ class EchoGuard {
             ring[slot + i] = ((s0 + s1 + s2 + s3) / 4).toShort()
         }
     }
-
-    private val playWin = ShortArray(WINDOW_SUB)
-    private val capWin = ShortArray(WINDOW_SUB)
 
     /** Copia [endSub - WINDOW_SUB, endSub) do ring com wrap. */
     private fun copyWindow(ring: ShortArray, endSub: Long, out: ShortArray): Boolean {

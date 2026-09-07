@@ -201,6 +201,7 @@ class EchoGuardTest {
             val d = guard.noteCapture(mic, true, false)
             if (d == EchoGuard.Decision.OPEN && backfill.isEmpty()) {
                 backfill = guard.drainBackfill()
+                break   // o caller real abre o gate aqui; sem mais quadros
             }
         }
         assertEquals(20, backfill.size)
