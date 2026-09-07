@@ -5,422 +5,431 @@
 <h1 align="center">Halla Mobile</h1>
 
 <p align="center">
-  Cliente Android nativo do <a href="https://github.com/GroupHalla/Halla">Halla</a> —
-  o cliente de voz desktop estilo TeamSpeak 3. Kotlin na interface,
-  C++/JNI no núcleo de rede e voz.
+  Native Android client for <a href="https://github.com/GroupHalla/Halla">Halla</a> —
+  the TeamSpeak 3-style desktop voice client. Kotlin for the interface,
+  C++/JNI for the network and voice core.
 </p>
 
 <p align="center">
-  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · versão 1.0.96
+  <b>com.halla.mobile</b> · Android 8.0+ (API 26) · version 1.0.96
 </p>
 
 ---
 
-## Índice
+## Table of Contents
 
-- [Visão geral](#visão-geral)
-- [Principais recursos](#principais-recursos)
-- [Complementos (plugins)](#complementos-plugins)
-- [Visualizador WebRTC (WebView)](#visualizador-webrtc-webview)
-- [Arquitetura](#arquitetura)
-- [Núcleo nativo (C++/JNI)](#núcleo-nativo-cjni)
-- [Serviço em segundo plano](#serviço-em-segundo-plano)
-- [Permissões usadas](#permissões-usadas)
-- [Estrutura do repositório](#estrutura-do-repositório)
-- [Compilando](#compilando)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Add-ons (plugins)](#add-ons-plugins)
+- [WebRTC Viewer (WebView)](#webrtc-viewer-webview)
+- [Architecture](#architecture)
+- [Native Core (C++/JNI)](#native-core-cjni)
+- [Background Service](#background-service)
+- [Permissions Used](#permissions-used)
+- [Repository Structure](#repository-structure)
+- [Building](#building)
 - [CI/CD](#cicd)
-- [Idiomas](#idiomas)
-- [Projetos relacionados](#projetos-relacionados)
-- [Observação sobre o `CMakeLists.txt` da raiz](#observação-sobre-o-cmakeliststxt-da-raiz)
+- [Languages](#languages)
+- [Related Projects](#related-projects)
+- [Note about the root `CMakeLists.txt`](#note-about-the-root-cmakeliststxt)
 
 ---
 
-### Programa de Feedback e Relato de Problemas —  Halla
-Com o avanço contínuo do ecossistema Halla (Desktop, Mobile e Server), nosso compromisso é garantir a máxima estabilidade, segurança e desempenho em transmissões de voz e tela.
-Para que possamos identificar e corrigir eventuais falhas com rapidez, abrimos um canal oficial e direto para coleta de relatórios de bugs, inconsistências e sugestões de melhorias técnicas.
+### Feedback and Bug Reporting Program —  Halla
+As the Halla ecosystem (Desktop, Mobile, and Server) continues to advance, our commitment is
+to ensure maximum stability, security, and performance in voice and screen transmissions.
+So that we can identify and fix any failures quickly, we have opened an official, direct
+channel for collecting bug reports, inconsistencies, and technical improvement suggestions.
 
-**O que você pode relatar:**
-- Problemas de conectividade, latência ou sincronização com o servidor.
-- Falhas de captura ou reprodução de áudio (ruídos, eco ou cortes).
-- Instabilidades na transmissão de tela (queda de FPS, resolução ou congelamento).
-- Bugs visuais e comportamentais na interface do Desktop (Windows/Linux) ou Mobile (Android).
-- Sugestões de novas funcionalidades e melhorias de usabilidade.
+**What you can report:**
+- Connectivity, latency, or server synchronization issues.
+- Audio capture or playback failures (noise, echo, or dropouts).
+- Screen sharing instabilities (FPS drops, reduced resolution, or freezing).
+- Visual and behavioral bugs in the Desktop interface (Windows/Linux) or Mobile (Android).
+- Suggestions for new features and usability improvements.
 
-Sua contribuição é fundamental para o aprimoramento contínuo deste projeto de código aberto.
-Envie seu relatório através do formulário oficial:
+Your contribution is essential to the continuous improvement of this open-source project.
+Submit your report through the official form:
 https://docs.google.com/forms/d/e/1FAIpQLScwy7k_HyeNnl8kuNfMSs8H-pHUGfhuKijAxkYkzd7m_aX4NA/viewform
 
-Agradecemos a colaboração de todos no fortalecimento da plataforma.
+We thank everyone for their collaboration in strengthening the platform.
 
 ---
 
-## Visão geral
+## Overview
 
-O **Halla Mobile** é o cliente Android do Halla: permite entrar nos mesmos
-servidores **Halla Server** usados pelo cliente desktop, com voz, chat de
-texto, canais, grupos/permissões e sussurro — de dentro do bolso, inclusive
-com o app em segundo plano (serviço em primeiro plano + botão de PTT
-flutuante sobre outros aplicativos).
+**Halla Mobile** is the Android client for Halla: it lets you join the same
+**Halla Server** servers used by the desktop client, with voice, text chat,
+channels, groups/permissions, and whisper — from your pocket, even with the
+app in the background (foreground service + floating PTT button over other
+apps).
 
-Diferente de um app "wrapper", o Halla Mobile **não roda Qt** — é um app
-Android nativo (Kotlin + Android Views) com um núcleo de rede/áudio próprio
-escrito em C++, compilado como biblioteca nativa (`libhalla-core.so`) e
-acessado via JNI.
+Unlike a "wrapper" app, Halla Mobile **does not run Qt** — it is a native
+Android app (Kotlin + Android Views) with its own network/audio core written
+in C++, compiled as a native library (`libhalla-core.so`) and accessed via
+JNI.
 
-## Principais recursos
+## Key Features
 
-- Conexão a servidores Halla Server (mesmo protocolo do cliente desktop).
-- Voz em tempo real: captura/reprodução via `AudioRecord`/`AudioTrack`,
-  codec **Opus** (compilado a partir da fonte oficial), com cancelamento de
-  eco (`AcousticEchoCanceler`) e supressão de ruído (`NoiseSuppressor`)
-  quando disponíveis no aparelho.
-- Push-to-talk, transmissão contínua ou detecção de voz — inclusive com um
-  **botão de PTT flutuante** (overlay sobre outros apps) para falar sem
-  precisar abrir o Halla Mobile.
-- **Sussurro**: canais específicos ou listas de usuários, com o mesmo
-  conceito do cliente desktop.
-- Canais, chat de texto (com histórico/rolagem), grupos de servidor/canal,
-  permissões granulares, talk power, "cutucar" (poke).
-- Administração completa de canais (paridade com o Desktop): criação
-  temporária/semi-permanente/permanente com tópico, senha, codec, qualidade,
-  bitrate e limite de clientes; edição de todos os campos; exclusão com
-  confirmação; movimentação na hierarquia; e permissões por cargo com
-  Permitir/Negar/Herdar (visualizar, entrar, falar, chat, ouvir, complementos,
-  arquivos). Cada ação respeita as permissões do servidor.
-- Emblemas globais oficiais vinculados à UID, obtidos de um registro Ed25519
-  assinado e mantidos em cache para funcionamento offline.
-- Roteamento de áudio para fone de ouvido/alto-falante/Bluetooth.
-- Gravação local e diagnóstico de áudio (painel com status do pipeline de
-  voz, útil para depurar problemas de microfone/alto-falante).
-- Reconexão silenciosa ao trocar de rede (Wi-Fi ↔ dados móveis).
-- Criadores de canais temporários recebem controles locais limitados: senha,
-  bitrate, máximo de clientes e expulsão apenas daquele canal.
-- Notificação persistente com ações rápidas (mudo do microfone, dos
-  alto-falantes, desconectar) enquanto conectado.
-- Verificação e download de atualizações dentro do próprio app (checksum
-  SHA-256 conferido antes de instalar).
-- Interface com tema claro/escuro (`Theme.AppCompat.DayNight`) e suporte a
-  RTL. Campos de escrita criados por diálogos usam fundo claro, texto preto e
-  hint escuro explícitos, permanecendo legíveis nos dois temas e em skins OEM.
-- Localizado em **português, inglês e espanhol** (troca de idioma pelo app,
-  não só pelo sistema).
-- **Transmitir a própria tela em até 30 FPS e o áudio interno capturável** usando
-  a autorização oficial `MediaProjection`/`AudioPlaybackCapture` do Android. O PCM interno alimenta
-  uma `AudioTrack` WebRTC real usada exclusivamente por viewers Mobile e Desktop.
-  A track recebe PCM contínuo e desativa AEC/AGC/NS de microfone para preservar música,
-  jogos e vídeos. O AAR do libwebrtc é fixado e corrigido para validar corretamente o
-  buffer direto do ADM; antes de transmitir, o usuário escolhe entre presets
-  720p/1080p/1440p/2160p e 30/60 FPS filtrados pelos máximos de resolução, FPS e
-  bitrate anunciados pelo HallaServer. Resolução (480p, 720p, 1080p, 2K ou 4K),
-  FPS e bitrate são escolhidos separadamente; a largura preserva a proporção
-  configurada no servidor. A track não é suspensa em quedas momentâneas de rede. O UID do Halla é excluído para que as vozes da
-  chamada não retornem na live. Também é possível assistir transmissões do
-  Desktop ou de outro celular; o viewer possui controles próprios para mutar o
-  áudio e parar de assistir, sem exibir o estado técnico “Conexão: connected”.
-- **Complementos (plugins)**: pacotes `.halla-addon` com a mesma ABI C do
-  Desktop, hooks de áudio, transporte `plugin_data` v5 e o complemento oficial
-  de voz de rádio embutido (veja [Complementos](#complementos-plugins)).
+- Connection to Halla Server servers (same protocol as the desktop client).
+- Real-time voice: capture/playback via `AudioRecord`/`AudioTrack`, **Opus**
+  codec (compiled from the official source), with echo cancellation
+  (`AcousticEchoCanceler`) and noise suppression (`NoiseSuppressor`) when
+  available on the device.
+- Push-to-talk, continuous transmission, or voice detection — including a
+  **floating PTT button** (overlay over other apps) so you can talk without
+  opening Halla Mobile.
+- **Whisper**: specific channels or user lists, with the same concept as the
+  desktop client.
+- Channels, text chat (with history/scrolling), server/channel groups,
+  granular permissions, talk power, poke.
+- Full channel administration (parity with the Desktop):
+  temporary/semi-permanent/permanent creation with topic, password, codec,
+  quality, bitrate, and client limit; editing of all fields; deletion with
+  confirmation; moving within the hierarchy; and per-role permissions with
+  Allow/Deny/Inherit (view, join, speak, chat, listen, add-ons, files). Every
+  action respects the server's permissions.
+- Official global badges bound to the UID, fetched from a signed Ed25519
+  registry and cached for offline operation.
+- Audio routing to headset/speaker/Bluetooth.
+- Local recording and audio diagnostics (panel with voice pipeline status,
+  useful for debugging microphone/speaker issues).
+- Silent reconnection when switching networks (Wi-Fi ↔ mobile data).
+- Temporary channel creators get limited local controls: password, bitrate,
+  max clients, and kicking users only from that channel.
+- Persistent notification with quick actions (mute microphone, mute
+  speakers, disconnect) while connected.
+- In-app update checking and downloading (SHA-256 checksum verified before
+  installing).
+- UI with a light/dark theme (`Theme.AppCompat.DayNight`) and RTL support.
+  Text input fields created by dialogs use an explicit light background,
+  black text, and dark hint color, remaining legible in both themes and on
+  OEM skins.
+- Localized in **Portuguese, English, and Spanish** (language switching in
+  the app, not only through the system).
+- **Stream your own screen at up to 30 FPS plus capturable internal audio**
+  using Android's official `MediaProjection`/`AudioPlaybackCapture`
+  authorization. The internal PCM feeds a real WebRTC `AudioTrack` used
+  exclusively by Mobile and Desktop viewers. The track receives continuous
+  PCM and disables microphone AEC/AGC/NS to preserve music, games, and
+  videos. The libwebrtc AAR is pinned and patched to correctly validate the
+  ADM's direct buffer; before streaming, the user chooses among
+  720p/1080p/1440p/2160p and 30/60 FPS presets filtered by the maximum
+  resolution, FPS, and bitrate advertised by the HallaServer. Resolution
+  (480p, 720p, 1080p, 2K, or 4K), FPS, and bitrate are chosen separately;
+  the width preserves the aspect ratio configured on the server. The track
+  is not suspended on momentary network drops. The Halla UID is excluded so
+  that the call's voices do not come back into the live stream. You can also
+  watch Desktop or other phone streams; the viewer has its own controls to
+  mute the audio and stop watching, without showing the technical
+  “Connection: connected” state.
+- **Add-ons (plugins)**: `.halla-addon` packages with the same C ABI as the
+  Desktop, audio hooks, `plugin_data` v5 transport, and the official
+  built-in radio voice add-on (see [Add-ons](#add-ons-plugins)).
 
-**Segurança**
-- Canal de controle em TLS com pinagem TOFU (mesmo esquema do cliente
-  desktop).
-- Identidade Ed25519: usa a API nativa `java.security` (Android 12/API 31+)
-  quando disponível, com Bouncy Castle atualizado como implementação compatível
-  de fallback em aparelhos mais antigos (API 26+). A chave privada é
-  guardada cifrada com uma chave AES do **Android Keystore**, não em texto
-  puro. Como o Android apaga a Keystore ao desinstalar, o gerenciador de
-  identidades exporta um backup portátil protegido por senha (PBKDF2-SHA256 +
-  AES-256-GCM); ao importar após reinstalar, a mesma chave e o mesmo UID são
-  restaurados e reencapsulados pela nova Keystore.
-- **E2EE real (protocolo v6)**: chaves de voz/chat/poke/offline geradas e
-  distribuídas pelos próprios clientes (`E2eeEngine` + `E2eeCrypto`);
-  envelopes `e2e_key` com X25519 efêmera + HKDF-SHA256 + AES-256-GCM;
-  binding X25519↔Ed25519 assinado no login; chat privado/poke/offline
-  par-a-par (estático-estático); verificação de identidade por **código SAS
-  de 9 dígitos** no diálogo do usuário. O servidor nunca vê chave de
-  conteúdo.
-- Voz cifrada com ChaCha20-Poly1305 via **mbedTLS** (a mesma técnica AEAD do
-  cliente desktop, implementação diferente por ser mais leve para Android),
-  com as chaves de grupo E2EE — sem chave vigente, o frame não sai.
-- Pipeline de release **assinado**: builds de tag exigem a keystore de
-  produção (GitHub Secrets), e o APK final passa por `apksigner verify`
-  antes de publicar.
+**Security**
+- Control channel over TLS with TOFU pinning (same scheme as the desktop
+  client).
+- Ed25519 identity: uses the native `java.security` API (Android 12/API 31+)
+  when available, with an updated Bouncy Castle as the compatible fallback
+  implementation on older devices (API 26+). The private key is stored
+  encrypted with an **Android Keystore** AES key, not in plain text. Because
+  Android wipes the Keystore on uninstall, the identity manager exports a
+  portable, password-protected backup (PBKDF2-SHA256 + AES-256-GCM); when
+  imported after a reinstall, the same key and UID are restored and
+  re-wrapped by the new Keystore.
+- **Real E2EE (protocol v6)**: voice/chat/poke/offline keys generated and
+  distributed by the clients themselves (`E2eeEngine` + `E2eeCrypto`);
+  `e2e_key` envelopes with ephemeral X25519 + HKDF-SHA256 + AES-256-GCM;
+  X25519↔Ed25519 binding signed at login; private chat/poke/offline
+  peer-to-peer (static-static); identity verification via a **9-digit SAS
+  code** in the user dialog. The server never sees content keys.
+- Voice encrypted with ChaCha20-Poly1305 via **mbedTLS** (the same AEAD
+  technique as the desktop client, a different implementation chosen for
+  being lighter on Android), using the E2EE group keys — without a live
+  key, the frame does not go out.
+- **Signed** release pipeline: tag builds require the production keystore
+  (GitHub Secrets), and the final APK goes through `apksigner verify`
+  before publishing.
 
-## Complementos (plugins)
+## Add-ons (plugins)
 
-O sistema de complementos do Halla Desktop agora existe também no Mobile, em
-**Configurações → Complementos**:
+The Halla Desktop add-on system now also exists on Mobile, under
+**Settings → Add-ons**:
 
-- **Mesmo formato de pacote**: arquivos `.halla-addon` (ZIP com
-  `manifest.json`), idênticos aos do Desktop — mesmo manifesto, mesmas
-  capacidades declaradas, mesmo empacotador (`tools/package_plugin.py` do
-  repositório Halla).
-- **Mesma ABI C pública**: o host nativo (`plugin_host.cpp`) implementa a ABI
-  de `halla_plugin_api.h` (ABI-base 1) com as interfaces modulares
-  `halla.core.v1`, `halla.connection.v1`, `halla.audio.v1`, `halla.data.v1` e
-  `halla.ui.v1` via `query_interface()`. Um plugin escrito para o Desktop
-  recompilado para Android (NDK) funciona sem mudanças de código — bibliotecas
-  são declaradas no manifesto sob `android-arm64`, `android-arm`,
-  `android-x86_64` ou `android-x86` e carregadas com `dlopen()`.
-- **Pipeline de áudio**: processadores PCM nos estágios de captura (antes do
-  Opus) e de voz remota (por remetente, após decodificação), além de ganho,
-  atenuação por distância e efeito de rádio por usuário.
-- **Transporte `plugin_data` (protocolo v5)**: complementos trocam payloads
-  binários (≤ 8 KiB) com instâncias do mesmo complemento em outros clientes,
-  pelo canal TLS. O servidor exige `pluginData`, limita alvos ao mesmo canal e
-  reserva broadcasts globais a `pluginDataGlobal`; o Mobile negocia v5 no `hello`.
-- **Complemento oficial embutido**: **Voz de rádio policial**, o mesmo DSP do
-  Desktop (AGC, banda estreita de radiocomunicação, saturação, squelch e
-  estática), aplicável ao enviar e/ou ao ouvir, sem precisar de `.so` externo.
-- **Atualização do complemento oficial pelo catálogo**: o mesmo efeito também
-  é publicado em pacote `.halla-addon` na central
-  [Halla-Addons](https://grouphalla.github.io/Halla-Addons/) — instalado pelo
-  **Catálogo online**, o pacote `official.radio-voice` **substitui** o
-  embutido; removido, devolve o embutido ao estado anterior. É assim que o
-  filtro de rádio é aprimorado sem publicar um novo APK: a fonte da
-  biblioteca Android vive em `app/src/main/cpp/addons/radio-voice/` e o CI
-  publica os `.so` das quatro ABIs como artefato.
-- Funções sem equivalente no Android (hotkeys globais, mute local por usuário
-  do lado do host) retornam `HALLA_RESULT_UNAVAILABLE`, conforme previsto pela
-  especificação da ABI — plugins devem tolerar ausências.
+- **Same package format**: `.halla-addon` files (ZIP with `manifest.json`),
+  identical to the Desktop's — same manifest, same declared capabilities,
+  same packager (`tools/package_plugin.py` from the Halla repository).
+- **Same public C ABI**: the native host (`plugin_host.cpp`) implements the
+  ABI from `halla_plugin_api.h` (base ABI 1) with the modular interfaces
+  `halla.core.v1`, `halla.connection.v1`, `halla.audio.v1`, `halla.data.v1`,
+  and `halla.ui.v1` via `query_interface()`. A plugin written for the
+  Desktop, recompiled for Android (NDK), works with no code changes —
+  libraries are declared in the manifest under `android-arm64`,
+  `android-arm`, `android-x86_64`, or `android-x86` and loaded with
+  `dlopen()`.
+- **Audio pipeline**: PCM processors at the capture stage (before Opus) and
+  at the remote voice stage (per sender, after decoding), plus per-user
+  gain, distance attenuation, and radio effect.
+- **`plugin_data` transport (protocol v5)**: add-ons exchange binary
+  payloads (≤ 8 KiB) with instances of the same add-on on other clients,
+  over the TLS channel. The server requires `pluginData`, restricts targets
+  to the same channel, and reserves global broadcasts for
+  `pluginDataGlobal`; Mobile negotiates v5 in the `hello`.
+- **Built-in official add-on**: **police radio voice**, the same DSP as the
+  Desktop (AGC, narrow radio-communication band, saturation, squelch, and
+  static), applied when transmitting and/or listening, with no external
+  `.so` needed.
+- **Official add-on updates via the catalog**: the same effect is also
+  published as a `.halla-addon` package in the
+  [Halla-Addons](https://grouphalla.github.io/Halla-Addons/) hub — installed
+  via the **online catalog**, the `official.radio-voice` package
+  **replaces** the built-in one; once removed, the built-in add-on is
+  restored to its previous state. This is how the radio filter is improved
+  without publishing a new APK: the Android library source lives in
+  `app/src/main/cpp/addons/radio-voice/` and CI publishes the `.so` files
+  for the four ABIs as an artifact.
+- Features with no Android equivalent (global hotkeys, host-side per-user
+  local mute) return `HALLA_RESULT_UNAVAILABLE`, as provided for by the ABI
+  specification — plugins must tolerate absences.
 
-> **Segurança:** como no Desktop, uma biblioteca nativa executa no mesmo
-> processo e com os mesmos privilégios do app. As capacidades do manifesto são
-> informativas; instale apenas complementos de fontes confiáveis. A instalação
-> valida o manifesto, limita tamanhos e bloqueia caminhos fora do pacote
-> (zip-slip).
+> **Security:** as on the Desktop, a native library runs in the same process
+> and with the same privileges as the app. Manifest capabilities are
+> informational; install only add-ons from trusted sources. Installation
+> validates the manifest, limits sizes, and blocks paths outside the
+> package (zip-slip).
 
-## Visualizador WebRTC (WebView)
+## WebRTC Viewer (WebView)
 
-Para assistir a transmissão de tela de alguém (modo WebRTC do cliente
-desktop), o Halla Mobile abre uma `WebView` interna e usa o
-**`RTCPeerConnection` nativo do próprio Android System WebView**, em vez de
-empacotar um AAR nativo do libwebrtc. Essa escolha foi deliberada — algumas
-versões do SDK Android nativo do WebRTC derrubavam o processo principal do
-app em determinados aparelhos; rodar a sinalização/mídia dentro do processo
-isolado da WebView evita esse problema, e ainda usa uma implementação real de
-WebRTC (a do Chromium/WebView), não uma simulação.
+To watch someone's screen share (the desktop client's WebRTC mode), Halla
+Mobile opens an internal `WebView` and uses the **native `RTCPeerConnection`
+from Android's own System WebView**, instead of bundling a native libwebrtc
+AAR. This choice was deliberate — some versions of the native Android WebRTC
+SDK crashed the app's main process on certain devices; running the
+signaling/media inside the WebView's isolated process avoids this problem,
+and it still uses a real WebRTC implementation (the Chromium/WebView one),
+not a simulation.
 
-## Arquitetura
+## Architecture
 
 ```
-┌────────────────────────────────────────┐      JNI       ┌────────────────────────────┐
-│        Kotlin (app Android)            │ ─────────────► │  C++ nativo (jni_bridge)    │
-│                                         │ ◄───────────── │                              │
-│  MainActivity    — núcleo de integração │   callbacks     │  HallaClientCore            │
-│    (ciclo de vida, callbacks do         │                 │   • soquetes TCP/UDP crus   │
-│     protocolo, dock de controles)       │                 │   • parser JSON estrutural  │
-│  13 controllers  — UI e domínio:        │                 │     (rastreia objetos/      │
-│    Chat, Identity, RoleIcon, ScreenShare│                 │      strings/escapes)       │
-│    Whisper, ServerAdmin, Servers,       │                 │   • codec Opus (encode/     │
-│    UserDialogs, ChannelTree,            │                 │     decode)                 │
-│    ChannelDialogs, AudioRoute, Settings,│                 │   • threads: TCP, UDP,      │
-│    State (mutação usuários/canais)      │                 │     ping, keepalive NAT —    │
-│  E2eeEngine      — chaves E2EE v6       │                 │     attach JNI por thread    │
-│  HallaService    — 1º plano, notificação│                 │      (RAII, uma vez só)      │
-│    PTT flutuante, reconexão             │                 │                              │
-│  HallaAudioManager — captura/reprodução │                 │                              │
-│    PCM, AEC/NS em rota de comunicação   │                 │                              │
-│  HallaCore       — fachada das funções  │                 │                              │
-│    externas JNI                         │                 │                              │
-│  LocaleManager   — idioma               │                 │                              │
-└────────────────────────────────────────┘                 └────────────────────────────┘
+┌────────────────────────────────────────────┐      JNI       ┌─────────────────────────────┐
+│        Kotlin (Android app)                │ ─────────────► │  C++ native (jni_bridge)    │
+│                                            │ ◄───────────── │                             │
+│  MainActivity    — integration core        │   callbacks    │  HallaClientCore            │
+│    (lifecycle, protocol callbacks,         │                │   • raw TCP/UDP sockets     │
+│     control dock)                          │                │   • structural JSON parser  │
+│  13 controllers  — UI and domain:          │                │     (tracks objects/        │
+│    Chat, Identity, RoleIcon, ScreenShare   │                │      strings/escapes)       │
+│    Whisper, ServerAdmin, Servers,          │                │   • Opus codec (encode/     │
+│    UserDialogs, ChannelTree,               │                │     decode)                 │
+│    ChannelDialogs, AudioRoute, Settings,   │                │   • threads: TCP, UDP,      │
+│    State (user/channel changes)            │                │     ping, NAT keepalive —   │
+│  E2eeEngine      — E2EE v6 keys            │                │     per-thread JNI attach   │
+│  HallaService    — foreground service,     │                │      (RAII, one-time)       │
+│    notification, floating PTT, reconnection│                │                             │
+│  HallaAudioManager — capture/playback      │                │                             │
+│    PCM, AEC/NS on communication route      │                │                             │
+│  HallaCore       — facade for the external │                │                             │
+│    JNI functions                           │                │                             │
+│  LocaleManager   — language                │                │                             │
+└────────────────────────────────────────────┘                └─────────────────────────────┘
 ```
 
-- **`HallaCore`** (Kotlin `object`) é a fachada JNI: carrega
-  `libhalla-core.so` e declara as funções nativas (`connectToServer`,
-  `joinChannel`, `sendChatMessage`, `sendVoiceFrame`, `sendStatus`, ações de
-  administração como `sendKick`/`sendBan`, etc.) e a interface `Callbacks`
-  que o C++ chama de volta (`onConnected`, `onWelcomeReceived`,
-  `onChannelListReceived`, `onUserListReceived`, `onChatMessageReceived`,
-  `onAudioFrameReceived`, `onPingUpdated`, `onPokeReceived`...).
-- **`HallaAudioManager`** cuida só do áudio do lado Android: abre o
-  `AudioRecord`/`AudioTrack`, liga os efeitos nativos de eco/ruído quando
-  disponíveis e usa a **rota de áudio de comunicação** quando há AEC —
-  dá ao cancelador de eco por hardware o caminho certo para funcionar em
-  viva-voz — e entrega/recebe blocos de PCM cru; a codificação/decodificação
-  Opus acontece do lado C++.
-- **`HallaService`** é um `Service` em primeiro plano (tipo `microphone`)
-  que mantém a sessão viva com a tela apagada ou o app em segundo plano,
-  desenha o botão de PTT flutuante (`WindowManager` + `SYSTEM_ALERT_WINDOW`),
-  publica a notificação com ações rápidas e cuida da troca de rede.
-- **`MainActivity`** é a tela principal, feita com Android Views tradicionais
-  (não Compose). Após o refactor, virou o **núcleo de integração** (~1.2 mil
-  linhas): ciclo de vida, os callbacks do protocolo e o dock de controles —
-  o restante vive em **13 controllers coesos** (Chat, Identity, RoleIcon,
-  ScreenShare, Whisper, ServerAdmin, Servers, UserDialogs, ChannelTree,
-  ChannelDialogs, AudioRoute, Settings e HallaState), um por domínio de UI
-  ou de negócio, testáveis em JVM.
-- **`E2eeEngine`/`E2eeCrypto`/`E2eeGroupLogic`** implementam o motor E2EE
-  v6: geração/rotação de chaves de grupo pelo mestre do componente,
-  envelopes `e2e_key`, conteúdo par-a-par e códigos SAS.
-- **`LocaleManager`** aplica o idioma escolhido no app, independente do
-  idioma do sistema.
+- **`HallaCore`** (Kotlin `object`) is the JNI facade: it loads
+  `libhalla-core.so` and declares the native functions (`connectToServer`,
+  `joinChannel`, `sendChatMessage`, `sendVoiceFrame`, `sendStatus`,
+  administration actions such as `sendKick`/`sendBan`, etc.) and the
+  `Callbacks` interface that C++ calls back (`onConnected`,
+  `onWelcomeReceived`, `onChannelListReceived`, `onUserListReceived`,
+  `onChatMessageReceived`, `onAudioFrameReceived`, `onPingUpdated`,
+  `onPokeReceived`...).
+- **`HallaAudioManager`** handles only the Android side of the audio: it
+  opens the `AudioRecord`/`AudioTrack`, enables the native echo/noise
+  effects when available, and uses the **communication audio route** when
+  AEC is available — giving the hardware echo canceller the right path to
+  work in speakerphone mode — and delivers/receives raw PCM blocks; Opus
+  encoding/decoding happens on the C++ side.
+- **`HallaService`** is a foreground `Service` (type `microphone`) that
+  keeps the session alive with the screen off or the app in the background,
+  draws the floating PTT button (`WindowManager` + `SYSTEM_ALERT_WINDOW`),
+  posts the notification with quick actions, and handles network changes.
+- **`MainActivity`** is the main screen, built with traditional Android
+  Views (not Compose). After the refactor, it became the **integration
+  core** (~1.2 thousand lines): lifecycle, the protocol callbacks, and the
+  control dock — the rest lives in **13 cohesive controllers** (Chat,
+  Identity, RoleIcon, ScreenShare, Whisper, ServerAdmin, Servers,
+  UserDialogs, ChannelTree, ChannelDialogs, AudioRoute, Settings, and
+  HallaState), one per UI or business domain, testable on the JVM.
+- **`E2eeEngine`/`E2eeCrypto`/`E2eeGroupLogic`** implement the E2EE v6
+  engine: group key generation/rotation by the component's master,
+  `e2e_key` envelopes, peer-to-peer content, and SAS codes.
+- **`LocaleManager`** applies the language chosen in the app, regardless of
+  the system language.
 
-## Núcleo nativo (C++/JNI)
+## Native Core (C++/JNI)
 
-`app/src/main/cpp/jni_bridge.cpp` implementa a classe `HallaClientCore`,
-autocontida, sem depender de Qt:
+`app/src/main/cpp/jni_bridge.cpp` implements the `HallaClientCore` class,
+self-contained, with no dependency on Qt:
 
-- Conexão de controle via **soquete TCP** cru (BSD sockets/POSIX), com um
-  **parser JSON estrutural** próprio (`jsonExtractString`,
-  `jsonExtractArray`): rastreia profundidade de objetos/arrays, strings e
-  escapes, e suporta números negativos — imune a valores que colidem com
-  nomes de chave e a colchetes desbalanceados dentro de strings, sem trazer
-  uma biblioteca JSON completa para o binário nativo.
-- Voz via **soquete UDP**, com um `std::thread` dedicado ao laço de
-  recepção (`udpLoop`) e outro para o keepalive/hole-punching de NAT
+- Control connection over a raw **TCP socket** (BSD sockets/POSIX), with a
+  purpose-built **structural JSON parser** (`jsonExtractString`,
+  `jsonExtractArray`): it tracks object/array depth, strings, and escapes,
+  and supports negative numbers — immune to values that collide with key
+  names and to unbalanced brackets inside strings, without bringing a full
+  JSON library into the native binary.
+- Voice over a **UDP socket**, with a `std::thread` dedicated to the
+  receive loop (`udpLoop`) and another for NAT keepalive/hole-punching
   (`udpPingLoop`).
-- Um `std::thread` próprio para o laço de controle TCP (`tcpLoop`) e outro
-  só para medir latência (`pingLoop`).
-- **Attach JNI por thread (RAII)**: cada thread nativa faz `AttachCurrentThread`
-  uma única vez na entrada (com desanexo automático no fim) e mantém o
-  `JNIEnv` em cache thread-local — em vez de pagar attach/detach a **cada**
-  callback (~20 pontos de chamada), reduzindo latência e CPU por frame de
-  áudio.
-- Codificação/decodificação de voz com **libopus**, e cifragem AEAD
-  (ChaCha20-Poly1305) com **mbedTLS** — ambos baixados e compilados na hora
-  do build via `FetchContent` (veja `app/src/main/cpp/CMakeLists.txt`), sem
-  precisar empacotar binários pré-compilados por ABI do Android.
-- A geração/assinatura da identidade Ed25519 fica do lado Kotlin
-  (`HallaCore.identityPublicKeyBase64`/`signIdentityNonceBase64`, chamadas de
-  volta via JNI) — mantém o material de chave sob a Keystore do Android em
-  vez de trafegar pelo núcleo C++.
-- Todo evento relevante (conectado, desconectado, boas-vindas, lista de
-  canais/usuários, mensagem de chat, quadro de áudio recebido, erro, ping,
-  poke...) vira uma chamada JNI de volta para o `HallaCore.Callbacks` do
-  Kotlin.
+- A dedicated `std::thread` for the TCP control loop (`tcpLoop`) and another
+  just for measuring latency (`pingLoop`).
+- **Per-thread JNI attach (RAII)**: each native thread calls
+  `AttachCurrentThread` exactly once on entry (with automatic detach at the
+  end) and keeps the `JNIEnv` cached in thread-local storage — instead of
+  paying attach/detach on **every** callback (~20 call sites), reducing
+  latency and CPU per audio frame.
+- Voice encoding/decoding with **libopus**, and AEAD encryption
+  (ChaCha20-Poly1305) with **mbedTLS** — both downloaded and compiled at
+  build time via `FetchContent` (see `app/src/main/cpp/CMakeLists.txt`),
+  with no need to package precompiled binaries per Android ABI.
+- Ed25519 identity generation/signing stays on the Kotlin side
+  (`HallaCore.identityPublicKeyBase64`/`signIdentityNonceBase64`, called
+  back via JNI) — keeping the key material under the Android Keystore
+  instead of passing through the C++ core.
+- Every relevant event (connected, disconnected, welcome, channel/user
+  list, chat message, received audio frame, error, ping, poke...) becomes
+  a JNI call back into Kotlin's `HallaCore.Callbacks`.
 
-## Serviço em segundo plano
+## Background Service
 
-Boa parte do valor do app está em continuar funcionando com a tela apagada
-ou o usuário em outro aplicativo — igual um cliente de voz "de verdade"
-deve se comportar:
+Much of the app's value lies in continuing to work with the screen off or
+the user in another app — the way a "real" voice client should behave:
 
-- `HallaService` roda como **serviço em primeiro plano** (`foregroundServiceType="microphone"`),
-  com notificação obrigatória (exigência do Android para manter o microfone
-  ativo em segundo plano).
-- Um **botão de PTT flutuante** pode ser desenhado por cima de outros apps
-  (permissão `SYSTEM_ALERT_WINDOW`), para segurar e falar sem precisar abrir
-  o Halla Mobile.
-- Detecta trocas de rede (`ConnectivityManager`/`NetworkCapabilities`) para
-  reconectar sem o usuário perceber ao sair do Wi-Fi para os dados móveis
-  (ou vice-versa).
+- `HallaService` runs as a **foreground service**
+  (`foregroundServiceType="microphone"`), with the mandatory notification
+  (an Android requirement to keep the microphone active in the
+  background).
+- A **floating PTT button** can be drawn on top of other apps
+  (`SYSTEM_ALERT_WINDOW` permission) to hold and talk without opening
+  Halla Mobile.
+- It detects network changes (`ConnectivityManager`/`NetworkCapabilities`)
+  to reconnect without the user noticing when switching from Wi-Fi to
+  mobile data (or vice versa).
 
-## Permissões usadas
+## Permissions Used
 
-| Permissão | Para quê |
+| Permission | Purpose |
 |---|---|
-| `INTERNET` | conexão com o Halla Server |
-| `RECORD_AUDIO` | captura do microfone |
-| `MODIFY_AUDIO_SETTINGS` | modo de áudio de comunicação, roteamento fone/alto-falante |
-| `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MICROPHONE` | manter a chamada ativa em segundo plano |
-| `POST_NOTIFICATIONS` | notificação de chamada ativa com ações rápidas |
-| `SYSTEM_ALERT_WINDOW` | botão de PTT flutuante sobre outros apps |
-| `REQUEST_INSTALL_PACKAGES` | instalar a atualização baixada dentro do app |
-| `BLUETOOTH`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN` | roteamento de áudio para fones Bluetooth |
+| `INTERNET` | connection to the Halla Server |
+| `RECORD_AUDIO` | microphone capture |
+| `MODIFY_AUDIO_SETTINGS` | communication audio mode, headset/speaker routing |
+| `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MICROPHONE` | keeping the call active in the background |
+| `POST_NOTIFICATIONS` | active call notification with quick actions |
+| `SYSTEM_ALERT_WINDOW` | floating PTT button over other apps |
+| `REQUEST_INSTALL_PACKAGES` | installing the update downloaded in the app |
+| `BLUETOOTH`, `BLUETOOTH_CONNECT`, `BLUETOOTH_SCAN` | audio routing to Bluetooth headsets |
 
-## Estrutura do repositório
+## Repository Structure
 
 ```
 app/
-├── build.gradle.kts              módulo Android (SDK, NDK, dependências)
+├── build.gradle.kts              Android module (SDK, NDK, dependencies)
 └── src/main/
     ├── AndroidManifest.xml
     ├── cpp/
-    │   ├── CMakeLists.txt         builda libhalla-core.so (busca o Opus via FetchContent)
-    │   ├── jni_bridge.cpp         núcleo de rede/voz nativo (JNI)
-    │   ├── halla_plugin_api.h     ABI C pública de complementos (a mesma do Desktop)
-    │   ├── plugin_host.h/.cpp     host de complementos: dlopen, interfaces
+    │   ├── CMakeLists.txt         builds libhalla-core.so (fetches Opus via FetchContent)
+    │   ├── jni_bridge.cpp         native network/voice core (JNI)
+    │   ├── halla_plugin_api.h     public C ABI for add-ons (same as the Desktop)
+    │   ├── plugin_host.h/.cpp     add-on host: dlopen, interfaces
     │   │                          halla.core/connection/audio/data/ui v1,
-    │   │                          hooks de PCM e transporte plugin_data (v5)
+    │   │                          PCM hooks and plugin_data transport (v5)
     ├── kotlin/com/halla/mobile/
-    │   ├── HallaCore.kt           fachada JNI (funções externas + callbacks,
-    │   │                          + geração/assinatura da identidade Ed25519)
-    │   ├── MainActivity.kt        núcleo de integração: ciclo de vida,
-    │   │                          callbacks do protocolo, dock de controles
+    │   ├── HallaCore.kt           JNI facade (external functions + callbacks,
+    │   │                          + Ed25519 identity generation/signing)
+    │   ├── MainActivity.kt        integration core: lifecycle,
+    │   │                          protocol callbacks, control dock
     │   ├── ChatController.kt .. HallaStateController.kt
-    │   │                          13 controllers coesos extraídos do antigo
-    │   │                          monólito (Chat, Identity, RoleIcon,
+    │   │                          13 cohesive controllers extracted from the old
+    │   │                          monolith (Chat, Identity, RoleIcon,
     │   │                          ScreenShare, Whisper, ServerAdmin, Servers,
     │   │                          UserDialogs, ChannelTree, ChannelDialogs,
     │   │                          AudioRoute, Settings, State)
     │   ├── E2eeEngine.kt / E2eeCrypto.kt / E2eeGroupLogic.kt
-    │   │                          motor E2EE v6: chaves de grupo, envelopes
-    │   │                          e2e_key, par-a-par, SAS
-    │   ├── HallaAudioManager.kt   captura/reprodução PCM, AEC/NS em rota de
-    │   │                          comunicação, gravação local
-    │   ├── HallaService.kt        serviço em 1º plano, notificação, overlay de PTT
+    │   │                          E2EE v6 engine: group keys, e2e_key
+    │   │                          envelopes, peer-to-peer, SAS
+    │   ├── HallaAudioManager.kt   PCM capture/playback, AEC/NS on the
+    │   │                          communication route, local recording
+    │   ├── HallaService.kt        foreground service, notification, PTT overlay
     │   ├── HallaWebRtcViewer.kt / HallaWebRtcBroadcaster.kt
-    │   │                          transmitir/assistir tela (WebRTC)
-    │   ├── LocaleManager.kt       troca de idioma em runtime
-    │   ├── PluginManager.kt       complementos: pacotes .halla-addon, manifesto,
-    │   │                          ativar/desativar, configurações por schema
+    │   │                          stream/watch screen (WebRTC)
+    │   ├── LocaleManager.kt       runtime language switching
+    │   ├── PluginManager.kt       add-ons: .halla-addon packages, manifest,
+    │   │                          enable/disable, schema-based settings
     │   └── …                      (AddonCatalog, BadgeRegistry, RoleIconCache,
     │                              HallaUidPersistence, HallaUpdateManager …)
     └── res/
-        ├── drawable/              ícones vetoriais e logo
+        ├── drawable/              vector icons and logo
         ├── layout/activity_main.xml
-        └── values(-en|-es)/strings.xml   pt-BR (padrão), inglês, espanhol
+        └── values(-en|-es)/strings.xml   pt-BR (default), English, Spanish
 build.gradle.kts, settings.gradle.kts, gradle.properties, gradlew
 ```
 
-## Compilando
+## Building
 
-**Requisitos**: Android Studio (ou o `gradlew` da linha de comando) com
-JDK 17, Android SDK 34 e NDK **25.2.9519653** instalados.
+**Requirements**: Android Studio (or the `gradlew` from the command line)
+with JDK 17, Android SDK 34, and NDK **25.2.9519653** installed.
 
 ```bash
-./gradlew assembleDebug   # desenvolvimento, applicationId com sufixo .debug
+./gradlew assembleDebug   # development; applicationId with .debug suffix
 ```
 
-Releases oficiais usam `assembleRelease`, keystore estável configurada pelos
-GitHub Secrets documentados em `SECURITY.md`, `apksigner verify`, SHA-256,
-testes unitários e Android lint.
+Official releases use `assembleRelease`, a stable keystore configured
+through GitHub Secrets documented in `SECURITY.md`, `apksigner verify`,
+SHA-256, unit tests, and Android lint.
 
-O Gradle, via `externalNativeBuild`, aciona o CMake de
-`app/src/main/cpp/CMakeLists.txt` automaticamente — não é preciso rodar o
-CMake manualmente. Na primeira build, o CMake baixa e compila o Opus a partir
-da fonte (requer acesso à internet nesse passo).
+Gradle, via `externalNativeBuild`, triggers CMake from
+`app/src/main/cpp/CMakeLists.txt` automatically — there is no need to run
+CMake manually. On the first build, CMake downloads and compiles Opus from
+source (internet access required at this step).
 
 ## CI/CD
 
-`.github/workflows/android.yml` executa testes e lint em pushes/PRs, gera um
-APK debug separado apenas para CI e, em tags `v*`, exige a keystore de produção,
-gera `HallaMobile.apk` assinado, valida a assinatura e publica APK + SHA-256.
+`.github/workflows/android.yml` runs tests and lint on pushes/PRs, builds a
+separate debug APK just for CI and, on `v*` tags, requires the production
+keystore, produces a signed `HallaMobile.apk`, validates the signature, and
+publishes the APK + SHA-256.
 
-## Idiomas
+## Languages
 
-`values/` (padrão, português), `values-en/` e `values-es/` — cerca de 385
-strings traduzidas em cada um. A troca pode ser feita dentro do próprio app
-(`LocaleManager`), sem depender do idioma do sistema Android.
+`values/` (default, Portuguese), `values-en/`, and `values-es/` — about 385
+translated strings in each. The language can be switched inside the app
+itself (`LocaleManager`), regardless of the Android system language.
 
-## Projetos relacionados
+## Related Projects
 
-- **[Halla](https://github.com/GroupHalla/Halla)** — cliente desktop
-  (Windows/Linux, Qt 6) que fala o mesmo protocolo. Desktop e Mobile podem
-  transmitir tela via WebRTC; o Mobile usa MediaProjection para publicar e
-  WebView/Chromium para assistir.
-- **[Halla Server](https://github.com/GroupHalla/HallaServer)** — servidor
-  auto-hospedável; veja
+- **[Halla](https://github.com/GroupHalla/Halla)** — the desktop client
+  (Windows/Linux, Qt 6) that speaks the same protocol. Desktop and Mobile
+  can share screens via WebRTC; Mobile uses MediaProjection to publish and
+  WebView/Chromium to watch.
+- **[Halla Server](https://github.com/GroupHalla/HallaServer)** —
+  self-hostable server; see
   [`PROTOCOL.md`](https://github.com/GroupHalla/HallaServer/blob/main/PROTOCOL.md)
-  para a especificação completa do protocolo (atualmente v6, com E2EE).
+  for the full protocol specification (currently v6, with E2EE).
 
-## Observação sobre o `CMakeLists.txt` da raiz
+## Note about the root `CMakeLists.txt`
 
-O repositório ainda tem um `CMakeLists.txt` na raiz que referencia um app Qt
-Quick/QML (`HallaMobileApp`, `src/main.cpp`, `src/Main.qml`,
-`src/net/MobileNetSession.*`). Esses arquivos **não existem** na árvore do
-projeto — foi uma abordagem inicial (Qt for Android), substituída pelo app
-Android nativo descrito acima. O build real, local e no CI, usa
-exclusivamente o Gradle (`./gradlew assembleDebug`/`assembleRelease`); esse
-`CMakeLists.txt` da raiz continua sendo código morto e pode ser removido com
-segurança.
+The repository still has a `CMakeLists.txt` at the root that references a
+Qt Quick/QML app (`HallaMobileApp`, `src/main.cpp`, `src/Main.qml`,
+`src/net/MobileNetSession.*`). Those files **do not exist** in the project
+tree — it was an initial approach (Qt for Android), replaced by the native
+Android app described above. The real build, local and in CI, uses Gradle
+exclusively (`./gradlew assembleDebug`/`assembleRelease`); that root
+`CMakeLists.txt` remains dead code and can be safely removed.
 
-## Licença
+## License
 
-Livre para uso não comercial ([`LICENSE`](LICENSE)): usar, estudar,
-modificar e redistribuir gratuitamente, sem pedir permissão. Vender,
-alugar ou embutir em produto comercial exige autorização escrita dos
-mantenedores. Componentes de terceiros (Opus, mbedTLS, WebRTC Android
-SDK) seguem as respectivas licenças originais.
+Free for non-commercial use ([`LICENSE`](LICENSE)): use, study, modify, and
+redistribute free of charge, without asking permission. Selling, renting,
+or embedding it in a commercial product requires written authorization from
+the maintainers. Third-party components (Opus, mbedTLS, WebRTC Android
+SDK) follow their respective original licenses.
