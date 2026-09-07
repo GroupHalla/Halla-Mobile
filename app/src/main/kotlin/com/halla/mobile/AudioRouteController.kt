@@ -50,11 +50,32 @@ class AudioRouteController(private val activity: MainActivity) {
         )
         (activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager)
             .registerAudioDeviceCallback(audioDeviceCallback, activity.handler)
+        // Fone enfiado/removido com a Activity aberta: ícone e toast seguem
+        // a rota aplicada pelo manager (que também cobre o service ativo).
+        activity.audioManager.onRouteChanged = { kind ->
+            activity.runOnUiThread {
+                updateRouteIcon()
+                val msg = when (kind) {
+                    HallaAudioManager.CommRouteKind.WIRED ->
+                        activity.getString(R.string.wired_headset_connected)
+                    HallaAudioManager.CommRouteKind.BLUETOOTH ->
+                        activity.getString(R.string.bluetooth_connected)
+                    HallaAudioManager.CommRouteKind.SPEAKER ->
+                        activity.getString(R.string.audio_speaker)
+                    HallaAudioManager.CommRouteKind.EARPIECE ->
+                        activity.getString(R.string.audio_earpiece)
+                }
+                Toast.makeText(activity, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
         routeBluetoothIfAvailable()
     }
 
     /** Chamado no onDestroy: solta receivers, sensor e wakelock. */
     internal fun release() {
+        try {
+            activity.audioManager.onRouteChanged = null
+        } catch (_: Exception) {}
         try {
             activity.unregisterReceiver(bluetoothReceiver)
             activity.unregisterReceiver(serviceStateReceiver)
@@ -86,37 +107,38 @@ class AudioRouteController(private val activity: MainActivity) {
     // ============================================================================
 
     internal fun routeBluetoothIfAvailable() {
-        try {
-            val systemAudio = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val devices = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                systemAudio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
-            } else emptyList()
-            val bluetooth = devices.firstOrNull {
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
-            }
-            if (bluetooth != null) {
-                // Roteia a voz para o headset no stream de comunicação
-                // (setCommunicationDevice no Android 12+; SCO legado antes).
-                // A descoberta continua aqui porque é onde a permissão
-                // BLUETOOTH_CONNECT é checada.
-                activity.audioManager.setBluetoothRoute()
-                btnAudioRoute?.setBackgroundResource(R.drawable.ic_headphones)
-            }
-        } catch (_: SecurityException) {
-            // O headset continua sendo opcional quando a permissão Bluetooth
-            // ainda não foi concedida pelo Android.
-        }
+        // Roteamento unificado no HallaAudioManager: fio/USB > Bluetooth >
+        // alto-falante/auricular (preferência do toggle). O controller só
+        // reflete o resultado no ícone do botão.
+        activity.audioManager.applyCommunicationRoute()
+        updateRouteIcon()
+    }
+
+    /** Ícone do botão reflete a rota ATIVA (fone conectado ganha do toggle). */
+    internal fun updateRouteIcon() {
+        val kind = activity.audioManager.currentCommunicationKind()
+        btnAudioRoute?.setBackgroundResource(when (kind) {
+            HallaAudioManager.CommRouteKind.WIRED,
+            HallaAudioManager.CommRouteKind.BLUETOOTH -> R.drawable.ic_headphones
+            else -> if (activity.audioManager.userWantsSpeaker)
+                R.drawable.ic_speaker else R.drawable.ic_headphones
+        })
     }
 
     private fun toggleAudioRoute() {
         isSpeakerPhone = !isSpeakerPhone
         // Alto-falante x auricular no stream de comunicação (Android 12+ via
         // setCommunicationDevice; legado antes). Modo de comunicação e volume
-        // de chamada ficam a cargo do HallaAudioManager.
+        // de chamada ficam a cargo do HallaAudioManager. Fone com fio/USB/Bluetooth
+        // conectado tem prioridade sobre o toggle (a voz segue no fone).
         activity.audioManager.setSpeakerphoneRoute(isSpeakerPhone)
+        if (activity.audioManager.currentCommunicationKind() ==
+                HallaAudioManager.CommRouteKind.WIRED ||
+            activity.audioManager.currentCommunicationKind() ==
+                HallaAudioManager.CommRouteKind.BLUETOOTH) {
+            updateRouteIcon()
+            return
+        }
         if (isSpeakerPhone) {
             btnAudioRoute?.setBackgroundResource(R.drawable.ic_speaker)
             Toast.makeText(activity, activity.getString(R.string.audio_speaker), Toast.LENGTH_SHORT).show()
@@ -183,15 +205,14 @@ class AudioRouteController(private val activity: MainActivity) {
     private val bluetoothReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
-            val audioManagerSystem = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
             if (state == AudioManager.SCO_AUDIO_STATE_CONNECTED) {
-                audioManagerSystem.isBluetoothScoOn = true
-                audioManagerSystem.startBluetoothSco()
                 Toast.makeText(context, activity.getString(R.string.bluetooth_connected), Toast.LENGTH_SHORT).show()
             } else if (state == AudioManager.SCO_AUDIO_STATE_DISCONNECTED) {
-                audioManagerSystem.isBluetoothScoOn = false
-                audioManagerSystem.stopBluetoothSco()
+                // O roteamento unificado do HallaAudioManager reage sozinho ao
+                // headset sumir; aqui apenas re-aplica por segurança.
+                activity.audioManager.applyCommunicationRoute()
             }
+            updateRouteIcon()
         }
     }
 }

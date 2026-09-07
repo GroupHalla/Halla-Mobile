@@ -251,6 +251,15 @@ Download and install now?</string>
     <string name="ban_time">Time in minutes (0 for permanent)</string>
     <string name="ban_title">Ban user: %1$s</string>
     <string name="bluetooth_connected">Bluetooth connected</string>
+    <string name="mic_boost_title">Microphone volume boost (beyond the limit)</string>
+    <string name="mic_boost_hint">0 to +30 dB in software, with a soft limiter so it never crackles. A louder mic also opens voice detection more easily.</string>
+    <string name="mic_boost_off">off</string>
+    <string name="wired_headset_connected">Headset connected</string>
+    <string name="user_volume">Volume for %1$s</string>
+    <string name="user_volume_title">Volume for %1$s</string>
+    <string name="user_volume_hint">-60 to +30 dB — changes only what YOU hear from this person and it stays saved.</string>
+    <string name="user_volume_reset">Reset (0 dB)</string>
+    <string name="user_volume_reset_done">Volume reset to 0 dB</string>
     <string name="channel_title">Channel: %1$s</string>
     <string name="choose_identity">Choose identity</string>
     <string name="client_details">Details of %1$s</string>

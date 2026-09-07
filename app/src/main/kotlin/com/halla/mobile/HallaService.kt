@@ -47,6 +47,8 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val ACTION_SET_PTT = "com.halla.mobile.action.SET_PTT"
         const val ACTION_SET_TRANSMISSION_MODE = "com.halla.mobile.action.SET_TRANSMISSION_MODE"
         const val ACTION_SET_AUDIO_PROCESSING = "com.halla.mobile.action.SET_AUDIO_PROCESSING"
+        const val ACTION_SET_MIC_GAIN = "com.halla.mobile.action.SET_MIC_GAIN"
+        const val ACTION_SET_USER_VOLUME = "com.halla.mobile.action.SET_USER_VOLUME"
         const val ACTION_SET_OVERLAY = "com.halla.mobile.action.SET_OVERLAY"
         const val ACTION_SET_OVERLAY_POSITION = "com.halla.mobile.action.SET_OVERLAY_POSITION"
         const val ACTION_REFRESH_WHISPER_OVERLAYS = "com.halla.mobile.action.REFRESH_WHISPER_OVERLAYS"
@@ -64,6 +66,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         const val EXTRA_MODE = "mode"
         const val EXTRA_NOISE_SUPPRESSION = "noise_suppression"
         const val EXTRA_ECHO_CANCELLATION = "echo_cancellation"
+        const val EXTRA_MIC_GAIN = "mic_gain_db"
+        const val EXTRA_USER_ID = "user_id"
+        const val EXTRA_USER_VOLUME = "user_volume_db"
         const val EXTRA_ENABLED = "enabled"
         const val EXTRA_POSITION = "position"
         const val EXTRA_PROJECTION_DATA = "projection_data"
@@ -214,6 +219,21 @@ class HallaService : Service(), HallaCore.Callbacks {
             })
         }
 
+        fun setMicGain(context: Context, gainDb: Int) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_MIC_GAIN
+                putExtra(EXTRA_MIC_GAIN, gainDb)
+            })
+        }
+
+        fun setUserVolume(context: Context, userId: Int, volumeDb: Int) {
+            context.startService(Intent(context, HallaService::class.java).apply {
+                action = ACTION_SET_USER_VOLUME
+                putExtra(EXTRA_USER_ID, userId)
+                putExtra(EXTRA_USER_VOLUME, volumeDb)
+            })
+        }
+
         fun isRunning(): Boolean = instance != null
         fun isSessionActive(): Boolean = sessionActive
         fun isReconnecting(): Boolean = reconnecting
@@ -335,6 +355,17 @@ class HallaService : Service(), HallaCore.Callbacks {
                     .apply()
                 audio.setNoiseSuppressionEnabled(noise)
                 audio.setEchoCancellationEnabled(echo)
+            }
+            ACTION_SET_MIC_GAIN -> {
+                val db = intent.getIntExtra(EXTRA_MIC_GAIN, 0).coerceIn(0, 30)
+                getSharedPreferences("HallaSettings", MODE_PRIVATE).edit()
+                    .putInt("mic_gain_db", db).apply()
+                audio.micGainDb = db
+            }
+            ACTION_SET_USER_VOLUME -> {
+                val userId = intent.getIntExtra(EXTRA_USER_ID, 0)
+                val db = intent.getIntExtra(EXTRA_USER_VOLUME, 0).coerceIn(-60, 30)
+                audio.setUserVolumeDb(userId, db)
             }
             ACTION_SET_OVERLAY -> {
                 val enabled = intent.getBooleanExtra(EXTRA_ENABLED, false)
@@ -534,8 +565,21 @@ class HallaService : Service(), HallaCore.Callbacks {
         val settings = getSharedPreferences("HallaSettings", MODE_PRIVATE)
         audio.transmissionMode = settings.getInt("transmission_mode", 0)
         audio.vadThreshold = settings.getInt("vad_sensitivity", 50) * 3.0
+        audio.micGainDb = settings.getInt("mic_gain_db", 0).coerceIn(0, 30)
         audio.setNoiseSuppressionEnabled(settings.getBoolean("noise_suppression", true))
         audio.setEchoCancellationEnabled(settings.getBoolean("echo_cancellation", true))
+        // Volume individual por usuário restaurado do disco: o resolvedor
+        // consulta o welcome vivo (mantido atual pelos eventos user_*),
+        // mesmo que a fala aconteça com a Activity fechada.
+        audio.uidResolver = { userId ->
+            synchronized(welcomeLock) {
+                cachedWelcome?.optJSONArray("users")?.let { users ->
+                    (0 until users.length()).firstOrNull {
+                        users.optJSONObject(it)?.optInt("id", -1) == userId
+                    }?.let { idx -> users.optJSONObject(idx)?.optString("uid", "") }
+                }
+            }
+        }
     }
 
     private fun startAudio() {
@@ -545,7 +589,9 @@ class HallaService : Service(), HallaCore.Callbacks {
         // A voz recebida agora sai no stream de COMUNICAÇÃO — antes, com o
         // playback em USAGE_MEDIA, o AcousticEchoCanceler não via o áudio
         // tocado como referência e o eco do viva-voz voltava pelo microfone.
-        // Alto-falante segue como rota padrão, como antes.
+        // Alto-falante como PREFERÊNCIA padrão — mas um fone com fio/USB/Bluetooth
+        // conectado tem prioridade (applyCommunicationRoute decide). Antes o
+        // alto-falante forçado aqui fazia o fone recém-enfiado nunca receber voz.
         audio.setSpeakerphoneRoute(true)
         // Não força um modo/stream especial antes de abrir o microfone: alguns
         // fabricantes deixam a captura sem dados nessa combinação. A fonte

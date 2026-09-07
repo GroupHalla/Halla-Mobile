@@ -251,6 +251,15 @@ Deseja baixar e instalar agora?</string>
     <string name="ban_time">Tempo em minutos (0 para permanente)</string>
     <string name="ban_title">Banir usuário: %1$s</string>
     <string name="bluetooth_connected">Bluetooth conectado</string>
+    <string name="mic_boost_title">Aumentar volume do microfone (além do limite)</string>
+    <string name="mic_boost_hint">0 a +30 dB por software, com limitador suave para não estalar. Mic mais alto também abre a detecção de voz mais fácil.</string>
+    <string name="mic_boost_off">desligado</string>
+    <string name="wired_headset_connected">Fone de ouvido conectado</string>
+    <string name="user_volume">Volume de %1$s</string>
+    <string name="user_volume_title">Volume de %1$s</string>
+    <string name="user_volume_hint">-60 a +30 dB — altera só o que VOCÊ ouve desta pessoa e fica salvo.</string>
+    <string name="user_volume_reset">Redefinir (0 dB)</string>
+    <string name="user_volume_reset_done">Volume redefinido para 0 dB</string>
     <string name="channel_title">Canal: %1$s</string>
     <string name="choose_identity">Escolher identidade</string>
     <string name="client_details">Detalhes de %1$s</string>

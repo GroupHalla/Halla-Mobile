@@ -73,6 +73,7 @@ class UserDialogsController(private val activity: MainActivity) {
                 else "📱 ${activity.getString(R.string.start_screen_share)}")
             options.add("✏️ ${activity.getString(R.string.change_nickname)}")
         } else {
+            options.add("🔊 ${activity.getString(R.string.user_volume, name)}")
             options.add("👉 ${activity.getString(R.string.poke)}")
             options.add("🔐 ${activity.getString(R.string.e2ee_verify)}")
             if (usr.optBoolean("screensharing", false) && activity.state.getChannelOfUser(userId) == activity.state.getChannelOfUser(activity.selfId)) {
@@ -118,6 +119,8 @@ class UserDialogsController(private val activity: MainActivity) {
                     activity.toggleOwnScreenShare()
                 } else if (choice.contains(activity.getString(R.string.change_nickname))) {
                     showChangeNicknameDialog()
+                } else if (choice.startsWith("🔊") && choice.contains(activity.getString(R.string.user_volume, ""))) {
+                    showUserVolumeDialog(userId, name, usr)
                 } else if (choice.contains(activity.getString(R.string.poke))) {
                     showSendPokeDialog(userId, name)
                 } else if (choice.contains("Ver transmissão")) {
@@ -138,6 +141,85 @@ class UserDialogsController(private val activity: MainActivity) {
                     showBanDialog(userId, name)
                 }
             }
+            .show()
+    }
+
+    /**
+     * Volume individual (-60..+30 dB) aplicado na mixagem de playback:
+     * igual ao Desktop — mais alcance do que os 0..12 dB antigos e fica
+     * salvo por uid da pessoa (sobrevive a reconexões e sessões).
+     */
+    private fun showUserVolumeDialog(userId: Int, name: String, usr: JSONObject) {
+        val context = activity
+        val prefs = context.getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+        val uid = usr.optString("uid", "")
+        fun savedDb(): Int {
+            val byUid = if (uid.isNotEmpty())
+                prefs.getInt("user_volume_uid_$uid", Int.MIN_VALUE) else Int.MIN_VALUE
+            return if (byUid != Int.MIN_VALUE) byUid
+                else prefs.getInt("user_volume_$userId", 0)
+        }
+
+        fun formatDb(db: Int): String = if (db > 0) "+$db dB" else "$db dB"
+
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(activity.dp(20), activity.dp(10), activity.dp(20), 0)
+        }
+        val value = TextView(context).apply {
+            text = formatDb(savedDb())
+            setTextColor(activity.dialogTextPrimary())
+            textSize = 15f
+            setPadding(0, activity.dp(4), 0, activity.dp(4))
+        }
+        container.addView(value)
+        val seek = SeekBar(context).apply {
+            // -60..+30 dB: range de 90 pontos, progress = dB + 60.
+            max = 90
+            progress = savedDb() + 60
+        }
+        container.addView(seek)
+        val hint = TextView(context).apply {
+            text = activity.getString(R.string.user_volume_hint)
+            setTextColor(activity.dialogTextSecondary())
+            textSize = 12f
+            setPadding(0, activity.dp(2), 0, activity.dp(2))
+        }
+        container.addView(hint)
+
+        fun applyDb(db: Int) {
+            val coerced = db.coerceIn(-60, 30)
+            // Salva por uid estável (e espelha por userId como fallback).
+            prefs.edit()
+                .putInt("user_volume_$userId", coerced)
+                .apply()
+            if (uid.isNotEmpty()) {
+                prefs.edit().putInt("user_volume_uid_$uid", coerced).apply()
+            }
+            // Aplica na hora na Activity E no service ativo (o playback em
+            // uso durante a sessão pertence ao service).
+            activity.audioManager.setUserVolumeDb(userId, coerced)
+            if (HallaService.isRunning()) HallaService.setUserVolume(context, userId, coerced)
+            value.text = formatDb(coerced)
+        }
+
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) applyDb(progress - 60)
+            }
+            override fun onStartTrackingTouch(s: SeekBar?) {}
+            override fun onStopTrackingTouch(s: SeekBar?) {}
+        })
+
+        AlertDialog.Builder(context)
+            .setTitle(activity.getString(R.string.user_volume_title, name))
+            .setView(container)
+            .setNeutralButton(activity.getString(R.string.user_volume_reset)) { _, _ ->
+                applyDb(0)
+                Toast.makeText(context, activity.getString(R.string.user_volume_reset_done),
+                    Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton(activity.getString(R.string.close), null)
             .show()
     }
 

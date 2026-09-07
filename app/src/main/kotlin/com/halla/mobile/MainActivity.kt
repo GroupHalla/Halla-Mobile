@@ -396,6 +396,16 @@ class MainActivity : AppCompatActivity(), HallaCore.Callbacks {
         audioManager.onTalkingStateChanged = { talking ->
             runOnUiThread { updateTalkingUi(talking) }
         }
+        // Volume individual por usuário restaurado do disco: quando a sessão
+        // roda SEM o foreground service, o resolvedor id→uid usa a usersData
+        // viva da Activity (o service registra o próprio no AudioManager dele).
+        audioManager.uidResolver = { userId ->
+            try {
+                (0 until usersData.length()).firstOrNull {
+                    usersData.optJSONObject(it)?.optInt("id", -1) == userId
+                }?.let { idx -> usersData.optJSONObject(idx)?.optString("uid", "") }
+            } catch (_: Throwable) { null }
+        }
 
         // Configura Callbacks do C++ Core JNI. O foreground service também
         // observa o core para manter áudio/rede vivos sem a Activity.

@@ -14,10 +14,13 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.concurrent.thread
 import kotlin.math.sqrt
+import kotlin.math.tanh
 
 /**
  * Captura e reprodução de voz do Mobile.
@@ -63,6 +66,24 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
     @Volatile var transmissionMode = 0 // 0 = VAD, 1 = PTT, 2 = Continuous
     @Volatile var isPttPressed = false
     @Volatile var whisperPressed = false
+
+    // ---- Boost de microfone por software (0..+30 dB) ----
+    // "Aumentar volume do microfone" vai ALÉM do limite do dispositivo: o
+    // PCM capturado é amplificado antes do VAD e do encoder. Mic mais alto
+    // abre a detecção de voz mais fácil, que é o comportamento esperado.
+    // Saturação suave (soft-clip tanh) acima de ~-18 dBFS: o sinal comprime
+    // em vez de estalar, para manter o áudio utilizável no extremo.
+    @Volatile var micGainDb = 0
+
+    // ---- Volume individual por usuário (-60..+30 dB), persistido por uid ----
+    // Aplicado na mixagem de playback, igual ao Desktop: cada fone de
+    // ouvido remoto pode ficar mais alto ou mais baixo sem afetar os
+    // outros. O cache restaura das SharedPreferences na primeira fala.
+    private val userVolumeDb = ConcurrentHashMap<Int, Int>()
+    fun setUserVolumeDb(userId: Int, db: Int) {
+        userVolumeDb[userId] = db.coerceIn(-60, 30)
+    }
+    fun getUserVolumeDb(userId: Int): Int = userVolumeDb[userId] ?: 0
     // Impede que VAD/contínuo enviem áudio normal enquanto o servidor aplica
     // uma nova lista de destinos de sussurro via TCP.
     @Volatile var whisperActivationPending = false
@@ -125,6 +146,58 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         }
     }
 
+    /** Fator linear do boost de microfone (0..+30 dB). 1.0 = neutro. */
+    private fun micGainLinear(): Double =
+        if (micGainDb > 0) Math.pow(10.0, micGainDb.coerceAtMost(30) / 20.0) else 1.0
+
+    /**
+     * Amplificação por software com saturação suave: acima do joelho
+     * (~-18 dBFS) o sinal COMPIME em vez de estalar (clipping duro).
+     * In-place, little-endian 16-bit mono.
+     */
+    private fun applyMicGain(buf: ByteArray, bytes: Int, gainLin: Double) {
+        if (gainLin <= 1.0 || bytes < 2) return
+        val knee = 4096.0
+        val head = 32767.0 - knee
+        var i = 0
+        while (i + 1 < bytes) {
+            val sample = ((buf[i].toInt() and 0xFF) or (buf[i + 1].toInt() shl 8)).toShort().toDouble()
+            var v = sample * gainLin
+            v = if (v > knee) knee + head * tanh((v - knee) / head)
+                else if (v < -knee) -knee - head * tanh((-v - knee) / head)
+                else v
+            val out = v.toInt().coerceIn(-32768, 32767)
+            buf[i] = (out and 0xFF).toByte()
+            buf[i + 1] = ((out shr 8) and 0xFF).toByte()
+            i += 2
+        }
+    }
+
+    /** dB persistido por UID estável (sobrevive a reconexões/sessões). */
+    // Quem conhece a lista de usuários (Activity/service) registra o
+    // resolvedor id→uid; o manager só precisa dele uma vez por pessoa.
+    var uidResolver: ((Int) -> String?)? = null
+
+    private fun userVolumeDbCached(userId: Int): Int {
+        val cached = userVolumeDb[userId]
+        if (cached != null) return cached
+        // Primeira fala desta pessoa nesta sessão: restaura o volume que o
+        // usuário definiu antes (por uid do servidor, com fallback userId).
+        val prefs = context.getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
+        val uid = try { uidResolver?.invoke(userId) } catch (_: Throwable) { null } ?: ""
+        val db = if (uid.isNotEmpty())
+            prefs.getInt("user_volume_uid_$uid", prefs.getInt("user_volume_$userId", 0))
+        else prefs.getInt("user_volume_$userId", 0)
+        val coerced = db.coerceIn(-60, 30)
+        userVolumeDb[userId] = coerced
+        return coerced
+    }
+
+    private fun userGainLinear(userId: Int): Double {
+        val db = userVolumeDbCached(userId)
+        return if (db != 0) Math.pow(10.0, db / 20.0) else 1.0
+    }
+
     @SuppressLint("MissingPermission")
     fun startCapture() {
         if (isRecordingMic) return
@@ -170,6 +243,18 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                     }
                     if (readBytes == 0) continue
 
+                    // Boost ANTES do RMS: o VAD precisa ver o sinal já
+                    // amplificado (senão aumentar o mic não “acorda” a
+                    // detecção). O EchoGuard recebe a cópia CRUA: o ganho
+                    // aplicado depois da correlação não distorce a guarda
+                    // de crosstalk, igual ao Desktop (rawPcm).
+                    val guardActiveNow = transmissionMode == 0
+                            && !whisperPressed && !whisperActivationPending
+                    val rawForGuard = if (guardActiveNow && readBytes == audioBuffer.size)
+                        audioBuffer.copyOf() else null
+                    val micGain = micGainLinear()
+                    if (micGain > 1.0) applyMicGain(audioBuffer, readBytes, micGain)
+
                     if (transmitEnabled) {
                         // O PCM pode chegar em leituras parciais; considera
                         // somente amostras completas para não ler fora do buffer.
@@ -203,18 +288,12 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                         // ---- Guarda de crosstalk/eco de rede (v1.1.22) ----
                         // No modo VAD, o som do parceiro captado pelo microfone
                         // não abre a transmissão: o guarda compara o microfone
-                        // com o que está sendo RECEBIDO da rede (o mesmo som
-                        // tocando no alto-falante do parceiro) — cópia atrasada
-                        // é crosstalk, não fala. Falar por cima de um canal
-                        // ativo é confirmado em até 400 ms e os quadros retidos
-                        // na validação são transmitidos antes (backfill).
-                        // PTT/contínuo são escolhas explícitas: sem guarda.
-                        val guardActive = transmissionMode == 0
-                                && !whisperPressed && !whisperActivationPending
+                        // (CRU, sem boost) com o que está sendo RECEBIDO da
+                        // rede — cópia atrasada é crosstalk, não fala.
                         var echoBackfill: List<ByteArray> = emptyList()
-                        if (guardActive && readBytes == audioBuffer.size) {
+                        if (rawForGuard != null) {
                             val decision = echoGuard.noteCapture(
-                                audioBuffer, vadVoice, isTalking)
+                                rawForGuard, vadVoice, isTalking)
                             when (decision) {
                                 EchoGuard.Decision.BLOCKED -> {
                                     // Revogação imediata (sem histerese):
@@ -226,6 +305,13 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                                 EchoGuard.Decision.OPEN -> if (vadVoice && !isTalking)
                                     echoBackfill = echoGuard.drainBackfill()
                             }
+                        }
+
+                        // Fala confirmada por cima de crosstalk: os quadros
+                        // retidos saem também com o boost aplicado.
+                        if (echoBackfill.isNotEmpty() && micGain > 1.0) {
+                            for (held in echoBackfill)
+                                applyMicGain(held, held.size, micGain)
                         }
 
                         if (voiceNow != isTalking) {
@@ -349,9 +435,17 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         }
     }
 
+    @Volatile var onRouteChanged: ((CommRouteKind) -> Unit)? = null
+
     fun startPlayback() {
         if (isPlayingAudio) return
         isPlayingAudio = true
+
+        // Fone enfiado/removido durante a sessão — mesmo com a Activity
+        // fechada e só o foreground service segurando a voz — reage aqui.
+        try {
+            systemAudio?.registerAudioDeviceCallback(deviceRouteCallback, null)
+        } catch (_: Throwable) {}
 
         // O cancelador de eco acústico do hardware (AcousticEchoCanceler,
         // preso à sessão do AudioRecord lá em cima) precisa correlacionar a
@@ -386,6 +480,7 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                 .build()
             audioTrack = track
             track.play()
+            applyCommunicationRoute()
             startVoiceDrainLoop()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -534,11 +629,16 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
             }
             hasFrame = true
             val acc = mixed ?: IntArray(960).also { mixed = it }
+            // Volume individual: o mesmo modelo do Desktop, aplicado na
+            // mixagem — não altera o que os OUTROS ouvem deste falante.
+            val gainLin = userGainLinear(uid)
             var i = 0
             while (i + 1 < frame.size && i / 2 < 960) {
                 val sample = ((frame[i].toInt() and 0xFF) or
                         (frame[i + 1].toInt() shl 8)).toShort().toInt()
-                acc[i / 2] = (acc[i / 2] + sample).coerceIn(-32768, 32767)
+                val scaled = if (gainLin != 1.0)
+                    (sample * gainLin).toInt().coerceIn(-32768, 32767) else sample
+                acc[i / 2] = (acc[i / 2] + scaled).coerceIn(-32768, 32767)
                 i += 2
             }
             if (queue.isEmpty()) emptyUsers.add(uid)
@@ -631,11 +731,75 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
     // setCommunicationDevice()/clearCommunicationDevice() — as APIs legadas
     // de speakerphone não têm efeito confiável nele. Antes do S, o par
     // isSpeakerphoneOn + MODE_IN_COMMUNICATION continua sendo o caminho.
+    //
+    // FONE COM FIO (headset 3.5mm/USB) tem PRIORIDADE sobre o alto-falante
+    // forçado: plugou o fone, a voz vai no fone — o usuário plugou porque
+    // QUER escutar por ele. Desplugou, volta para a rota anterior. Antes o
+    // callback de devices só olhava Bluetooth: com o alto-falante forçado
+    // no startAudio, o fone conectado nunca recebia nada.
+
+    enum class CommRouteKind { WIRED, BLUETOOTH, SPEAKER, EARPIECE }
+
+    /** Preferência do usuário (toggle): alto-falante x auricular. */
+    @Volatile var userWantsSpeaker = true
+        private set
 
     /** AudioManager do sistema, obtido uma única vez na construção. */
     private val systemAudio: AudioManager? = try {
         context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     } catch (_: Throwable) { null }
+
+    /** Reage a fones enfiados/removidos mesmo em segundo plano (service). */
+    private val deviceRouteCallback = object : AudioDeviceCallback() {
+        private var lastKind: CommRouteKind? = null
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            routeChanged()
+        }
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            routeChanged()
+        }
+        private fun routeChanged() {
+            applyCommunicationRoute()
+            val kind = currentCommunicationKind()
+            if (kind != lastKind) {
+                lastKind = kind
+                // callback pode chegar em thread do áudio: quem registra
+                // (UI) precisa postar na main thread se for mexer em views.
+                onRouteChanged?.let { cb ->
+                    try { cb(kind) } catch (_: Throwable) {}
+                }
+            }
+        }
+    }
+
+    private fun findOutputDevice(match: (Int) -> Boolean): AudioDeviceInfo? {
+        val am = systemAudio ?: return null
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                am.availableCommunicationDevices.firstOrNull { match(it.type) }
+            else
+                am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { match(it.type) }
+        } catch (_: Throwable) { null }
+    }
+
+    private fun wiredDevice() = findOutputDevice {
+        it == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                it == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                it == AudioDeviceInfo.TYPE_USB_HEADSET
+    }
+
+    private fun bluetoothDevice() = findOutputDevice {
+        it == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                        it == AudioDeviceInfo.TYPE_BLE_HEADSET)
+    }
+
+    /** Rota ATUAL de comunicação considerando fones conectados. */
+    fun currentCommunicationKind(): CommRouteKind {
+        if (wiredDevice() != null) return CommRouteKind.WIRED
+        if (bluetoothDevice() != null) return CommRouteKind.BLUETOOTH
+        return if (userWantsSpeaker) CommRouteKind.SPEAKER else CommRouteKind.EARPIECE
+    }
 
     /** Modo de comunicação do Android: volume de chamada + AEC do hardware. */
     private fun ensureCommunicationMode() {
@@ -645,27 +809,48 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
     }
 
     /**
-     * Roteia a voz para o alto-falante (true) ou de volta à rota padrão de
-     * comunicação (auricular). Também garante o modo de comunicação.
+     * Aplica a rota de comunicação pela prioridade: fio > Bluetooth >
+     * preferência do usuário (alto-falante/auricular). Idempotente.
      */
-    fun setSpeakerphoneRoute(speaker: Boolean) {
+    fun applyCommunicationRoute() {
         val am = systemAudio ?: return
         ensureCommunicationMode()
         try {
+            val kind = currentCommunicationKind()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (speaker) {
-                    val spk = am.availableCommunicationDevices.firstOrNull {
+                val dev = when (kind) {
+                    CommRouteKind.WIRED -> wiredDevice()
+                    CommRouteKind.BLUETOOTH -> bluetoothDevice()
+                    CommRouteKind.SPEAKER -> am.availableCommunicationDevices.firstOrNull {
                         it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
                     }
-                    if (spk != null) am.setCommunicationDevice(spk) else am.clearCommunicationDevice()
-                } else {
-                    am.clearCommunicationDevice()
+                    CommRouteKind.EARPIECE -> am.availableCommunicationDevices.firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                    }
                 }
+                if (dev != null) am.setCommunicationDevice(dev) else am.clearCommunicationDevice()
             } else {
                 @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = speaker
+                am.isSpeakerphoneOn = kind == CommRouteKind.SPEAKER
+                if (kind == CommRouteKind.BLUETOOTH) {
+                    @Suppress("DEPRECATION") am.startBluetoothSco()
+                    @Suppress("DEPRECATION") am.isBluetoothScoOn = true
+                } else {
+                    @Suppress("DEPRECATION") am.stopBluetoothSco()
+                    @Suppress("DEPRECATION") am.isBluetoothScoOn = false
+                }
             }
         } catch (_: Exception) {}
+    }
+
+    /**
+     * Define a preferência alto-falante x auricular; um fone com fio/USB/Bluetooth
+     * conectado continua tendo prioridade (a voz vai para onde o usuário
+     * enfiou o plug).
+     */
+    fun setSpeakerphoneRoute(speaker: Boolean) {
+        userWantsSpeaker = speaker
+        applyCommunicationRoute()
     }
 
     /**
@@ -674,25 +859,8 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
      * rota de comunicação: som de música, não de chamada.
      */
     fun setBluetoothRoute(): Boolean {
-        val am = systemAudio ?: return false
-        ensureCommunicationMode()
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val bt = am.availableCommunicationDevices.firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
-                }
-                bt != null && am.setCommunicationDevice(bt)
-            } else {
-                @Suppress("DEPRECATION")
-                am.startBluetoothSco()
-                @Suppress("DEPRECATION")
-                am.isBluetoothScoOn = true
-                @Suppress("DEPRECATION")
-                am.isSpeakerphoneOn = false
-                true
-            }
-        } catch (_: Exception) { false }
+        applyCommunicationRoute()
+        return currentCommunicationKind() == CommRouteKind.BLUETOOTH
     }
 
     /** Libera a rota de comunicação escolhida no encerramento da sessão. */
@@ -724,6 +892,12 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         Transmissão: ${if (transmitEnabled) "permitida" else "mutada (microfone mutado)"}
         Alto-falantes: ${if (speakerEnabled) "ativos" else "mutados"}
         Modo: ${when (transmissionMode) { 1 -> "PTT"; 2 -> "Contínuo"; else -> "Detecção de voz" }}
+        Boost de microfone: +$micGainDb dB
+        Rota de áudio: ${when (currentCommunicationKind()) {
+            CommRouteKind.WIRED -> "fone com fio/USB"
+            CommRouteKind.BLUETOOTH -> "Bluetooth"
+            CommRouteKind.SPEAKER -> "alto-falante"
+            CommRouteKind.EARPIECE -> "auricular" }}
         PTT: ${if (isPttPressed) "pressionado" else "solto"}
         Sussurro: ${if (whisperPressed) "ativo" else "inativo"}
         RMS atual: ${"%.2f".format(currentVoiceLevel)}%
@@ -793,6 +967,9 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         stopCaptureInternal()
         stopPlaybackInternal()
         stopLocalRecording()
+        try {
+            systemAudio?.unregisterAudioDeviceCallback(deviceRouteCallback)
+        } catch (_: Throwable) {}
         // Devolve o roteamento de comunicação ao sistema: o próximo app de
         // áudio não pode herdar o alto-falante que forçamos durante a sessão.
         clearCommunicationRoute()
@@ -815,5 +992,6 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         audioTrack = null
         voiceQueues.clear()
         voicePrimed.clear()
+        userVolumeDb.clear()
     }
 }

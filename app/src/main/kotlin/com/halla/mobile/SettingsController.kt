@@ -57,6 +57,8 @@ class SettingsController(private val activity: MainActivity) {
     private lateinit var switchAutoUpdate: Switch
     private lateinit var seekVadSensitivity: SeekBar
     private lateinit var txtVadSensitivityVal: TextView
+    private lateinit var seekMicBoost: SeekBar
+    private lateinit var txtMicBoostVal: TextView
     private lateinit var switchNoiseSuppression: Switch
     private lateinit var switchEchoCancellation: Switch
     private lateinit var txtAudioProcessingStatus: TextView
@@ -145,6 +147,33 @@ class SettingsController(private val activity: MainActivity) {
             }
         }
         panelAudio.addView(btnTransmissionMode)
+
+        // Boost de microfone por software: 0..+30 dB ALÉM do limite do
+        // dispositivo (o mesmo recurso do Desktop v1.1.21). Aplicado antes
+        // do VAD — mic mais alto abre a detecção mais fácil.
+        val micBoostContainer = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 16, 24, 4)
+            setBackgroundColor(Color.parseColor("#151322"))
+        }
+        micBoostContainer.addView(TextView(activity).apply {
+            text = activity.getString(R.string.mic_boost_title)
+            setTextColor(Color.WHITE)
+            textSize = 14f
+        })
+        txtMicBoostVal = TextView(activity).apply {
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 12f
+        }
+        micBoostContainer.addView(txtMicBoostVal)
+        seekMicBoost = SeekBar(activity).apply { max = 30 }
+        micBoostContainer.addView(seekMicBoost)
+        micBoostContainer.addView(TextView(activity).apply {
+            text = activity.getString(R.string.mic_boost_hint)
+            setTextColor(Color.parseColor("#94A3B8"))
+            textSize = 11f
+        })
+        panelAudio.addView(micBoostContainer)
 
         val btnWhisperLists = Button(activity).apply {
             text = activity.getString(R.string.whisper_list_button)
@@ -1038,6 +1067,9 @@ class SettingsController(private val activity: MainActivity) {
         )
     }
 
+    private fun formatMicBoost(db: Int): String =
+        if (db > 0) "+$db dB" else activity.getString(R.string.mic_boost_off)
+
     private fun pushAudioProcessingSettings() {
         val settings = activity.getSharedPreferences("HallaSettings", Context.MODE_PRIVATE)
         val noise = settings.getBoolean("noise_suppression", true)
@@ -1060,6 +1092,10 @@ class SettingsController(private val activity: MainActivity) {
         val vadSens = settingsPrefs.getInt("vad_sensitivity", 50)
         seekVadSensitivity.progress = vadSens
         txtVadSensitivityVal.text = "$vadSens%"
+        val micDb = settingsPrefs.getInt("mic_gain_db", 0).coerceIn(0, 30)
+        seekMicBoost.progress = micDb
+        txtMicBoostVal.text = formatMicBoost(micDb)
+        activity.audioManager.micGainDb = micDb
         switchNoiseSuppression.isChecked = settingsPrefs.getBoolean("noise_suppression", true)
         switchEchoCancellation.isChecked = settingsPrefs.getBoolean("echo_cancellation", true)
         pushAudioProcessingSettings()
@@ -1090,6 +1126,18 @@ class SettingsController(private val activity: MainActivity) {
                 txtVadSensitivityVal.text = "$progress%"
                 settingsPrefs.edit().putInt("vad_sensitivity", progress).apply()
                 activity.audioManager.vadThreshold = progress * 3.0
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        seekMicBoost.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                txtMicBoostVal.text = formatMicBoost(progress)
+                settingsPrefs.edit().putInt("mic_gain_db", progress).apply()
+                // Aplica na hora no AudioManager da Activity E no foreground
+                // service (o microfone em uso durante a sessão é o dele).
+                activity.audioManager.micGainDb = progress
+                if (HallaService.isRunning()) HallaService.setMicGain(activity, progress)
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}

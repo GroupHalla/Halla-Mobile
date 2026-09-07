@@ -251,6 +251,15 @@ Notas de la versión:
     <string name="ban_time">Tiempo en minutos (0 permanente)</string>
     <string name="ban_title">Banear usuario: %1$s</string>
     <string name="bluetooth_connected">Bluetooth conectado</string>
+    <string name="mic_boost_title">Aumentar volumen del micrófono (más allá del límite)</string>
+    <string name="mic_boost_hint">0 a +30 dB por software, con limitador suave para no crujir. Un micrófono más alto también abre la detección de voz más fácil.</string>
+    <string name="mic_boost_off">apagado</string>
+    <string name="wired_headset_connected">Auriculares conectados</string>
+    <string name="user_volume">Volumen de %1$s</string>
+    <string name="user_volume_title">Volumen de %1$s</string>
+    <string name="user_volume_hint">-60 a +30 dB — cambia solo lo que TÚ escuchas de esta persona y queda guardado.</string>
+    <string name="user_volume_reset">Restablecer (0 dB)</string>
+    <string name="user_volume_reset_done">Volumen restablecido a 0 dB</string>
     <string name="channel_title">Canal: %1$s</string>
     <string name="choose_identity">Elegir identidad</string>
     <string name="client_details">Detalles de %1$s</string>

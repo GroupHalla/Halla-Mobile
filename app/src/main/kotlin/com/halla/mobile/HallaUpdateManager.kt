@@ -158,8 +158,18 @@ private fun fetchExpectedSha256(checksumUrl: String): String {
     }
     conn.inputStream.bufferedReader().use { reader ->
         val text = reader.readText().trim()
-        val match = Regex("(?i)\b[0-9a-f]{64}\b").find(text)
-        return match?.value?.lowercase()
+        // REGEX em raw string: "\b" em string normal é backspace (U+0008),
+        // nunca casava e o checksum falhava com "Checksum SHA-256 ausente".
+        val match = Regex("""(?i)\b[0-9a-f]{64}\b""").find(text)
+        // Fallback manual token a token: mesmo que a regex acima volte a
+        // falhar por qualquer motivo, um arquivo "<hash>  <nome>" padrão do
+        // sha256sum ainda é lido corretamente.
+        val hash = match?.value?.lowercase()
+            ?: text.split(Regex("\\s+"))
+                .map { it.trim(':', ' ', '*', '(', ')') }
+                .firstOrNull { Regex("^[0-9a-fA-F]{64}$").matches(it) }
+                ?.lowercase()
+        return hash
             ?: throw SecurityException("Checksum SHA-256 ausente")
     }
 }
