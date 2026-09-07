@@ -546,6 +546,6 @@ Download and install now?</string>
     <string name="e2ee_undecryptable">[encrypted message that could not be decrypted]</string>
     <string name="e2ee_poke_undecryptable">[encrypted poke that could not be decrypted]</string>
     <string name="e2ee_offline_undecryptable">[encrypted message — could not be decrypted]</string>
-    <string name="e2ee_identity_changed">%1$s's encryption identity changed (new device or reinstalled key). If you did not expect this, be extra careful with this person.</string>
+    <string name="e2ee_identity_changed">%1$s\'s encryption identity changed (new device or reinstalled key). If you did not expect this, be extra careful with this person.</string>
 
 </resources>
