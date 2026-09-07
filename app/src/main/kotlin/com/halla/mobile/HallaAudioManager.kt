@@ -15,7 +15,6 @@ import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.concurrent.thread
