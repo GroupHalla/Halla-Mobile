@@ -699,7 +699,7 @@ object HallaCore {
         // v6 E2EE: decifra AQUI, antes de qualquer ouvinte — o texto em claro
         // nunca existe fora das pontas (mesma política do Desktop, que
         // decifra antes do emit).
-        val display = if (e2ee) E2eeEngine.decryptIncomingChat(scope, fromUserId, text) else text
+        val display = if (e2ee) E2eeEngine.decryptIncomingChat(scope, fromUserId, toUserId, text) else text
         callbacks.forEach { it.onChatMessageReceived(scope, fromUserId, toUserId, fromName, display) }
     }
 

@@ -770,16 +770,25 @@ object E2eeEngine {
      * fora das pontas. Chamado pelo HallaCore.triggerOnChatMessage quando o
      * nativo marca e2ee=true.
      */
-    fun decryptIncomingChat(scope: String, fromUserId: Int, textB64: String): String {
+    fun decryptIncomingChat(scope: String, fromUserId: Int, toUserId: Int,
+                            textB64: String): String {
         synchronized(lock) {
             val blob = E2eeCrypto.b64Decode(textB64)
             // Privado: par-a-par com o AAD-domínio em String; grupo:
             // AES-GCM com o AAD em bytes (o layout de cada camada).
             val domain = E2eeCrypto.chatDomainAad(scope)
             if (scope == "private") {
-                val from = users[fromUserId]
-                if (from != null && from.e2eeValid && from.dhPub != null && dhPriv != null) {
-                    val plain = E2eeCrypto.pairwiseDecrypt(dhPriv!!, from.dhPub!!, domain, blob)
+                // Eco da própria mensagem: o servidor devolve o chat privado
+                // ao remetente para ela aparecer na conversa. O par de chaves
+                // correto é o DESTINATÁRIO ("to"), não o remetente — o
+                // X25519 estático-estático é simétrico, então a própria ponta
+                // decifra o que ela mesma cifrou (mesmo fix do Desktop
+                // v1.1.21; antes o eco usava o dhPub de "from" == o próprio
+                // remetente e virava "[mensagem cifrada...]" nos DOIS lados).
+                val peerId = if (fromUserId == selfIdLocked()) toUserId else fromUserId
+                val peer = users[peerId]
+                if (peer != null && peer.e2eeValid && peer.dhPub != null && dhPriv != null) {
+                    val plain = E2eeCrypto.pairwiseDecrypt(dhPriv!!, peer.dhPub!!, domain, blob)
                     if (plain != null) return String(plain, Charsets.UTF_8)
                 }
                 return string(R.string.e2ee_undecryptable)
@@ -984,16 +993,27 @@ object E2eeEngine {
         }
     }
 
-    /** Aviso quando a identidade verificada MUDOU desde a última verificação. */
+    /**
+     * Confiança automática (TOFU — trust on first use): a primeira chave da
+     * pessoa que passa na verificação local (uid + assinatura Ed25519 da
+     * binding X25519) já é confiada — ninguém precisa clicar em nada. A
+     * troca de identidade continua avisando 1x (informativo) e a nova chave
+     * é re-confiada automaticamente no mesmo instante.
+     */
     private fun securityCheckUser(user: E2eeUser) {
         if (user.uid.isEmpty() || user.idPub.isEmpty()) return
-        val marker = verifiedPrefs().getString(verifiedKey(user.uid), null) ?: return
         val current = E2eeCrypto.b64Encode(E2eeCrypto.sha256(user.idPub))
+        val marker = verifiedPrefs().getString(verifiedKey(user.uid), null)
+        if (marker == null) {
+            verifiedPrefs().edit().putString(verifiedKey(user.uid), current).apply()
+            return
+        }
         if (marker != current) {
             securityNotice(
                 string(R.string.e2ee_identity_changed, user.name))
-            // Exige nova verificação explícita.
-            verifiedPrefs().edit().remove(verifiedKey(user.uid)).apply()
+            // Re-confia na nova chave (TOFU): a conversa permanece cifrada e
+            // nada exige ação do usuário — o aviso é só informativo.
+            verifiedPrefs().edit().putString(verifiedKey(user.uid), current).apply()
         }
     }
 

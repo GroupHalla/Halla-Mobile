@@ -17,8 +17,7 @@ import org.json.JSONObject
  * Diálogos de usuário extraídos do MainActivity (refactor do monólito):
  * menu de opções (long-press/toque na linha do usuário), poke, mensagem
  * privada, informações do cliente com ícones de cargo, mover, kick, ban,
- * verificação de identidade E2EE v6 por código SAS, troca de apelido e
- * mensagem de away.
+ * volume individual, troca de apelido e mensagem de away.
  *
  * O estado de away/apelido persiste nos campos da Activity (isAway etc.);
  * a mensagem digitada vive aqui.
@@ -26,35 +25,6 @@ import org.json.JSONObject
 class UserDialogsController(private val activity: MainActivity) {
 
     private var awayMessage = ""
-
-    // v6 E2EE — verificação de identidade por código SAS (fora de banda): as
-    // duas pontas abrem este diálogo e comparam os 9 dígitos de viva voz.
-    // Iguais: ninguém — nem o servidor — trocou chaves entre vocês.
-    private fun showE2eeVerifyDialog(userId: Int, name: String) {
-        val code = E2eeEngine.sasCodeFor(userId)
-        val already = E2eeEngine.isUserVerified(userId)
-        val message = if (code == null) {
-            activity.getString(R.string.e2ee_verify_unavailable)
-        } else {
-            activity.getString(R.string.e2ee_verify_instructions, name) +
-                "\n\n$code\n\n" +
-                activity.getString(if (already) R.string.e2ee_verified_already
-                          else R.string.e2ee_not_verified)
-        }
-        val buttons = mutableListOf(activity.getString(R.string.e2ee_close))
-        if (code != null && !already) buttons.add(0, activity.getString(R.string.e2ee_mark_verified))
-        AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.e2ee_verify_title, name))
-            .setMessage(message)
-            .setItems(buttons.toTypedArray()) { _, which ->
-                if (buttons[which] == activity.getString(R.string.e2ee_mark_verified)) {
-                    E2eeEngine.markUserVerified(userId)
-                    Toast.makeText(activity, activity.getString(R.string.e2ee_verified_now),
-                        Toast.LENGTH_SHORT).show()
-                }
-            }
-            .show()
-    }
 
     internal fun showUserOptionsDialog(usr: JSONObject) {
         val context = activity
@@ -76,7 +46,6 @@ class UserDialogsController(private val activity: MainActivity) {
         } else {
             options.add("🔊 ${activity.getString(R.string.user_volume, name)}")
             options.add("👉 ${activity.getString(R.string.poke)}")
-            options.add("🔐 ${activity.getString(R.string.e2ee_verify)}")
             if (usr.optBoolean("screensharing", false) && activity.state.getChannelOfUser(userId) == activity.state.getChannelOfUser(activity.selfId)) {
                 options.add("📺 Ver transmissão")
             }
@@ -128,8 +97,6 @@ class UserDialogsController(private val activity: MainActivity) {
                     activity.screenShare.startWatching(userId, name)
                 } else if (choice.contains(activity.getString(R.string.private_message))) {
                     activity.chat.showPrivateMessageDialog(userId, name)
-                } else if (choice.contains(activity.getString(R.string.e2ee_verify))) {
-                    showE2eeVerifyDialog(userId, name)
                 } else if (choice.contains(activity.getString(R.string.client_info))) {
                     showClientInfoDialog(usr)
                 } else if (choice.contains(activity.getString(R.string.move_to_channel))) {
