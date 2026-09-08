@@ -38,6 +38,20 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
 
     @Volatile private var audioRecord: AudioRecord? = null
     @Volatile private var audioTrack: AudioTrack? = null
+
+    // ---- Caminho de áudio da reprodução (comunicação x mídia) ----
+    // O stream de comunicação (USAGE_VOICE_COMMUNICATION) existe para o
+    // viva-voz: nele o cancelador de eco do hardware correlaciona o que
+    // toca com o que o microfone captura. Em FONE (fio/USB/Bluetooth) não
+    // há eco acústico relevante, e o custo desse caminho é alto: muitos
+    // OEMs processam o áudio de comunicação como telefone (compressão,
+    // banda de voz, ducking) — música tocava com "som de ligação" mesmo
+    // de fone. A reprodução agora segue a rota: alto-falante/auricular =
+    // comunicação (eco cancelado), fone = MÍDIA (48 kHz inteiro).
+    @Volatile private var playbackVoiceRoute = true
+    private val playbackLock = Any()
+    private val retiredTracks = ArrayDeque<AudioTrack>()
+    private val retiredLock = Any()
     private var localRecordFile: FileOutputStream? = null
     private var localRecordPath: File? = null
     private var localRecordBytes = 0L
@@ -450,24 +464,50 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
         // preso à sessão do AudioRecord lá em cima) precisa correlacionar a
         // CAPTURA com a REPRODUÇÃO do mesmo domínio. Com o playback em
         // USAGE_MEDIA a referência do AEC não continha o áudio tocado no
-        // alto-falante e o eco voltava pelo microfone no viva-voz. A voz passa
-        // agora pelo stream de comunicação; o roteamento (alto-falante,
-        // auricular ou Bluetooth) é escolhido explicitamente por
-        // setSpeakerphoneRoute()/setBluetoothRoute(), então o antigo motivo
-        // do USAGE_MEDIA (áudio preso no auricular, volume errado) não se
-        // aplica mais.
+        // alto-falante e o eco voltava pelo microfone no viva-voz — por isso
+        // a reprodução no ALTO-FALANTE/AURICULAR continua no stream de
+        // comunicação. Em fone (fio/USB/Bluetooth) não há eco acústico: a
+        // reprodução vai no stream de MÍDIA (qualidade inteira, sem o
+        // processamento de "chamada" do OEM); o roteamento continua sendo
+        // escolhido explicitamente por setSpeakerphoneRoute()/
+        // setBluetoothRoute()/deviceRouteCallback.
         ensureCommunicationMode()
 
+        try {
+            val kind = currentCommunicationKind()
+            val voiceRoute = kind == CommRouteKind.SPEAKER || kind == CommRouteKind.EARPIECE
+            val track = buildPlaybackTrack(voiceRoute)
+            if (track == null) { isPlayingAudio = false; return }
+            synchronized(playbackLock) {
+                audioTrack = track
+                playbackVoiceRoute = voiceRoute
+            }
+            track.play()
+            applyCommunicationRoute()
+            startVoiceDrainLoop()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            isPlayingAudio = false
+        }
+    }
+
+    /**
+     * Constrói a faixa de reprodução 48 kHz mono PCM para o caminho atual:
+     * comunicação (alto-falante/auricular — AEC correlacionado) ou mídia
+     * (fone — full-band). Devolve null se o dispositivo recusar.
+     */
+    private fun buildPlaybackTrack(voiceRoute: Boolean): AudioTrack? {
         val sampleRate = 48000
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-
-        try {
-            val track = AudioTrack.Builder()
+        return try {
+            AudioTrack.Builder()
                 .setAudioAttributes(AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(if (voiceRoute) AudioAttributes.USAGE_VOICE_COMMUNICATION
+                              else AudioAttributes.USAGE_MEDIA)
+                    .setContentType(if (voiceRoute) AudioAttributes.CONTENT_TYPE_SPEECH
+                                    else AudioAttributes.CONTENT_TYPE_MUSIC)
                     .build())
                 .setAudioFormat(AudioFormat.Builder()
                     .setSampleRate(sampleRate)
@@ -477,13 +517,33 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                 .setBufferSizeInBytes(maxOf(minBufSize, 1920 * 6))
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
-            audioTrack = track
-            track.play()
-            applyCommunicationRoute()
-            startVoiceDrainLoop()
         } catch (e: Exception) {
             e.printStackTrace()
-            isPlayingAudio = false
+            null
+        }
+    }
+
+    /**
+     * Enfiou/tirou o fone no meio da sessão: troca o AudioTrack para o
+     * caminho da nova rota. O write() bloqueado na faixa antiga destrava
+     * com o pause(); a faixa velha é liberada pela própria thread de drena,
+     * FORA do write — nunca durante.
+     */
+    private fun rebuildPlaybackForRoute(kind: CommRouteKind) {
+        if (!isPlayingAudio) return
+        val voiceRoute = kind == CommRouteKind.SPEAKER || kind == CommRouteKind.EARPIECE
+        synchronized(playbackLock) {
+            if (voiceRoute == playbackVoiceRoute) return
+            val old = audioTrack ?: return
+            val fresh = buildPlaybackTrack(voiceRoute) ?: return
+            playbackVoiceRoute = voiceRoute
+            audioTrack = fresh
+            try { fresh.play() } catch (_: Throwable) {}
+            synchronized(retiredLock) { retiredTracks.addLast(old) }
+            // Destrava a drena bloqueada no write() da faixa antiga — o
+            // próximo giro do loop já lê a faixa nova do campo volatile.
+            try { old.pause() } catch (_: Throwable) {}
+            try { old.flush() } catch (_: Throwable) {}
         }
     }
 
@@ -530,6 +590,9 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                         Thread.sleep(20)
                         continue
                     }
+                    // Libera faixas aposentadas por troca de rota — aqui,
+                    // FORA de qualquer write() nelas.
+                    releaseRetiredTracksOnce()
                     adaptVoiceTarget(track)
                     val mixed = mixOneFrame()
                     if (mixed == null) {
@@ -540,13 +603,20 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                     // alto-falante AGORA — o que o microfone captar de
                     // parecido com isto (atrasado) é eco da rede, não fala.
                     echoGuard.notePlayout(mixed)
-                    val written = try {
-                        track.write(mixed, 0, mixed.size)
+                    val trackAtWrite = track
+                    var written = 0
+                    try {
+                        written = trackAtWrite.write(mixed, 0, mixed.size)
                     } catch (e: Exception) {
+                        // Troca de rota aposentou ESTA faixa durante o write
+                        // bloqueado: não é falha da sessão — o próximo giro
+                        // já pega a faixa nova do campo volatile.
+                        if (audioTrack !== trackAtWrite) continue
                         e.printStackTrace()
                         isPlayingAudio = false
                         break
                     }
+                    if (written < 0 && audioTrack !== trackAtWrite) continue
                     if (written > 0 && isLocalRecording) {
                         try {
                             localRecordFile?.write(mixed, 0, written)
@@ -560,8 +630,18 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
                     Thread.sleep(20)
                 }
             }
+            releaseRetiredTracksOnce()
             voiceQueues.clear()
             voicePrimed.clear()
+        }
+    }
+
+    /** Libera faixas aposentadas por troca de rota (fora do write delas). */
+    private fun releaseRetiredTracksOnce() {
+        while (true) {
+            val t = synchronized(retiredLock) { retiredTracks.removeFirstOrNull() } ?: break
+            try { t.stop() } catch (_: Throwable) {}
+            try { t.release() } catch (_: Throwable) {}
         }
     }
 
@@ -762,6 +842,10 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
             val kind = currentCommunicationKind()
             if (kind != lastKind) {
                 lastKind = kind
+                // A troca de rota pode mudar o LADO do caminho de áudio
+                // (fone = mídia, alto-falante/auricular = comunicação):
+                // recria a faixa com o usage certo, na hora.
+                rebuildPlaybackForRoute(kind)
                 // callback pode chegar em thread do áudio: quem registra
                 // (UI) precisa postar na main thread se for mexer em views.
                 onRouteChanged?.let { cb ->
@@ -897,6 +981,7 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
             CommRouteKind.BLUETOOTH -> "Bluetooth"
             CommRouteKind.SPEAKER -> "alto-falante"
             CommRouteKind.EARPIECE -> "auricular" }}
+        Caminho de reprodução: ${if (playbackVoiceRoute) "comunicação (eco cancelado)" else "mídia (full-band)"}
         PTT: ${if (isPttPressed) "pressionado" else "solto"}
         Sussurro: ${if (whisperPressed) "ativo" else "inativo"}
         RMS atual: ${"%.2f".format(currentVoiceLevel)}%
@@ -989,6 +1074,7 @@ class HallaAudioManager(private val context: Context, private val cacheDir: File
             audioTrack?.release()
         } catch (_: Exception) {}
         audioTrack = null
+        releaseRetiredTracksOnce()
         voiceQueues.clear()
         voicePrimed.clear()
         userVolumeDb.clear()
